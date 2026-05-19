@@ -17,7 +17,8 @@
     - [ADR-0008](../adr/0008-commons-as-public-service-and-v1-cost-guardrails.md)
   - **Companion ADRs in `nerdsane/temper`**:
     - ADR-0040 (composite-action kernel primitive)
-    - ADR-0041 (in-process direct-dispatch)
+    - The proposed direct action-call primitive was evaluated
+      and removed from v1 scope
 
 ## TL;DR
 
@@ -33,9 +34,12 @@ whom, who imported what from where) lives in a `Lineage` sidecar entity
 beside the git repos. Publishing is `git push`. A web UI called Genesis
 provides browsing, lineage visualization, and account management.
 
-Two kernel primitives in temper proper — composite actions and in-process
-direct-dispatch — are first-class v1 dependencies of this work, captured
-in companion ADRs in `nerdsane/temper`.
+One kernel primitive in temper proper — composite actions — is a
+first-class v1 dependency of this work, captured in a companion ADR in
+`nerdsane/temper`. Action orchestration stays spec-owned: specs declare
+actions, triggers, integrations, and composite sub-write contracts; WASM
+integrations compute data and return results, but do not invoke Temper
+actions directly.
 
 ---
 
@@ -470,36 +474,21 @@ Why this RFC needs it:
 Without this primitive, the wire path stays at N OData round-trips and
 keeps the latency problem the transmission log documents.
 
-### 10.2 In-process direct-dispatch
+### 10.2 Spec-owned action orchestration
 
-ADR-0041 (`nerdsane/temper`). Today, a WASM module inside the kernel
-that wants to call a Temper action does:
+A proposed direct action-call primitive was removed from v1 scope after
+architecture review. Genesis does not add a WASM action-dispatch host
+primitive.
+If a Temper action needs to happen, the action must be reached through
+the spec model: a caller invokes a spec-defined action; spec-declared
+triggers and integrations run; integrations return typed data; and the
+kernel validates/applies any declared composite sub-writes.
 
-```
-WASM → host_http_call → HTTP router → OData parser → action dispatcher
-```
-
-For an in-kernel caller, the HTTP and OData layers are overhead — the
-caller already has typed arguments. Direct-dispatch is a new host
-function:
-
-```
-host_call(action_id, typed_args)
-```
-
-that lands directly in the action handler. Same governance applies
-(Cedar still gates; state machine still validates; event still
-appends) — just without the parsing tax.
-
-Why this RFC needs it:
-
-- The agent's hot loop inside an operator's TemperPaw makes many
-  in-kernel calls per work-cycle. With HTTP-and-OData, each is
-  ~100µs–1ms. With direct-dispatch, each is ~10µs. This is the
-  difference between "fast" and the regime-A "exceptional" the
-  transmission log identifies.
-- The commons kernel's own operations (install path, lineage queries
-  during phylogeny rendering) similarly benefit.
+For `Repository.IngestPack`, that means the git wire adapter may parse
+or frame protocol bytes, but it must not fan out Temper action calls.
+The governed intent is the spec-defined `Repository.IngestPack` action,
+and the kernel owns the transition from integration result to declared
+object/ref writes.
 
 ### 10.3 What's NOT in scope for the kernel work
 
@@ -599,7 +588,7 @@ the implementer-agent handoff.
 
 ### Phase 1 — Kernel primitives
 - Composite-action primitive in temper kernel (ADR-0040)
-- In-process direct-dispatch (ADR-0041)
+- Spec-triggered integration-result sub-write application
 - Tests against existing apps (paw-heal, paw-harness)
 
 ### Phase 2 — Registry entities
@@ -678,8 +667,8 @@ From the transmission log's competitive-position analysis:
   temper-git's Cedar gate is paid once, atomically. Position: "the
   fastest *governed* push, not the fastest no-governance push." For
   the agent-resident path, `git push` doesn't exist as a hot operation
-  — agents call `Repository.WriteFile` / `BatchWriteFiles` directly
-  via direct-dispatch.
+  — agents call spec-declared repository actions directly through the
+  normal governed action surface.
 
 - **Huge-monorepo binary ops vs Sapling.** Sapling optimizes git CLI
   on 10M-file repos. Agents shouldn't run `git status`; they query
