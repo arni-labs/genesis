@@ -41,7 +41,7 @@
       }
       .hero-copy { display: grid; gap: 12px; }
       .meter { height: 12px; border-radius: 999px; background: #e4e9e5; overflow: hidden; }
-      .meter span { display: block; width: 94%; height: 100%; background: #1b716c; }
+      .meter span { display: block; width: 100%; height: 100%; background: #1b716c; }
       .percent { font-size: 52px; line-height: 1; font-weight: 760; color: #1b716c; }
       .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
       .metric { padding: 14px; min-height: 92px; display: grid; align-content: space-between; }
@@ -71,22 +71,22 @@
     <main>
       <header class="hero">
         <div class="hero-copy">
-          <p class="muted">Last updated: 2026-05-20 15:34 EDT</p>
+          <p class="muted">Last updated: 2026-05-20 16:08 EDT</p>
           <h1>Genesis-Only Install and Railway Deployment</h1>
           <p class="muted">Two-PR implementation tracking for Temper platform install support plus the Genesis registry, UI, live proof, and Railway packaging.</p>
-          <div class="meter" aria-label="94 percent complete"><span></span></div>
+          <div class="meter" aria-label="100 percent complete"><span></span></div>
         </div>
         <div>
-          <div class="percent">94%</div>
-          <p class="muted">Local implementation, lint, and focused verification are green. The Temper PR CI fix is pushed and GitHub is rerunning; Railway provisioning is blocked by Railway deploy pause.</p>
+          <div class="percent">100%</div>
+          <p class="muted">Implementation, local checks, GitHub PR readiness, Railway deployment, Postgres recovery, and public live E2E verification are complete.</p>
         </div>
       </header>
 
       <section class="metrics">
-        <div class="metric"><span class="muted">Temper PR</span><strong><a href="https://github.com/nerdsane/temper/pull/257">#257</a></strong><span class="muted">CI fix pushed: <code>d33158e2</code></span></div>
-        <div class="metric"><span class="muted">Genesis PR</span><strong><a href="https://github.com/nerdsane/temper-git/pull/5">#5</a></strong><span class="muted">Submodule aligned to <code>d33158e2</code></span></div>
+        <div class="metric"><span class="muted">Temper PR</span><strong><a href="https://github.com/nerdsane/temper/pull/257">#257</a></strong><span class="muted">Ready, clean, CI green at <code>d33158e2</code></span></div>
+        <div class="metric"><span class="muted">Genesis PR</span><strong><a href="https://github.com/nerdsane/temper-git/pull/5">#5</a></strong><span class="muted">Ready, clean, tracker current</span></div>
         <div class="metric"><span class="muted">Local E2E</span><strong>Pass</strong><span class="muted">OData, TemperPaw-shaped, CLI, restart recovery</span></div>
-        <div class="metric"><span class="muted">Railway E2E</span><strong>Blocked</strong><span class="muted"><code>Deploys have been paused temporarily</code></span></div>
+        <div class="metric"><span class="muted">Railway E2E</span><strong>Pass</strong><span class="muted"><a href="https://genesis-production-164d.up.railway.app/genesis/">Public Genesis registry</a></span></div>
       </section>
 
       <section class="grid">
@@ -100,16 +100,16 @@
             <li><span class="dot done"></span><span>Removed runtime app-as-skill aliases and bypass sources: <code>--skill</code>, <code>/api/skills</code>, <code>TEMPER_APP_SOURCES</code>, <code>TEMPER_SKILLS_DIR</code>, legacy <code>./skills</code>, and production catalog auto-install.</span></li>
             <li><span class="dot done"></span><span>Updated the Genesis UI into a cleaner registry workbench with GitHub-like file browsing and copyable install commands.</span></li>
             <li><span class="dot done"></span><span>Added root Railway packaging: <code>Dockerfile</code>, <code>.dockerignore</code>, and <code>railway.toml</code>.</span></li>
-            <li><span class="dot done"></span><span>Pushed the two existing ready-for-review PRs: Temper <a href="https://github.com/nerdsane/temper/pull/257">#257</a> and Genesis <a href="https://github.com/nerdsane/temper-git/pull/5">#5</a>.</span></li>
+            <li><span class="dot done"></span><span>Deployed dedicated Genesis Railway service backed by Railway Postgres at <a href="https://genesis-production-164d.up.railway.app/genesis/">genesis-production-164d.up.railway.app</a>.</span></li>
+            <li><span class="dot done"></span><span>Pushed the two ready-for-review PRs: Temper <a href="https://github.com/nerdsane/temper/pull/257">#257</a> and Genesis <a href="https://github.com/nerdsane/temper-git/pull/5">#5</a>.</span></li>
           </ul>
         </article>
 
         <article class="panel">
           <h2>Remaining</h2>
           <ul>
-            <li><span class="dot active"></span><span>Wait for GitHub CI to finish on Temper commit <code>d33158e2</code> and keep the Genesis submodule pointer aligned to that commit.</span></li>
-            <li><span class="dot blocked"></span><span>Railway account is authenticated, but provisioning a new Genesis project/service currently returns <code>Deploys have been paused temporarily</code>.</span></li>
-            <li><span class="dot"></span><span>After Railway deploys are unpaused, create/link the dedicated Genesis service, attach Railway Postgres, deploy, and verify <code>/healthz</code>, <code>/genesis/</code>, OData metadata, app registration, <code>App.Install</code>, installed app usability, and restart recovery on the public service.</span></li>
+            <li><span class="dot done"></span><span>No implementation work remains for this plan.</span></li>
+            <li><span class="dot done"></span><span>The next step is reviewer approval and merge of the two PRs.</span></li>
           </ul>
         </article>
 
@@ -156,10 +156,15 @@
               <tr><td>Restart recovery</td><td>Pass</td><td>After restart, <code>tenant_installed_apps</code> contained <code>paw-odata-130750</code>, <code>paw-tool-130750</code>, and <code>paw-cli-130750</code>; each tenant still read back its installed <code>Note</code>.</td></tr>
               <tr><td>Browser UI</td><td>Pass</td><td><code>http://127.0.0.1:3188/genesis/</code> showed the pushed app, <code>10 files</code>, <code>8 folders</code>, and the OData, CLI, TemperPaw, and clone commands.</td></tr>
               <tr><td>Removed bypasses</td><td>Pass</td><td><code>rg</code> found no remaining runtime references to removed skill aliases or bypass env vars.</td></tr>
-              <tr><td>Temper PR mergeability</td><td>Pass locally</td><td>Merged <code>origin/main</code> into <code>feat/genesis-kernel-primitives</code>, resolved conflicts, and pushed merge commit <code>4d702026</code>.</td></tr>
-              <tr><td>Temper PR CI fix</td><td>Pass locally</td><td>Fixed clippy/readability failures and pushed <code>d33158e2</code>. Local gates passed: <code>cargo +nightly-2026-02-08 clippy --workspace --all-targets -- -D warnings</code>, <code>bash scripts/readability-ratchet.sh check .ci/readability-baseline.env</code>, <code>cargo test -p temper-server composite_app_create_sub_write_authorization_can_enforce_owner_scope</code>, <code>cargo test -p temper-platform genesis_install</code>, and <code>cargo test -p temper-cli genesis_app</code>.</td></tr>
+              <tr><td>Temper PR mergeability</td><td>Pass</td><td>GitHub reports <a href="https://github.com/nerdsane/temper/pull/257">Temper PR #257</a> as open, ready for review, <code>mergeStateStatus=CLEAN</code>, with all required checks successful at <code>d33158e2</code>.</td></tr>
+              <tr><td>Temper PR CI fix</td><td>Pass</td><td>Fixed clippy/readability failures and pushed <code>d33158e2</code>. Local gates passed: <code>cargo +nightly-2026-02-08 clippy --workspace --all-targets -- -D warnings</code>, <code>bash scripts/readability-ratchet.sh check .ci/readability-baseline.env</code>, <code>cargo test -p temper-server composite_app_create_sub_write_authorization_can_enforce_owner_scope</code>, <code>cargo test -p temper-platform genesis_install</code>, and <code>cargo test -p temper-cli genesis_app</code>.</td></tr>
+              <tr><td>Genesis PR readiness</td><td>Pass</td><td>GitHub reports <a href="https://github.com/nerdsane/temper-git/pull/5">Genesis PR #5</a> as open, ready for review, and <code>mergeStateStatus=CLEAN</code>.</td></tr>
               <tr><td>Railway auth</td><td>Pass</td><td><code>railway whoami</code> reports <code>Logged in as Rita Agafonova (Rita.mirai@gmail.com)</code>.</td></tr>
-              <tr><td>Railway provisioning</td><td>Blocked</td><td><code>railway init -n genesis</code> and <code>railway add --service genesis</code> both returned <code>Deploys have been paused temporarily</code>.</td></tr>
+              <tr><td>Railway deployment</td><td>Pass</td><td>Service <code>genesis</code> deployed successfully with Railway Postgres and <code>TEMPER_EVENT_STORE=postgres</code>; public URL is <a href="https://genesis-production-164d.up.railway.app">https://genesis-production-164d.up.railway.app</a>.</td></tr>
+              <tr><td>Railway public API</td><td>Pass</td><td><code>/healthz</code> returns HTTP 200; <code>/genesis/</code> returns HTTP 200; OData metadata includes <code>App</code>, <code>AppInstallation</code>, and <code>Apps</code>.</td></tr>
+              <tr><td>Railway browser UI</td><td>Pass</td><td><a href="https://genesis-production-164d.up.railway.app/genesis/">The public Genesis UI</a> renders the registry, app list, GitHub-like file browser, and contents for <code>genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239</code>.</td></tr>
+              <tr><td>Railway live E2E</td><td>Pass</td><td><code>scripts/live-genesis-install-e2e-smoke.sh</code> pushed <code>genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239</code>, registered it, installed it by OData, TemperPaw-shaped request, and CLI, then used the installed <code>Note</code> entity.</td></tr>
+              <tr><td>Railway restart recovery</td><td>Pass</td><td>After service restart, tenants <code>paw-odata-200215</code>, <code>paw-tool-200215</code>, and <code>paw-cli-200215</code> still read back their installed <code>Note</code> entities from Postgres-backed state.</td></tr>
             </tbody>
           </table>
         </article>
