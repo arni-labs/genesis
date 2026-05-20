@@ -1,8 +1,8 @@
 // Commons-mode Owner verification guardrails.
 //
-// Owner rows are public namespace claims. A caller may create a pending claim
+// Owner rows are public registry owner claims. A caller may create a pending claim
 // only for their own authenticated account; provider/operator verification is
-// required before the namespace can write apps, repositories, refs, or blobs.
+// required before the owner can write apps, repositories, refs, or blobs.
 
 forbid(
   principal,

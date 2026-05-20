@@ -394,6 +394,32 @@
         <Annotation Term="Temper.Vocab.AuthZ.CedarPolicy" String="policies/app.cedar"/>
       </EntityType>
 
+      <!-- ============ AppInstallation ============ -->
+      <EntityType Name="AppInstallation">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id"            Type="Edm.String" Nullable="false"/>
+        <Property Name="AppId"         Type="Edm.String" Nullable="false"/>
+        <Property Name="AppRef"        Type="Edm.String" Nullable="false"/>
+        <Property Name="VersionHash"   Type="Edm.String" Nullable="false"/>
+        <Property Name="TargetTenant"  Type="Edm.String" Nullable="false"/>
+        <Property Name="ClosureId"     Type="Edm.String"/>
+        <Property Name="Installer"     Type="Edm.String"/>
+        <Property Name="Message"       Type="Edm.String"/>
+        <Property Name="Status"        Type="Edm.String" Nullable="false"/>
+        <Property Name="CreatedAt"     Type="Edm.DateTimeOffset" Nullable="false"/>
+        <Property Name="InstalledAt"   Type="Edm.DateTimeOffset"/>
+        <Annotation Term="Temper.Vocab.StateMachine.States">
+          <Collection>
+            <String>Pending</String>
+            <String>Installed</String>
+            <String>Failed</String>
+          </Collection>
+        </Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.InitialState" String="Pending"/>
+        <Annotation Term="Temper.Vocab.ShardKey" String="TargetTenant"/>
+        <Annotation Term="Temper.Vocab.AuthZ.CedarPolicy" String="policies/app.cedar"/>
+      </EntityType>
+
       <!-- ============ Lineage ============ -->
       <EntityType Name="Lineage">
         <Key><PropertyRef Name="Id"/></Key>
@@ -469,6 +495,7 @@
         <EntitySet Name="HttpEndpoints"  EntityType="Temper.Git.HttpEndpoint"/>
         <EntitySet Name="Owners"         EntityType="Temper.Git.Owner"/>
         <EntitySet Name="Apps"           EntityType="Temper.Git.App"/>
+        <EntitySet Name="AppInstallations" EntityType="Temper.Git.AppInstallation"/>
         <EntitySet Name="Lineages"       EntityType="Temper.Git.Lineage"/>
         <EntitySet Name="Closures"       EntityType="Temper.Git.Closure"/>
         <EntitySet Name="RateLimits"     EntityType="Temper.Git.RateLimit"/>

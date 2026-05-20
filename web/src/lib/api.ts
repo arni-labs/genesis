@@ -246,6 +246,30 @@ export function stringValue(value: unknown): string | undefined {
   return JSON.stringify(value);
 }
 
+function stateStringField(row: EntityRow | undefined, ...keys: string[]): string {
+  if (!row) {
+    return '';
+  }
+
+  const sources = [row.fields, row].filter((source): source is Record<string, unknown> => {
+    return Boolean(source && typeof source === 'object');
+  });
+
+  for (const key of keys) {
+    for (const source of sources) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        return stringValue(source[key]) ?? '';
+      }
+      const lowerKey = key.charAt(0).toLowerCase() + key.slice(1);
+      if (Object.prototype.hasOwnProperty.call(source, lowerKey)) {
+        return stringValue(source[lowerKey]) ?? '';
+      }
+    }
+  }
+
+  return '';
+}
+
 function numberField(row: EntityRow, ...keys: string[]): number {
   const value = field(row, ...keys);
   if (typeof value === 'number') {
@@ -321,34 +345,34 @@ function normalizeClosure(row: EntityRow): Closure {
 
 function normalizeCommit(row: EntityRow): GitCommit {
   return {
-    id: stringField(row, 'Id'),
-    repositoryId: stringField(row, 'RepositoryId'),
-    treeSha: stringField(row, 'TreeSha'),
-    parentShas: stringField(row, 'ParentShas'),
-    author: stringField(row, 'Author'),
-    committer: stringField(row, 'Committer'),
-    message: stringField(row, 'Message'),
-    createdAt: stringField(row, 'CreatedAt'),
+    id: stateStringField(row, 'Id'),
+    repositoryId: stateStringField(row, 'RepositoryId'),
+    treeSha: stateStringField(row, 'TreeSha'),
+    parentShas: stateStringField(row, 'ParentShas'),
+    author: stateStringField(row, 'Author'),
+    committer: stateStringField(row, 'Committer'),
+    message: stateStringField(row, 'Message'),
+    createdAt: stateStringField(row, 'CreatedAt'),
     raw: row
   };
 }
 
 function normalizeTree(row: EntityRow): GitTree {
   return {
-    id: stringField(row, 'Id'),
-    repositoryId: stringField(row, 'RepositoryId'),
-    canonicalBytes: stringField(row, 'CanonicalBytes'),
+    id: stateStringField(row, 'Id'),
+    repositoryId: stateStringField(row, 'RepositoryId'),
+    canonicalBytes: stateStringField(row, 'CanonicalBytes'),
     raw: row
   };
 }
 
 function normalizeBlob(row: EntityRow): GitBlob {
   return {
-    id: stringField(row, 'Id'),
-    repositoryId: stringField(row, 'RepositoryId'),
-    content: stringField(row, 'Content'),
+    id: stateStringField(row, 'Id'),
+    repositoryId: stateStringField(row, 'RepositoryId'),
+    content: stateStringField(row, 'Content'),
     size: numberField(row, 'Size'),
-    createdAt: stringField(row, 'CreatedAt'),
+    createdAt: stateStringField(row, 'CreatedAt'),
     raw: row
   };
 }

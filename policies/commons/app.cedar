@@ -14,7 +14,7 @@ forbid(
      principal.action_context == "composite:App.Fork"))
 };
 
-// Composite-created App rows must still belong to the caller's owner namespace.
+// Composite-created App rows must still belong to the caller's owner account.
 // Forking someone else's public App is allowed, but creating the child App under
 // another owner is not.
 forbid(

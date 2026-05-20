@@ -26,6 +26,7 @@ temper_module! {
             "RegisterNewApp" => run_register_new_app(&ctx),
             "Fork" => run_fork(&ctx),
             "PublishNewVersion" => run_publish_new_version(&ctx),
+            "Install" => run_install(&ctx),
             other => Err(format!("app_registry does not handle trigger action '{other}'")),
         }
     }
@@ -87,6 +88,51 @@ fn run_publish_new_version(ctx: &Context) -> Result<Value, String> {
     }))
 }
 
+fn run_install(ctx: &Context) -> Result<Value, String> {
+    let params = InstallParams::from_value(&ctx.trigger_params)?;
+    let app = InstallAppSnapshot::from_entity_state(&ctx.entity_id, &ctx.entity_state)?;
+    let target_tenant = params
+        .target_tenant
+        .clone()
+        .filter(|tenant| !tenant.is_empty())
+        .unwrap_or_else(|| "default".to_string());
+    let app_ref = params
+        .app_ref
+        .clone()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "{}/{}@{}",
+                app.owner_id,
+                app.name,
+                app.latest_version_hash.trim_start_matches('@')
+            )
+        });
+    let installation_id = installation_id(&app.id, &target_tenant, &app.latest_version_hash);
+    let sub_writes = vec![json!({
+        "entity_type": "AppInstallation",
+        "entity_id": installation_id.clone(),
+        "action": "Create",
+        "params": {
+            "AppId": app.id,
+            "AppRef": app_ref,
+            "VersionHash": app.latest_version_hash,
+            "TargetTenant": target_tenant,
+            "ClosureId": "",
+            "Installer": params.installer.unwrap_or_else(|| "unknown".to_string()),
+            "Message": "install requested",
+            "CreatedAt": CREATED_AT
+        }
+    })];
+
+    Ok(json!({
+        "app_id": ctx.entity_id,
+        "installation_id": installation_id,
+        "sub_write_count": sub_writes.len(),
+        "sub_writes": sub_writes,
+    }))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RegisterParams {
     name: String,
@@ -133,6 +179,24 @@ impl ForkParams {
 struct PublishParams {
     new_hash: String,
     ref_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstallParams {
+    target_tenant: Option<String>,
+    app_ref: Option<String>,
+    installer: Option<String>,
+}
+
+impl InstallParams {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        Ok(Self {
+            target_tenant: read_string(value, "TargetTenant")
+                .or_else(|| read_string(value, "tenant")),
+            app_ref: read_string(value, "AppRef"),
+            installer: read_string(value, "Installer"),
+        })
+    }
 }
 
 impl PublishParams {
@@ -268,6 +332,29 @@ impl AppSnapshot {
         Ok(Self {
             id: row_string(state, "Id").unwrap_or_else(|| entity_id.to_string()),
             repository_id: row_required_string_with_context(state, "RepositoryId", "App state")?,
+            latest_version_hash: row_required_string_with_context(
+                state,
+                "LatestVersionHash",
+                "App state",
+            )?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstallAppSnapshot {
+    id: String,
+    owner_id: String,
+    name: String,
+    latest_version_hash: String,
+}
+
+impl InstallAppSnapshot {
+    fn from_entity_state(entity_id: &str, state: &Value) -> Result<Self, String> {
+        Ok(Self {
+            id: row_string(state, "Id").unwrap_or_else(|| entity_id.to_string()),
+            owner_id: row_required_string_with_context(state, "OwnerId", "App state")?,
+            name: row_required_string_with_context(state, "Name", "App state")?,
             latest_version_hash: row_required_string_with_context(
                 state,
                 "LatestVersionHash",
@@ -458,6 +545,18 @@ fn lineage_id(parent: &ParentApp, params: &ForkParams) -> String {
 
 fn ref_id_for(repository_id: &str, refname: &str) -> String {
     format!("rf-{}-{}", repository_id, refname.replace('/', "-"))
+}
+
+fn installation_id(app_id: &str, target_tenant: &str, version_hash: &str) -> String {
+    format!(
+        "ai-{}-{}-{}",
+        sanitize_id_component(app_id),
+        sanitize_id_component(target_tenant),
+        sanitize_id_component(version_hash)
+            .chars()
+            .take(16)
+            .collect::<String>()
+    )
 }
 
 fn sanitize_id_component(input: &str) -> String {
@@ -928,6 +1027,42 @@ mod tests {
 
         assert_eq!(app.id, "app-acme-parent");
         assert_eq!(app.repository_id, "rp-acme-parent");
+    }
+
+    #[test]
+    fn install_sub_write_records_pinned_app_ref() {
+        let mut ctx = context_with_config(BTreeMap::new());
+        ctx.entity_id = "app-acme-notes".to_string();
+        ctx.trigger_action = "Install".to_string();
+        ctx.trigger_params = json!({
+            "TargetTenant": "tenant-a",
+            "AppRef": "acme/notes@1111111111111111111111111111111111111111",
+            "Installer": "temperpaw"
+        });
+        ctx.entity_state = json!({
+            "fields": {
+                "OwnerId": "acme",
+                "Name": "notes",
+                "LatestVersionHash": "1111111111111111111111111111111111111111"
+            }
+        });
+
+        let result = run_install(&ctx).unwrap();
+        let writes = result["sub_writes"].as_array().unwrap();
+
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0]["entity_type"], "AppInstallation");
+        assert_eq!(writes[0]["action"], "Create");
+        assert_eq!(
+            writes[0]["entity_id"],
+            "ai-app-acme-notes-tenant-a-1111111111111111"
+        );
+        assert_eq!(writes[0]["params"]["TargetTenant"], "tenant-a");
+        assert_eq!(writes[0]["params"]["Installer"], "temperpaw");
+        assert_eq!(
+            writes[0]["params"]["AppRef"],
+            "acme/notes@1111111111111111111111111111111111111111"
+        );
     }
 
     #[test]

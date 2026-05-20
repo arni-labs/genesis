@@ -1,1436 +1,165 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Genesis Implementation Tracker</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --paper: #f7f4ea;
-      --ink: #171716;
-      --muted: #676158;
-      --line: #d7d0c0;
-      --panel: #fffdf7;
-      --panel-strong: #efe7d8;
-      --green: #227c59;
-      --teal: #0b6f75;
-      --amber: #b66b00;
-      --red: #b4372d;
-      --blue: #265f9b;
-      --shadow: 0 18px 48px rgba(23, 23, 22, 0.12);
-      --radius: 8px;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        linear-gradient(90deg, rgba(23, 23, 22, 0.035) 1px, transparent 1px) 0 0 / 24px 24px,
-        linear-gradient(0deg, rgba(23, 23, 22, 0.03) 1px, transparent 1px) 0 0 / 24px 24px,
-        var(--paper);
-      color: var(--ink);
-      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      letter-spacing: 0;
-    }
-
-    .shell {
-      width: min(1180px, calc(100% - 32px));
-      margin: 0 auto;
-      padding: 32px 0 44px;
-    }
-
-    .masthead {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 210px;
-      gap: 24px;
-      align-items: end;
-      border-bottom: 3px solid var(--ink);
-      padding-bottom: 22px;
-    }
-
-    .kicker {
-      margin: 0 0 10px;
-      color: var(--teal);
-      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    h1 {
-      margin: 0;
-      max-width: 780px;
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: clamp(40px, 7vw, 82px);
-      line-height: 0.92;
-      letter-spacing: 0;
-    }
-
-    .timestamp {
-      justify-self: end;
-      width: 100%;
-      padding: 14px;
-      background: var(--ink);
-      color: var(--paper);
-      border-radius: var(--radius);
-      font: 700 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
-      text-transform: uppercase;
-    }
-
-    .timestamp span {
-      display: block;
-      color: #f0ba56;
-      font-size: 18px;
-      margin-top: 4px;
-      text-transform: none;
-    }
-
-    .status-grid {
-      display: grid;
-      grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.35fr);
-      gap: 18px;
-      margin-top: 22px;
-    }
-
-    .progress-panel,
-    .now-panel,
-    .phase,
-    .verification,
-    .notes {
-      min-width: 0;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-    }
-
-    .progress-panel {
-      padding: 22px;
-      display: grid;
-      gap: 18px;
-      align-content: start;
-    }
-
-    .score {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-    }
-
-    .score strong {
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: clamp(74px, 13vw, 128px);
-      line-height: 0.85;
-      letter-spacing: 0;
-    }
-
-    .score span {
-      color: var(--muted);
-      font-weight: 750;
-    }
-
-    .meter {
-      position: relative;
-      height: 18px;
-      overflow: hidden;
-      border: 2px solid var(--ink);
-      background: var(--panel-strong);
-      border-radius: 999px;
-    }
-
-    .meter-fill {
-      height: 100%;
-      width: var(--value);
-      background:
-        linear-gradient(90deg, var(--green), var(--teal) 56%, var(--blue));
-    }
-
-    .summary-line {
-      margin: 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.5;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-    }
-
-    .stat {
-      min-width: 0;
-      padding: 12px 10px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: #fbf8ef;
-    }
-
-    .stat b {
-      display: block;
-      font-size: 24px;
-      line-height: 1;
-    }
-
-    .stat span {
-      display: block;
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 750;
-      text-transform: uppercase;
-    }
-
-    .now-panel {
-      padding: 22px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-    }
-
-    .now-panel h2,
-    .section-title,
-    .phase h3,
-    .verification h3,
-    .notes h3 {
-      margin: 0;
-      font-size: 13px;
-      font-weight: 850;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-
-    .callout {
-      padding: 16px;
-      background: var(--panel-strong);
-      border-left: 5px solid var(--amber);
-      border-radius: var(--radius);
-    }
-
-    .callout p {
-      margin: 8px 0 0;
-      color: var(--ink);
-      line-height: 1.45;
-    }
-
-    .compact-list {
-      display: grid;
-      gap: 8px;
-      margin: 12px 0 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    .compact-list li {
-      display: grid;
-      grid-template-columns: 22px 1fr;
-      gap: 8px;
-      align-items: start;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-
-    .dot {
-      width: 10px;
-      height: 10px;
-      margin-top: 4px;
-      border-radius: 999px;
-      background: var(--muted);
-      box-shadow: 0 0 0 4px rgba(103, 97, 88, 0.12);
-    }
-
-    .dot.done {
-      background: var(--green);
-      box-shadow: 0 0 0 4px rgba(34, 124, 89, 0.14);
-    }
-
-    .dot.active {
-      background: var(--amber);
-      box-shadow: 0 0 0 4px rgba(182, 107, 0, 0.16);
-    }
-
-    .dot.blocked {
-      background: var(--red);
-      box-shadow: 0 0 0 4px rgba(180, 55, 45, 0.14);
-    }
-
-    .phase-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .phase {
-      padding: 18px;
-      min-height: 214px;
-      box-shadow: none;
-    }
-
-    .phase-top {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 14px;
-    }
-
-    .badge {
-      flex: 0 0 auto;
-      border: 1px solid currentColor;
-      border-radius: 999px;
-      padding: 5px 8px;
-      font: 800 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      text-transform: uppercase;
-    }
-
-    .badge.done {
-      color: var(--green);
-    }
-
-    .badge.active {
-      color: var(--amber);
-    }
-
-    .badge.todo {
-      color: var(--muted);
-    }
-
-    .phase-meter {
-      height: 8px;
-      margin-bottom: 14px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: #e2dacb;
-    }
-
-    .phase-meter div {
-      width: var(--value);
-      height: 100%;
-      background: var(--phase-color);
-    }
-
-    .phase p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.45;
-      font-size: 14px;
-    }
-
-    .verification-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .verification,
-    .notes {
-      min-width: 0;
-      padding: 18px;
-      box-shadow: none;
-    }
-
-    .check-table {
-      width: 100%;
-      margin-top: 12px;
-      border-collapse: collapse;
-      font-size: 14px;
-      table-layout: fixed;
-    }
-
-    .check-table th,
-    .check-table td {
-      padding: 10px 8px;
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-    }
-
-    .check-table th {
-      color: var(--muted);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      min-height: 24px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      color: var(--ink);
-      font: 800 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      text-transform: uppercase;
-      background: #ebe3d5;
-      line-height: 1.25;
-      overflow-wrap: anywhere;
-      white-space: normal;
-    }
-
-    .pill.pass {
-      color: var(--green);
-      background: rgba(34, 124, 89, 0.12);
-    }
-
-    .pill.run {
-      color: var(--amber);
-      background: rgba(182, 107, 0, 0.13);
-    }
-
-    .pill.risk {
-      color: var(--red);
-      background: rgba(180, 55, 45, 0.12);
-    }
-
-    .notes {
-      margin-top: 14px;
-      background: #171716;
-      color: var(--paper);
-      border-color: #171716;
-    }
-
-    .notes h3 {
-      color: #f0ba56;
-    }
-
-    .notes .compact-list li {
-      color: #ddd5c6;
-    }
-
-    .repo-strip {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 18px;
-    }
-
-    .repo {
-      min-width: 0;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--panel);
-      color: var(--muted);
-      font: 750 12px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
-      overflow-wrap: anywhere;
-    }
-
-    code {
-      padding: 0 3px;
-      border-radius: 4px;
-      background: rgba(23, 23, 22, 0.08);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.92em;
-      overflow-wrap: anywhere;
-      word-break: break-word;
-    }
-
-    .notes code {
-      background: rgba(247, 244, 234, 0.16);
-      color: var(--paper);
-    }
-
-    @media (max-width: 860px) {
-      .masthead,
-      .status-grid,
-      .now-panel,
-      .phase-grid,
-      .verification-grid {
-        grid-template-columns: 1fr;
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Genesis-Only Install Progress</title>
+    <style>
+      :root {
+        color: #20272d;
+        background: #f7f8f6;
+        font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-
-      .timestamp {
-        justify-self: stretch;
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      main { max-width: 1180px; margin: 0 auto; padding: 28px 20px 44px; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: clamp(30px, 4vw, 46px); line-height: 1.03; letter-spacing: 0; }
+      h2 { font-size: 17px; }
+      h3 { font-size: 14px; }
+      a { color: #1b716c; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #edf1ef;
+        color: #243029;
+        font: 12px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        word-break: break-word;
       }
-
-      .stats {
-        grid-template-columns: 1fr;
+      .muted { color: #66727a; }
+      .hero, .panel, .metric {
+        border: 1px solid #dde4e0;
+        border-radius: 8px;
+        background: #fff;
       }
-    }
-  </style>
-</head>
-<body>
-  <main class="shell">
-    <header class="masthead">
-      <div>
-        <p class="kicker">Genesis registry + kernel primitives</p>
-        <h1>Goal tracker</h1>
-      </div>
-      <div class="timestamp">
-        Last updated
-        <span>May 19, 2026 · 4:34 PM EDT</span>
-      </div>
-    </header>
-
-    <section class="status-grid" aria-label="Current status">
-      <article class="progress-panel">
-        <div>
-          <div class="score">
-            <strong>100</strong>
-            <span>% complete</span>
-          </div>
-          <div class="meter" aria-label="Overall progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-            <div class="meter-fill" style="--value: 100%"></div>
-          </div>
-        </div>
-        <p class="summary-line">
-          Goal complete. The direct WASM action-dispatch host surface is removed and the no-symbol scan remains clean for <code>host_call</code> and related direct-dispatch names. Genesis now runs through the spec-owned path: HTTP endpoints invoke declared actions, specs trigger integrations, integrations return result data, and the kernel applies declared Composite sub-writes atomically. The final release-server IngestPack gate passed twice on the same-machine Turso server: run <code>1779222798-79684</code> completed 50 files / 53 git objects with <code>push_ms=68</code>, receive-pack POST <code>9ms</code>, and composite batch <code>3ms</code>; repeat run <code>1779222812-80483</code> completed with <code>push_ms=75</code>, receive-pack POST <code>10ms</code>, and composite batch <code>4ms</code>. Focused JIT, Composite, storage-cap, Turso projection, and live smart-HTTP checks passed across the app submodule and standalone Temper worktree.
-        </p>
-        <div class="stats" aria-label="Work counters">
-          <div class="stat">
-            <b>74</b>
-            <span>kernel files touched</span>
-          </div>
-          <div class="stat">
-            <b>78</b>
-            <span>Genesis files added/changed</span>
-          </div>
-          <div class="stat">
-            <b>205+</b>
-            <span>checks passing</span>
-          </div>
-        </div>
-      </article>
-
-      <article class="now-panel">
-        <div class="callout">
-          <h2>Right Now</h2>
-          <p>The implementation is live and verified end to end. WASM action dispatch is absent; registry and Git behavior enter through spec-declared actions/triggers, integrations return data, and the kernel applies declared Composite sub-writes. The final 50-object IngestPack latency gate is closed: release-server receive-pack POST measured <code>9ms</code> and <code>10ms</code> on repeat fresh-repository runs, below the <code>&le;15ms</code> target.</p>
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 24px;
+        align-items: end;
+        padding: 22px;
+      }
+      .hero-copy { display: grid; gap: 12px; }
+      .meter { height: 12px; border-radius: 999px; background: #e4e9e5; overflow: hidden; }
+      .meter span { display: block; width: 90%; height: 100%; background: #1b716c; }
+      .percent { font-size: 52px; line-height: 1; font-weight: 760; color: #1b716c; }
+      .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+      .metric { padding: 14px; min-height: 92px; display: grid; align-content: space-between; }
+      .metric strong { display: block; font-size: 22px; line-height: 1.15; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+      .panel { padding: 18px; }
+      .wide { grid-column: 1 / -1; }
+      ul { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+      li { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 9px; align-items: start; }
+      .dot { width: 9px; height: 9px; margin-top: 7px; border-radius: 99px; background: #aeb7b2; }
+      .done { background: #1b716c; }
+      .active { background: #b7791f; }
+      .blocked { background: #b33a32; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      th, td { padding: 10px 8px; border-bottom: 1px solid #e3e9e5; text-align: left; vertical-align: top; }
+      th { color: #66727a; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+      .commands { display: grid; gap: 8px; margin-top: 12px; }
+      .command { border: 1px solid #e3e9e5; border-radius: 8px; padding: 10px; background: #fbfcfb; }
+      .command code { display: block; margin-top: 5px; }
+      @media (max-width: 840px) {
+        .hero, .grid, .metrics { grid-template-columns: 1fr; }
+        .percent { font-size: 42px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="muted">Last updated: 2026-05-20 13:30 EDT</p>
+          <h1>Genesis-Only Install and Railway Deployment</h1>
+          <p class="muted">Two-PR implementation tracking for Temper platform install support plus the Genesis registry, UI, live proof, and Railway packaging.</p>
+          <div class="meter" aria-label="90 percent complete"><span></span></div>
         </div>
         <div>
-          <h2>Next Checkpoint</h2>
-          <ul class="compact-list">
-            <li><span class="dot done"></span><span>Created kernel commits through <code>bd06a79c</code> for the verified Genesis primitives plus host-testable streaming SDK stubs, and bumped the app repo's <code>temper/</code> submodule gitlink to that commit.</span></li>
-            <li><span class="dot done"></span><span>Reverified through the pinned submodule: no removed action-dispatch host primitive symbols remain; app and kernel formatting passed; <code>app_registry</code>, <code>scm_ingest_pack</code>, Composite executor, WASM/local TData, Turso monotonic projection, and Genesis UI Playwright focused tests passed.</span></li>
-            <li><span class="dot done"></span><span>Fixed the <code>app_registry</code> test fixture for the pinned SDK's new <code>wasm_module</code> Context field, then reran <code>cargo test -p app_registry --lib</code> successfully.</span></li>
-            <li><span class="dot done"></span><span>Ran focused live commons and IngestPack smokes using <code>TEMPER_KERNEL_DIR=./temper</code>: RegisterNewApp, PublishNewVersion, Fork, direct-write denials, spoofing denials, and a two-client receive-pack race all passed through the pinned submodule.</span></li>
-            <li><span class="dot done"></span><span>Rebuilt all four WASM modules against the pinned SDK and updated bundle artifacts: <code>app_registry</code> <code>07b72c28...</code>, <code>scm_ingest_pack</code> <code>001ca487...</code>, <code>git_receive_pack</code> <code>869a90ae...</code>, and <code>git_upload_pack</code> <code>e081b36e...</code>.</span></li>
-            <li><span class="dot done"></span><span>Re-ran the high-volume live IngestPack smoke through the pinned submodule and refreshed bundle: 1000 files, 1003 git objects, 1000 Blobs, 1 Commit, 2 Trees, Ref <code>d33aacd3...</code>, and clone/readback passed.</span></li>
-            <li><span class="dot done"></span><span>Loaded the live <code>/genesis</code> route from the pinned-submodule server on desktop and mobile Playwright viewports with no page errors, no console errors, and no horizontal overflow.</span></li>
-            <li><span class="dot done"></span><span>Re-ran the full-count commons tenant mixed stress through the pinned submodule: 16 RegisterNewApp, 16 PublishNewVersion, 16 Fork, 6 denial checks, 232 verification checks, and max action attempts stayed at 1.</span></li>
-            <li><span class="dot done"></span><span>Re-ran the registry stress scripts against the pinned-submodule server with <code>default</code>, <code>beta</code>, and <code>gamma</code> loaded: cross-tenant shared IDs, 40 App.Fork composites, and 80 mixed Register/Publish actions all passed with stable object-count invariants.</span></li>
-            <li><span class="dot done"></span><span>Re-ran <code>cargo test -p genesis-registry</code>: 14 Closure/registry library tests and 6 <code>closure-id</code> CLI integration tests passed.</span></li>
-            <li><span class="dot done"></span><span>Rendered the updated tracker over local HTTP in the in-app browser and Playwright desktop/mobile viewports: new run IDs and registry test counts were visible, with no console errors and no horizontal overflow.</span></li>
-            <li><span class="dot done"></span><span>Unblocked and ran full host-target <code>cargo test --workspace</code>: 158 tests passed across registry, canonical, wire, app_registry, scm_ingest_pack, git_receive_pack, git_upload_pack, and the pinned SDK; doctests passed or were intentionally ignored.</span></li>
-            <li><span class="dot done"></span><span>Re-ran focused commons against the refreshed bundles: run <code>1779194709-4602</code>, 2 RegisterNewApp, 2 PublishNewVersion, 2 Fork, 6 denial checks, and 36 verification checks passed.</span></li>
-            <li><span class="dot done"></span><span>Re-ran the 1000-file live IngestPack smoke against the refreshed bundles: run <code>1779194777-7036</code>, 1003 git objects, 1000 Blobs, 1 Commit, 2 Trees, <code>push_ms=8616</code>, Ref <code>03975159...</code>, and clone/diff passed.</span></li>
-            <li><span class="dot done"></span><span>Closed the explicit 50-object IngestPack latency gate on the rebuilt release server: run <code>1779222798-79684</code> completed at <code>push_ms=68</code>, receive-pack POST <code>9ms</code>, composite batch <code>3ms</code>; repeat run <code>1779222812-80483</code> completed at <code>push_ms=75</code>, receive-pack POST <code>10ms</code>, composite batch <code>4ms</code>.</span></li>
-            <li><span class="dot done"></span><span>Live-verified the Composite ref-delete fix after release rebuild: pushing <code>:main</code> through smart HTTP persisted the Ref as <code>Deleted</code> at sequence 3 and completed receive-pack in <code>17ms</code> without trying to reload a tombstoned actor.</span></li>
-            <li><span class="dot done"></span><span>Closed the legacy ADR-0050 liveness verification gap: added explicit <code>allow_indefinite_states</code> coverage to the long-lived legacy specs, then ran <code>verify_specs</code> with 18/18 specs passing and <code>temper verify --specs-dir specs</code> with all IOA cascade levels passing.</span></li>
-            <li><span class="dot done"></span><span>Re-ran <code>scripts/live-commons-tenant-mixed-stress-smoke.sh</code>: 16 RegisterNewApp, 16 PublishNewVersion, 16 Fork, 6 denial checks, and 232 tenant-local projection/object checks passed across <code>default</code>/<code>beta</code>.</span></li>
-            <li><span class="dot done"></span><span>Re-ran live IngestPack smokes: the two-client branch-create race accepted exactly one push and rolled back the loser's unique objects; the 1000-file / 1003-object high-volume push persisted 1000 Blobs, 1 Commit, 2 Trees, matched the Ref, and cloned back cleanly.</span></li>
-            <li><span class="dot done"></span><span>Opened the live <code>/genesis</code> route from the Temper binary with Playwright: the Genesis Registry UI loaded from the served build with no browser/page errors and no horizontal overflow.</span></li>
-            <li><span class="dot done"></span><span>Confirmed server starts cleanly with the Genesis specs loaded.</span></li>
-            <li><span class="dot done"></span><span>Created and read back Owner/App/Lineage/Closure/RateLimit rows through live HTTP.</span></li>
-            <li><span class="dot done"></span><span>Live-tested Repository.IngestPack with full-pack, thin-pack, ref-create, packless ref-create, and packless ref-delete payloads.</span></li>
-            <li><span class="dot done"></span><span>Moved inbound git receive-pack off per-object fanout and onto the spec-first IngestPack path.</span></li>
-            <li><span class="dot done"></span><span>Verified tenant policy reloads preserve the built-in System Cedar permit, so unauthenticated smart-HTTP receive-pack can apply spec-declared IngestPack sub-writes without a WASM action-dispatch primitive.</span></li>
-            <li><span class="dot done"></span><span>Verified a live feature-branch push updates both Ref.TargetCommitSha and an open PullRequest head through declared Composite sub-writes.</span></li>
-            <li><span class="dot done"></span><span>Verified live App.Fork creates the four registry rows and leaves Blob/Tree/Commit/Tag counts unchanged.</span></li>
-            <li><span class="dot done"></span><span>Verified live App.PublishNewVersion updates both the backing Ref and App.LatestVersionHash.</span></li>
-            <li><span class="dot done"></span><span>Verified live App.RegisterNewApp creates an App row from an existing Repository and default Ref.</span></li>
-            <li><span class="dot done"></span><span>Verified <code>app_registry</code> parallel multi-action producer determinism: 16 simultaneous Register/Fork/Publish envelope builds preserve contracts, ID uniqueness, and no-copy fork behavior.</span></li>
-            <li><span class="dot done"></span><span>Verified live HTTP/kernel registry concurrency: 12 concurrent bound App composites across RegisterNewApp, Fork, and PublishNewVersion produced the expected App, Repository, Ref, and Lineage rows with 32 assertions.</span></li>
-            <li><span class="dot done"></span><span>Added and ran <code>scripts/live-registry-cross-tenant-smoke.sh</code>: 36 shared-id Owner/Repository/App writes across <code>default</code>, <code>beta</code>, and <code>gamma</code> verified 78 tenant-local read/count assertions.</span></li>
-            <li><span class="dot done"></span><span>Added and ran <code>scripts/live-registry-composite-stress-smoke.sh</code>: 40 live App.Fork bound actions verified 160 Repository/Ref/App/Lineage sub-write rows, retried optimistic parent-journal conflicts with stable idempotency keys, and left Blob/Tree/Commit/Tag counts unchanged.</span></li>
-            <li><span class="dot done"></span><span>Added and ran <code>scripts/live-registry-mixed-action-stress-smoke.sh</code>: 40 live RegisterNewApp and 40 live PublishNewVersion bound actions verified 288 App/Repository/Ref projections, needed no retries, and left Blob/Tree/Commit/Tag counts unchanged.</span></li>
-            <li><span class="dot done"></span><span>Added and ran <code>scripts/live-commons-tenant-mixed-stress-smoke.sh</code>: commons mode denied direct App/Repository mutation and spoofed action_context headers, then ran RegisterNewApp, PublishNewVersion, and Fork across <code>default</code>/<code>beta</code> with 232 tenant-local projection/object checks.</span></li>
-            <li><span class="dot done"></span><span>Fixed durable single-entity OData reads after cold restart and sequence-monotonic query projection upserts so stale background dispatch projections cannot overwrite fresher Composite catalog rows.</span></li>
-            <li><span class="dot done"></span><span>Strengthened and ran <code>scripts/live-ingestpack-concurrency-smoke.sh</code>: two real git clients raced unrelated root commits to the same empty branch; exactly one push succeeded, the winning object rows were present, the losing push's unique Commit/Tree/Blob rows were absent, the stored Ref matched the winner, and clone returned the winning commit.</span></li>
-            <li><span class="dot done"></span><span>Added and ran <code>scripts/live-ingestpack-high-volume-smoke.sh</code>: a 1000-file / 1003-object smart-HTTP push persisted 1000 Blobs, 1 Commit, 2 Trees, matched the Ref to the pushed commit, and cloned/diffed cleanly.</span></li>
-            <li><span class="dot done"></span><span>Verified composite sub-write idempotency survives server restart and replay.</span></li>
-            <li><span class="dot done"></span><span>Verified commons mode denies direct App/Repository collection creates while allowing App.Fork through declared Composite sub-writes.</span></li>
-            <li><span class="dot done"></span><span>Verified a denied later Composite sub-write leaves earlier sub-write journals empty during preflight.</span></li>
-            <li><span class="dot done"></span><span>Verified live commons RateLimit bucket on a rebuilt binary: first owner write succeeds, second returns 429, the bucket persists Tokens=0, and the denied row is absent.</span></li>
-            <li><span class="dot done"></span><span>Verified same-owner cross-tenant RateLimit isolation: exhausted <code>default/alice/write</code> does not block <code>beta/alice/write</code>, and beta then exhausts its own bucket independently.</span></li>
-            <li><span class="dot done"></span><span>Verified live commons storage cap on a rebuilt binary: first raw Blob ingest succeeds, second returns 413 StorageCapExceeded, and only the accepted Blob row exists.</span></li>
-            <li><span class="dot done"></span><span>Verified cached storage projection invalidation: two accepted raw Blob writes fill the cap and the third write returns 413 after cache refresh.</span></li>
-            <li><span class="dot done"></span><span>Verified live commons account gating: pending Owner raw Blob ingest returns 403 AccountVerificationRequired, MarkVerified moves the Owner to Verified, and the same ingest then succeeds.</span></li>
-            <li><span class="dot done"></span><span>Verified backend account provider persistence: <code>MarkVerified</code> stores provider, subject, timestamp, and <code>Verified</code> status before owner-scoped writes resume.</span></li>
-            <li><span class="dot done"></span><span>Built Genesis web UI under <code>web/</code> and served its production build from Temper at <code>/genesis</code>.</span></li>
-            <li><span class="dot done"></span><span>Live browser-smoked Genesis UI against a populated commons kernel: browse, lineage DAG, fork compare, install copy, closure rendering, account claim, desktop/mobile no-overflow, and console-clean render all passed.</span></li>
-            <li><span class="dot done"></span><span>Added repository Playwright coverage for the Genesis UI: mocked OData Apps/Owners/Lineages/Closures, desktop/mobile browse, lineage, fork compare, install command, closure pins, provider-aware account namespace claim, localStorage persistence, no console/page errors, and no horizontal overflow.</span></li>
-            <li><span class="dot done"></span><span>Added provider-aware account claim UI: namespace claims now choose email magic link, OAuth, or manual review, send <code>VerificationProvider</code>/<code>VerificationSubject</code> to the Owner.Create row, persist those fields locally, and display provider/subject/verified status for owners.</span></li>
-            <li><span class="dot done"></span><span>Re-verified commons direct App.Create remains denied with 403 while the UI is mounted.</span></li>
-            <li><span class="dot done"></span><span>Verified live commons owner-scoped App name uniqueness: duplicate <code>alice/Notes</code> returns 409 <code>AppNameAlreadyExists</code>, and the duplicate row remains absent.</span></li>
-            <li><span class="dot done"></span><span>Verified live commons App publish ownership: Alice gets 403 on Bob's App, Bob succeeds, and both App.LatestVersionHash and the backing Ref advance.</span></li>
-            <li><span class="dot done"></span><span>Verified persisted Composite transition preflight: a later invalid sub-write is rejected before an earlier sub-write writes any journal events, while idempotent replay still passes.</span></li>
-            <li><span class="dot done"></span><span>Verified commons storage-cap concurrency: two simultaneous 4-byte raw Blob writes under a 4-byte owner cap produce one 201, one 413 <code>StorageCapExceeded</code>, and one Blob row.</span></li>
-            <li><span class="dot done"></span><span>Verified commons App-name Composite race: two concurrent <code>App.Create</code> sub-writes for <code>alice/Notes</code> produce exactly one App row, one fail-closed conflict, one parent <code>CompositeEvent</code>, and one empty losing parent journal.</span></li>
-            <li><span class="dot done"></span><span>Verified concurrent multi-entity Composite stress: 12 simultaneous callbacks persisted 48 Child/App sub-writes atomically, with exactly one parent <code>CompositeEvent</code> per composite.</span></li>
-            <li><span class="dot done"></span><span>Added deterministic Closure ID helper/CLI under <code>registry/</code> with stable root + resolved graph + resolver version hashing.</span></li>
-            <li><span class="dot done"></span><span>Added local <code>app.toml</code> closure resolver: locked transitive <code>[deps]</code> produce a stable closure ID and bootstrap manifest line, while missing or conflicting manifests fail closed.</span></li>
-            <li><span class="dot done"></span><span>Added remote registry-backed <code>closure-id resolve-registry</code>: fetches <code>/tdata/Apps</code>, skips non-registry platform App rows, resolves explicit <code>Exports.deps</code>/<code>Exports.dependencies</code> pins, and fails closed on ambiguous names or stale hashes.</span></li>
-            <li><span class="dot done"></span><span>Added historical app-version resolver <code>closure-id resolve-registry-version</code>: fetches App, Commit, TreeEntry, and Blob rows, reads <code>app.toml</code> from the pinned commit tree, and resolves transitive locked deps from repository bytes.</span></li>
-            <li><span class="dot done"></span><span>Verified <code>closure-id</code> returns the same <code>cl-47fd4d...</code> ID with dependencies passed in different orders and with the default resolver version.</span></li>
-            <li><span class="dot done"></span><span>Verified live resolver output can create and read back a fresh Closure row: <code>cl-a71f1...</code> POST returned 201 and entity GET returned 200.</span></li>
-            <li><span class="dot done"></span><span>Verified live registry resolver path on a fresh Temper server: created three App rows over OData, resolved them through <code>resolve-registry</code>, then POSTed and read back the resulting Closure row.</span></li>
-            <li><span class="dot done"></span><span>Verified live historical version resolver on a fresh Temper server: created App/Commit/TreeEntry/Blob rows over OData, resolved <code>paw-ui@old-ui</code> from repository <code>app.toml</code> bytes, then POSTed and read back <code>cl-4b0e64...</code>.</span></li>
-            <li><span class="dot done"></span><span>Added 128-app historical registry graph stress coverage: reversed App/Commit/TreeEntry/Blob row order still produces the same Closure ID and resolved map.</span></li>
-            <li><span class="dot done"></span><span>Verified live registry-scale historical Closure stress on a fresh Temper server: 192 App/Commit/TreeEntry/Blob OData rows, 48 resolved apps, Closure <code>cl-ead551...</code> POST 201 and GET 200.</span></li>
-            <li><span class="dot done"></span><span>Verified live real-pack Closure resolution on a fresh Temper server: unauthenticated smart-HTTP pushes created App repository objects, <code>resolve-registry-version</code> read <code>app.toml</code> through canonical Tree rows, Closure <code>cl-d11293...</code> persisted, and a fresh clone matched the expected files.</span></li>
-            <li><span class="dot done"></span><span>Verified live Closure persistence on a fresh Temper server: POST returned 201, entity GET returned 200, and collection GET showed the derived Closure row.</span></li>
-            <li><span class="dot done"></span><span>Added backend-neutral <code>append_batch</code> event-store API for atomic multi-journal writes across the runtime trait and server storage adapter.</span></li>
-            <li><span class="dot done"></span><span>Implemented atomic <code>append_batch</code> for Sim, Postgres, Turso, and routed Turso, with Redis explicitly failing rather than partially writing unsupported batches.</span></li>
-            <li><span class="dot done"></span><span>Verified Sim <code>append_batch</code> conflict behavior: a later-stream sequence conflict leaves the earlier journal empty.</span></li>
-            <li><span class="dot done"></span><span>Wired persistent Composite sub-writes through atomic <code>append_batch</code> and actor reload instead of sequential per-actor persistence.</span></li>
-            <li><span class="dot done"></span><span>Verified injected Composite batch conflict behavior: a later-stream conflict leaves all sub-write journals empty.</span></li>
-            <li><span class="dot done"></span><span>Re-live-smoked App.Fork and App.PublishNewVersion on a fresh rebuilt server after atomic batch wiring and Cedar action_context policy tightening.</span></li>
-            <li><span class="dot done"></span><span>Verified live App.Fork persists a parent <code>CompositeEvent</code> with 4 sub-writes, then replays after restart without polluting entity fields.</span></li>
-            <li><span class="dot done"></span><span>Added fail-closed startup closure manifest boot: wrong <code>cl-...</code> aborts, matching <code>cl-d3a444...</code> installs <code>temper-git</code> from the startup closure.</span></li>
-            <li><span class="dot active"></span><span>Broader rollback/stress hardening and fuller UI/provider regression coverage remain useful before final PR landing.</span></li>
+          <div class="percent">90%</div>
+          <p class="muted">Local implementation, verification, and PR targets are ready. Railway deployment is blocked by CLI authentication.</p>
+        </div>
+      </header>
+
+      <section class="metrics">
+        <div class="metric"><span class="muted">Temper PR</span><strong><a href="https://github.com/nerdsane/temper/pull/257">#257</a></strong><span class="muted">Branch: feat/genesis-kernel-primitives</span></div>
+        <div class="metric"><span class="muted">Genesis PR</span><strong><a href="https://github.com/nerdsane/temper-git/pull/5">#5</a></strong><span class="muted">Branch: feat/genesis</span></div>
+        <div class="metric"><span class="muted">Local E2E</span><strong>Pass</strong><span class="muted">OData, TemperPaw-shaped, CLI, restart recovery</span></div>
+        <div class="metric"><span class="muted">Railway E2E</span><strong>Blocked</strong><span class="muted"><code>railway whoami</code> is unauthorized</span></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Done</h2>
+          <ul>
+            <li><span class="dot done"></span><span>Removed the direct WASM <code>host_call</code> path from the active architecture; app install now enters through spec-owned <code>App.Install</code>.</span></li>
+            <li><span class="dot done"></span><span>Added <code>App.Install</code> and <code>AppInstallation</code> in Genesis specs, CSDL, Cedar, and app registry WASM.</span></li>
+            <li><span class="dot done"></span><span>Added Temper post-action install support that materializes pinned Genesis commit trees, installs into the target tenant, and records success/failure.</span></li>
+            <li><span class="dot done"></span><span>Persisted Genesis install refs so target tenants recover from storage without GitHub, local app dirs, submodules, symlinks, or production catalog auto-install.</span></li>
+            <li><span class="dot done"></span><span>Removed runtime app-as-skill aliases and bypass sources: <code>--skill</code>, <code>/api/skills</code>, <code>TEMPER_APP_SOURCES</code>, <code>TEMPER_SKILLS_DIR</code>, legacy <code>./skills</code>, and production catalog auto-install.</span></li>
+            <li><span class="dot done"></span><span>Updated the Genesis UI into a cleaner registry workbench with GitHub-like file browsing and copyable install commands.</span></li>
+            <li><span class="dot done"></span><span>Added root Railway packaging: <code>Dockerfile</code>, <code>.dockerignore</code>, and <code>railway.toml</code>.</span></li>
           </ul>
-        </div>
-      </article>
-    </section>
+        </article>
 
-    <div class="repo-strip" aria-label="Worktrees">
-      <span class="repo">temper-git: /Users/seshendranalla/Development/temper-git-worktrees/genesis</span>
-      <span class="repo">temper: /Users/seshendranalla/Development/temper-worktrees/genesis-kernel-primitives</span>
-    </div>
+        <article class="panel">
+          <h2>Remaining</h2>
+          <ul>
+            <li><span class="dot active"></span><span>Use the existing two PRs only: Temper <a href="https://github.com/nerdsane/temper/pull/257">#257</a> and Genesis <a href="https://github.com/nerdsane/temper-git/pull/5">#5</a>.</span></li>
+            <li><span class="dot blocked"></span><span>Refresh Railway authentication, link/create the dedicated Genesis service, attach Railway Postgres, deploy, and run the public URL smoke.</span></li>
+            <li><span class="dot"></span><span>After Railway auth is available, verify <code>/healthz</code>, <code>/genesis/</code>, OData metadata, app registration, <code>App.Install</code>, installed app usability, and restart recovery on the public service.</span></li>
+          </ul>
+        </article>
 
-    <section class="phase-grid" aria-label="Plan phases">
-      <article class="phase">
-        <div class="phase-top">
-          <h3>Phase 1 · Composite primitive</h3>
-          <span class="badge done">complete</span>
-        </div>
-        <div class="phase-meter"><div style="--value: 100%; --phase-color: var(--green)"></div></div>
-        <p>Parser/JIT metadata, composite action declarations, Cedar action_context propagation, inherited-authority local TData reads, caller-supplied sub-write rejection, integration-result sub-write dispatch, explicit sub-write authorization, whole-result sub-write auth preflight, whole-result transition preflight, stable implicit sub-write idempotency, durable sub-write idempotency replay, atomic multi-journal event-store append, and parent-journal <code>CompositeEvent</code> persistence/replay skip are in place. Persistent Composite sub-writes now use the atomic batch path, write one replay-safe parent audit event, reload affected actors after durable append, publish staged Composite state to the query plane, and ignore stale projection upserts with older sequence numbers. A concurrent commons App-name race regression covers one shared guardrail path, and a concurrent multi-entity stress regression covers 12 simultaneous Composite callbacks and 48 total sub-writes; broader production-load actor stress remains.</p>
-      </article>
+        <article class="panel">
+          <h2>How TemperPaw Uses Genesis</h2>
+          <ul>
+            <li><span class="dot done"></span><span>TemperPaw resolves a pinned Genesis app ref like <code>owner/app@hash</code>.</span></li>
+            <li><span class="dot done"></span><span>It calls the spec-owned OData action <code>POST /tdata/Apps('app-owner-app')/App.Install</code> with the target tenant.</span></li>
+            <li><span class="dot done"></span><span>The equivalent CLI is <code>temper install owner/app@hash --tenant default --url https://genesis.example</code>.</span></li>
+            <li><span class="dot done"></span><span>Only helper skills remain as skills; Temper apps and agent skills inside those apps are loaded from installed Genesis app bundles.</span></li>
+          </ul>
+        </article>
 
-      <article class="phase">
-        <div class="phase-top">
-          <h3>Phase 2 · Spec-owned actions</h3>
-          <span class="badge todo">removed</span>
-        </div>
-        <div class="phase-meter"><div style="--value: 0%; --phase-color: var(--muted)"></div></div>
-        <p>The proposed WASM action-dispatch host function was removed from Temper after architectural review. Genesis routes behavior through spec-defined actions, inline action triggers, integrations that return result envelopes, and kernel-enforced composite sub-writes. Final scans for direct dispatch symbols remain clean.</p>
-      </article>
+        <article class="panel">
+          <h2>Install Surfaces</h2>
+          <div class="commands">
+            <div class="command">
+              <strong>OData</strong>
+              <code>POST /tdata/Apps('app-owner-name')/App.Install</code>
+            </div>
+            <div class="command">
+              <strong>Temper CLI</strong>
+              <code>temper install owner/name@hash --tenant default --url https://genesis.example</code>
+            </div>
+            <div class="command">
+              <strong>TemperPaw tool</strong>
+              <code>install_app({"source":"genesis","app_ref":"owner/name@hash","tenant":"default","url":"https://genesis.example"})</code>
+            </div>
+          </div>
+        </article>
 
-      <article class="phase">
-        <div class="phase-top">
-          <h3>Phase 3 · Registry entities</h3>
-          <span class="badge active">verified</span>
-        </div>
-        <div class="phase-meter"><div style="--value: 99%; --phase-color: var(--green)"></div></div>
-        <p>Owner, App, Lineage, Closure, and RateLimit specs, CSDL entries, and operator-mode Cedar policies have been added. Live HTTP create/read smoke passed for all five new entity sets. Closure ID derivation now has a deterministic helper/CLI, local locked <code>app.toml</code> graph resolver, remote registry-backed App-row resolver, historical pinned-commit <code>app.toml</code> resolver, live create/read evidence for derived <code>cl-...</code> rows, registry-scale historical graph stress coverage, and a kernel startup manifest verifier that boots the current startup OS-app closure only when the pinned <code>cl-...</code> matches. App.RegisterNewApp now creates App metadata from an existing Repository/default Ref through declared App.Create sub-writes. App.Fork returns declared Repository, Ref, App, and Lineage sub-writes without copying Blob/Tree/Commit/Tag rows. App.PublishNewVersion returns declared Ref.Update and App.Update sub-writes. All three App composite paths are live-verified individually and under a concurrent 12-action HTTP/kernel smoke, the <code>app_registry</code> result producer has parallel multi-action deterministic contract coverage, live cross-tenant registry row stress verified shared IDs stay tenant-local across default/beta/gamma, live App.Fork composite stress verified 40 forks and 160 sub-write rows with stable object counts, and live mixed Register/Publish stress verified 80 bound actions and 288 readback checks with stable object counts.</p>
-      </article>
-
-      <article class="phase">
-        <div class="phase-top">
-          <h3>Phase 4 · IngestPack</h3>
-          <span class="badge done">latency gate passed</span>
-        </div>
-        <div class="phase-meter"><div style="--value: 100%; --phase-color: var(--green)"></div></div>
-        <p>Repository.IngestPack now has a spec trigger and <code>scm_ingest_pack</code> WASM module that returns sub-write data, including thin ref-delta packs that read existing bases through local TData and ref-only operations with omitted pack bytes. The smart-HTTP receive-pack route now bridges into Repository.IngestPack without a WASM action-dispatch path. Live full-pack, thin-pack, Ref.Create, packless Ref.Create/Delete, PR-head UpdateHead, git push, OData readback, plain git clone verification, two-client concurrent push race plus loser-object rollback verification, and 1000-file / 1003-object high-volume push verification passed. The ref-delete path was reverified after the tombstone reload fix: pushing <code>:main</code> persisted the Ref as <code>Deleted</code>. The explicit 50-object latency gate passed on the rebuilt release server: receive-pack POST measured <code>9ms</code> and <code>10ms</code> on repeat fresh-repository runs against the planned <code>&le;15ms</code>.</p>
-      </article>
-
-      <article class="phase">
-        <div class="phase-top">
-          <h3>Phase 5 · Commons mode</h3>
-          <span class="badge active">partial</span>
-        </div>
-        <div class="phase-meter"><div style="--value: 89%; --phase-color: var(--amber)"></div></div>
-        <p>Commons mode now has an app-loader mode switch, commons-only Cedar policy overlays, commons collection-create authorization, live denial of direct App/Repository creates, spoofed action_context denial, per-owner write RateLimit token-bucket middleware backed by RateLimit rows, same-owner cross-tenant RateLimit isolation coverage, cached per-owner Blob storage cap checks with commons write serialization to close check/write races, verified-owner gating for owner-scoped writes, owner-scoped App name uniqueness on direct writes, Composite sub-writes, and concurrent Composite races, and owner-scoped App publish/update/delete guardrails. Owner now has PendingVerification, Verified, and Suspended lifecycle states plus provider/subject/VerifiedAt fields and a MarkVerified action, with backend coverage that the verification profile persists before writes resume. App.RegisterNewApp, App.Fork, and App.PublishNewVersion now pass a mixed commons stress smoke across <code>default</code>/<code>beta</code> with direct-write denials, spoofing denials, 48 customer Composite actions, 232 projection/object checks, and stable Blob/Tree/Commit/Tag counts. Broader repeated soak remains.</p>
-      </article>
-
-      <article class="phase">
-        <div class="phase-top">
-          <h3>Phase 6 · Genesis UI</h3>
-          <span class="badge active">partial</span>
-        </div>
-        <div class="phase-meter"><div style="--value: 72%; --phase-color: var(--amber)"></div></div>
-        <p>A SvelteKit static app now lives under <code>web/</code> and Temper serves it at <code>/genesis</code> when <code>TEMPER_GENESIS_WEB_DIR</code> is configured. The UI browses Apps, Owners, Lineages, and Closures through OData; renders app detail, lineage DAG, fork compare, install copy controls, closure pins, and provider-aware account namespace claim; has live desktop/mobile browser smoke evidence; and now has repository Playwright desktop/mobile regression coverage. Remaining UI work is broader provider rollout beyond this spec-backed claim surface.</p>
-      </article>
-    </section>
-
-    <section class="verification-grid" aria-label="Verification">
-      <article class="verification">
-        <h3>Passing Checks</h3>
-        <table class="check-table">
-          <thead>
-            <tr>
-              <th>Area</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>temper-spec composite metadata parser test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-jit composite metadata table test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-authz action_context test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server spec-first composite dispatch tests</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>direct caller-supplied Composite sub_writes rejected</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>WASM action-dispatch primitive removed from changed Temper crates</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>direct action-dispatch import/wrapper symbols absent from Temper</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>checked-out Temper submodule has no direct action-dispatch symbols</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>generic WASM host timeout helper and HTTP test names use host-function wording in checked-out submodule</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>tracker and WASM policy wording updated to spec-owned action architecture</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-git canonical/wire tests + WASM target builds</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Repository.IngestPack spec-trigger pack-to-Blob flow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live thin ref-delta pack resolves existing Blob through inherited local TData reads</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Repository.IngestPack full-pack Ref.Create writes main ref</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live packless Ref.Create/Ref.Delete through Composite contract</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-ingestpack-concurrency-smoke.sh</code>: live two-client git push race, one accepted, one rejected, winner object rows present, loser unique object rows absent, Ref and clone match the winner</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live IngestPack rollback evidence: rejected concurrent push left its unique Commit, Tree, and Blob rows absent after Ref CAS conflict</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-ingestpack-high-volume-smoke.sh</code>: refreshed-bundle run <code>1779194777-7036</code>, live 1000-file / 1003-object git push persisted 1000 Blobs, 1 Commit, 2 Trees; Ref <code>03975159...</code> matched, <code>push_ms=8616</code>, and clone diff passed</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-ingestpack-high-volume-smoke.sh</code> with <code>FILE_COUNT=50</code>: latest rebuilt release-server run <code>1779207928-88144</code> persisted 50 Blobs, 1 Commit, 2 Trees, matched Ref <code>da203544...</code>, and clone diff passed</td>
-              <td><span class="pill pass">pass correctness; <code>push_ms=147</code></span></td>
-            </tr>
-            <tr>
-              <td>temper-server composite implicit idempotency regression test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server HttpEndpoint action bridge route tests</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>git_receive_pack WASM emits action params instead of fanout writes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>git_upload_pack derives local API base from inbound Host header</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>git_upload_pack advertises default-branch HEAD for plain clone checkout</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>scm_ingest_pack projects Ref.TargetCommitSha and filters open PR statuses</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Repository.IngestPack second feature push updates Ref.TargetCommitSha</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Repository.IngestPack PullRequest.UpdateHead updates open PR head</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>app_registry App.RegisterNewApp, App.Fork, and App.PublishNewVersion sub-write contract unit tests</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>app_registry parallel multi-action producer determinism: 16 concurrent Register/Fork/Publish envelope builds preserve contracts and unique IDs</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p app_registry --lib</code> after inline action triggers and configurable Temper API base</td>
-              <td><span class="pill pass">pass; 13 tests</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p app_registry --check</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p app_registry</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>app_registry wasm32-wasip1 target build</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>app_registry wasm32-wasip1 release rebuild after parallel multi-action producer coverage</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Goal tracker desktop/mobile render after app_registry producer update: count and multi-action text visible, no console errors, no horizontal overflow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p temper-server dispatch::wasm --lib</code> after WASM config injection for <code>temper_api_url</code></td>
-              <td><span class="pill pass">pass; 20 tests</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p temper-server odata::read_support --lib</code> after durable catalog-backed single-entity reads</td>
-              <td><span class="pill pass">pass; 10 tests</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p temper-store-turso stale_projection_upsert_does_not_overwrite_newer_catalog_row</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p temper-store-postgres --lib --no-run</code> after sequence-monotonic projection upsert guard</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p temper-server state::dispatch::composite --lib</code> after staged Composite query projection update</td>
-              <td><span class="pill pass">pass; 14 tests</span></td>
-            </tr>
-            <tr>
-              <td>live App.Fork creates Repository, Ref, App, and Lineage without object copies</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live App.PublishNewVersion advances backing Ref and App.LatestVersionHash</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live App.RegisterNewApp creates App metadata from existing Repository/default Ref</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live HTTP/kernel registry concurrency: 12 concurrent RegisterNewApp/Fork/PublishNewVersion bound actions with 32 persisted App/Repository/Ref/Lineage assertions</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-registry-cross-tenant-smoke.sh</code>: run <code>1779193911-78442</code>, 36 shared-id Owner/Repository/App writes across default/beta/gamma with 78 tenant-local read/count assertions</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-registry-composite-stress-smoke.sh</code>: run <code>1779193928-80806</code>, 40 live App.Fork bound actions with parallelism 6 verified 160 Repository/Ref/App/Lineage rows; total POST attempts 73, max attempts for one fork 3, Blob/Tree/Commit/Tag counts stayed 0/0/0/0</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-registry-mixed-action-stress-smoke.sh</code>: run <code>1779193951-82818</code>, 40 live RegisterNewApp plus 40 live PublishNewVersion bound actions with parallelism 8 verified 288 App/Repository/Ref projections; register POST attempts 40, publish POST attempts 40, max attempts for one action 1, Blob/Tree/Commit/Tag counts stayed 0/0/0/0</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-commons-tenant-mixed-stress-smoke.sh</code> focused run: 2 RegisterNewApp, 2 PublishNewVersion, 2 Fork, 6 denial checks, 36 projection/object checks, max attempts 1</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>scripts/live-commons-tenant-mixed-stress-smoke.sh</code> full run: 16 RegisterNewApp, 16 PublishNewVersion, 16 Fork, 6 direct/spoof denial checks, 232 projection/object checks, max attempts 1</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Goal tracker desktop/mobile render after mixed Register/Publish stress update: count and script text visible, no console errors, no page errors, no horizontal overflow, and rejected action-dispatch symbols absent</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Goal tracker desktop/mobile render after App.Fork composite stress update: count and script text visible, no console errors, no page errors, no horizontal overflow, and rejected action-dispatch symbols absent</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Goal tracker local HTTP render after pinned-submodule registry rerun: updated timestamp, run IDs, and <code>genesis-registry</code> test counts visible in browser plus desktop/mobile Playwright; no console errors or horizontal overflow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server durable idempotency replay for Composite sub-writes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live App.Fork replay after server restart does not duplicate child sub-write events</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-platform commons manifest overlay loader tests</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server Composite sub-write Cedar action_context authorization test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server Composite sub-write authorization preflight leaves denied result with empty child journals</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons mode denies direct Repository collection create</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons mode denies direct App collection create</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons App.Fork creates Repository, Ref, App, and Lineage through declared sub-writes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper binary rebuild after commons guardrail changes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons mode rejects spoofed X-Temper-Action-Context direct create</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> after Composite preflight refactor</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons RateLimit HTTP 429 regression covers per-owner and same-owner cross-tenant buckets</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p temper-server --check</code> after same-owner tenant RateLimit isolation regression</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server --features sim</code> after same-owner tenant RateLimit isolation regression</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Goal tracker desktop/mobile render after same-owner tenant RateLimit update: count and tenant text visible, no console errors, no horizontal overflow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> after RateLimit middleware</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper binary rebuild after RateLimit middleware</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons RateLimit on rebuilt binary: first owner write succeeds, second returns 429, Tokens=0, denied row absent</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons per-owner storage cap raw Blob ingest regression test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after storage-cap preflight wiring</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> after storage-cap guardrails</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper binary rebuild after storage-cap guardrails</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons storage cap: first raw Blob ingest succeeds, second returns 413, only accepted Blob row exists</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons storage projection cache invalidation regression test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> and temper binary rebuild after cached storage projection wiring</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live cached commons storage cap: two raw Blob writes fill the cap, third returns 413 after invalidation</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons account verification regression test covers pending block, MarkVerified persistence, and verified write</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p temper-server --check</code> after account-verification provider persistence assertion</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server --features sim</code> after account-verification provider persistence assertion</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>app_registry contract tests after Owner verification lifecycle changes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> and temper binary rebuild after account-verification guardrails</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons account verification: pending Owner blocked, MarkVerified succeeds, verified Owner ingest succeeds</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Genesis web <code>npm run check</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Genesis web production build</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Genesis web Playwright regression: mocked OData, desktop/mobile browse, lineage, fork compare, closure, provider-aware account claim, no console errors, no overflow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Genesis web provider-aware Owner.Create payload: <code>VerificationProvider</code>/<code>VerificationSubject</code> are posted and persisted in localStorage</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper binary rebuild after <code>/genesis</code> static route</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live <code>/genesis/</code> static route returns the SvelteKit app shell</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Genesis UI browser smoke: browse, lineage, fork compare, install, closure, and account claim</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Genesis UI desktop/mobile screenshots: no console errors, no page errors, no horizontal overflow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>commons direct App.Create denial still returns 403 with UI mounted</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons App name uniqueness OData regression test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server Composite duplicate owner/name App preflight test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> and temper binary rebuild after App name uniqueness guardrail</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons duplicate owner/name App returns 409 <code>AppNameAlreadyExists</code> and duplicate row is absent</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>final rejected action-dispatch primitive scan and whitespace diff checks across both worktrees</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p temper-server --check</code> after Composite transition preflight</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server persisted Composite transition preflight leaves earlier sub-write journal empty</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after transition preflight and idempotent replay adjustment</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> and temper binary rebuild after Composite transition preflight</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons concurrent storage-cap regression test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>commons guardrail regression group after write serialization</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after commons write serialization</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> and temper binary rebuild after commons write serialization</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons concurrent raw Blob writes: one 201, one 413 <code>StorageCapExceeded</code>, one Blob row</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-server commons concurrent Composite App-name race regression test</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after concurrent App-name race coverage</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p temper-server --check</code> after concurrent App-name race coverage</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server --features sim</code> after concurrent App-name race coverage</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p genesis-registry --check</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p genesis-registry</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p genesis-registry</code> deterministic Closure ID unit and CLI regression tests</td>
-              <td><span class="pill pass">pass; 14 lib + 6 CLI</span></td>
-            </tr>
-            <tr>
-              <td><code>closure-id resolve-local</code> unit/CLI coverage for transitive locked <code>app.toml</code> deps, missing manifests, and conflicting hashes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>closure-id resolve-registry</code> unit/CLI coverage for remote App-row deps, stale pins, ambiguous names, non-registry App rows, and HTTP fetch</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>closure-id resolve-registry-version</code> unit/CLI coverage for App → Commit → TreeEntry → Blob <code>app.toml</code> traversal, base64 Blob content, missing manifests, and HTTP fetch</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>resolve-registry-version</code> 128-app historical graph stress regression with reversed App/Commit/TreeEntry/Blob row order</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live <code>resolve-local</code> app graph smoke produced <code>cl-a71f1...</code>, canonical resolved JSON, and <code>closure = "cl-a71f1..."</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>closure-id</code> CLI produces identical <code>cl-...</code> output for reversed dependency input order</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Closure create/read with deterministic <code>cl-47fd4d...</code> ID on fresh Temper server</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live Closure create/read from local resolver output on fresh Temper server: POST 201, GET 200, fields preserved</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live registry-backed Closure resolution: OData App rows created, <code>resolve-registry</code> fetched/resolved them, Closure POST 201 and GET 200</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live historical app-version Closure resolution: OData App/Commit/TreeEntry/Blob rows created, <code>resolve-registry-version</code> resolved <code>app.toml</code> bytes, Closure POST 201 and GET 200</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live registry-scale historical Closure stress: 192 App/Commit/TreeEntry/Blob OData rows, 48 resolved apps, Closure <code>cl-ead551...</code> POST 201 and GET 200</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p temper-authz tenant_policy_reloads_keep_system_platform_policy</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo test -p genesis-registry registry_app_toml_closure_reads_real_tree_canonical_bytes</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live real-pack Closure smoke: unauthenticated smart-HTTP pushes, canonical Tree-row <code>app.toml</code> resolution, Closure <code>cl-d11293...</code> POST/GET, and clone file compare</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>rejected action-dispatch primitive scan and whitespace diff checks re-run across both worktrees</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper-runtime/server storage <code>append_batch</code> API and object-safe adapter compile</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>SimEventStore <code>append_batch</code> commits multiple journals atomically</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>SimEventStore <code>append_batch</code> later-stream conflict leaves earlier journal untouched</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>BoxedEventStore delegates <code>append_batch</code> through the dyn event-store adapter</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>focused storage crate <code>cargo check</code> after atomic append primitive</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite atomic batch conflict regression leaves all sub-write journals empty</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after persistent <code>append_batch</code> executor wiring</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite concurrent multi-entity stress regression: 12 callbacks, 48 Child/App sub-writes, one parent <code>CompositeEvent</code> each</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after concurrent multi-entity stress coverage</td>
-              <td><span class="pill pass">pass; 14 tests</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt -p temper-server --check</code> after concurrent Composite stress regression</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server --features sim</code> after concurrent Composite stress regression</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Goal tracker desktop/mobile render after concurrent Composite stress update: count and stress text visible, no console errors, no horizontal overflow</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> after Composite atomic batch wiring</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper binary rebuild after Composite atomic batch wiring</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live App.Fork after atomic batch wiring creates Repository, Ref, App, and Lineage rows</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live App.PublishNewVersion after atomic batch wiring advances Ref and App through Composite sub-write idempotency keys</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite App owner-scope sub-write authorization regression covers missing scopes</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>commons App policy hot-reload with guarded admin-scope checks</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live commons App.PublishNewVersion owner scope: Alice 403, Bob 200, App and Ref advanced</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo fmt</code>, <code>cargo check -p temper-server</code>, and temper binary rebuild after commons App owner-scope hardening</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>CompositeEvent parent-journal regression persists once and replays without field pollution</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite regression suite after replay-safe parent CompositeEvent record</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-server</code> and temper binary rebuild after CompositeEvent parent-journal wiring</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live App.Fork CompositeEvent smoke: parent journal has <code>Created</code>, <code>Fork</code>, <code>CompositeEvent</code>; restart replay stays field-clean</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>OS-app closure bootstrap manifest parser and deterministic closure unit tests</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td><code>cargo check -p temper-platform -p temper-cli</code> after closure manifest boot path</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>temper binary rebuild after closure manifest boot path</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live closure manifest mismatch fails closed before server bind</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live matching <code>TEMPER_BOOTSTRAP_MANIFEST</code> boots Genesis from <code>cl-d3a444...</code></td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>live bootstrap DB evidence: <code>tenant_installed_apps</code> has <code>temper-git</code>, 26 specs, and 4 bundled WASM modules</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>final exact direct action-dispatch primitive scans clean across Temper and temper-git worktrees</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
-
-      <article class="verification">
-        <h3>Open Verification</h3>
-        <table class="check-table">
-          <thead>
-            <tr>
-              <th>Check</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Live Genesis OData create/read against modified kernel</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Full verify_specs over temper-git bundle</td>
-              <td><span class="pill pass">pass; 18 specs in ADR-0050 enforce mode</span></td>
-            </tr>
-            <tr>
-              <td>Full host-target cargo test in temper-git</td>
-              <td><span class="pill pass">pass; <code>cargo test --workspace</code>, 158 tests plus doctests</span></td>
-            </tr>
-            <tr>
-              <td>git push/clone through new spec-first IngestPack path</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>IngestPack latency target: 50-object push on local same-machine kernel <code>&le;15ms</code></td>
-              <td><span class="pill pass">pass; release receive-pack POST <code>9ms</code> and repeat <code>10ms</code></span></td>
-            </tr>
-            <tr>
-              <td>Live OData readback after push matches cloned HEAD</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>PR-head update coverage for IngestPack</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Metadata-only App.Fork through Composite contract</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>App.PublishNewVersion through Composite contract</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>App.RegisterNewApp through Composite contract</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite sub-write replay/resume after restart</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Parent CompositeEvent audit record and replay skip after restart</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Commons direct-create guardrails</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Commons App.Fork through Composite contract</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Commons mixed RegisterNewApp/PublishNewVersion/Fork stress across tenants</td>
-              <td><span class="pill pass">pass; 48 actions, 232 checks</span></td>
-            </tr>
-            <tr>
-              <td>Composite predictable policy failure preflight</td>
-              <td><span class="pill pass">pass</span></td>
-            </tr>
-            <tr>
-              <td>Composite predictable state-transition failure preflight</td>
-              <td><span class="pill pass">pass; batch conflict regression also passing</span></td>
-            </tr>
-            <tr>
-              <td>Atomic multi-journal event-store primitive for Composite executor</td>
-              <td><span class="pill pass">pass; executor wired with parent CompositeEvent replay skip</span></td>
-            </tr>
-            <tr>
-              <td>RateLimit token-bucket middleware</td>
-              <td><span class="pill pass">pass; per-owner and same-owner cross-tenant isolation covered</span></td>
-            </tr>
-            <tr>
-              <td>Per-owner storage attribution/cap projection</td>
-              <td><span class="pill pass">pass; broader stress pending</span></td>
-            </tr>
-            <tr>
-              <td>Account verification entity/Cedar/kernel guardrail surface</td>
-              <td><span class="pill pass">pass; MarkVerified provider profile persists before writes resume</span></td>
-            </tr>
-            <tr>
-              <td>Genesis UI against populated commons kernel</td>
-              <td><span class="pill pass">pass; repository Playwright regression and provider-aware account claim UI passing</span></td>
-            </tr>
-            <tr>
-              <td>Owner-scoped App name uniqueness in commons mode</td>
-              <td><span class="pill pass">pass; direct, live, Composite preflight, and concurrent Composite race covered</span></td>
-            </tr>
-            <tr>
-              <td>Deterministic Closure ID derivation and live Closure persistence</td>
-              <td><span class="pill pass">pass; local, registry App-row, historical app.toml, startup manifest boot, and registry-scale stress paths added</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
-    </section>
-
-    <section class="notes" aria-label="Implementation notes">
-      <h3>Known Gaps</h3>
-      <ul class="compact-list">
-        <li><span class="dot done"></span><span>Submodule alignment is done locally: the kernel primitive work is committed through <code>bd06a79c</code>, the app repo's <code>temper/</code> gitlink points at that commit, and focused commons plus IngestPack smokes passed using the pinned submodule as <code>TEMPER_KERNEL_DIR</code>.</span></li>
-        <li><span class="dot active"></span><span>Composite action metadata dispatches declared sub-writes from integration results, authorizes them with composite action_context, preflights predictable sub-write authorization and transition failures before dispatch, persists sub-write idempotency through replay, commits persistent sub-writes through atomic multi-journal <code>append_batch</code>, writes a replay-safe parent <code>CompositeEvent</code> audit record, and now covers a concurrent commons App-name race plus 12 simultaneous multi-entity Composite callbacks with 48 total sub-writes. The remaining kernel gap is broader production-load actor stress; historical failed-fork rows from before the preflight/atomic path may still exist in older smoke databases.</span></li>
-        <li><span class="dot active"></span><span>App.RegisterNewApp, App.Fork, and App.PublishNewVersion are implemented and live-verified; <code>app_registry</code> has parallel multi-action deterministic producer coverage; registry rows now have live shared-id cross-tenant stress coverage; a 40-fork live App.Fork composite stress smoke verifies 160 sub-write rows without object copies; a mixed 80-action live Register/Publish stress smoke verifies 288 projections without object writes; commons mixed-action stress verifies RegisterNewApp, PublishNewVersion, Fork, direct-write denials, spoofing denials, tenant-local projections, and metadata-only object invariants across two tenants; and owner/name App uniqueness is covered through direct, Composite, live, and concurrent Composite race paths. Remaining registry risk is longer repeated soak, not basic Register/Fork/Publish behavior.</span></li>
-        <li><span class="dot active"></span><span>Commons mode direct-create guardrails are live, including rejection of spoofed HTTP action_context headers. Per-owner write RateLimit buckets now return 429 when exhausted, and the same owner/action bucket is isolated across tenants; cached per-owner Blob storage caps return 413 when raw ingest would exceed the Owner cap, commons write serialization closes the storage-cap check/write race for concurrent raw Blob writes, unverified Owners are blocked from owner-scoped commons writes, MarkVerified provider/subject/timestamp fields persist before writes resume, and duplicate App names are rejected per owner before dispatch, including concurrent Composite races. Broader storage stress, external provider automation beyond the persisted verification profile, and broader tenant stress coverage remain.</span></li>
-        <li><span class="dot done"></span><span>Receive-pack now bridges into Repository.IngestPack without a WASM action-dispatch path; reusable live two-client rollback/concurrency, packless delete, 1000-file high-volume, and final 50-object latency smokes prove concurrent branch create rejection, winner object persistence, loser-object rollback, Ref matching, Deleted tombstone persistence, clone readback, and receive-pack POST below the <code>&le;15ms</code> target.</span></li>
-        <li><span class="dot active"></span><span>Closure ID derivation is implemented and live-smoked. Startup can now verify and boot the local startup OS-app closure from a one-line manifest; local locked <code>app.toml</code> graphs, live registry App rows, historical app-version repository bytes, registry-scale historical graphs, and real smart-HTTP pack graphs resolve into durable Closure rows. Remaining closure risk is broader real-pack stress/concurrency coverage, not basic real-pack compatibility.</span></li>
-        <li><span class="dot active"></span><span>Genesis UI v1 is implemented, live-smoked from the Temper binary, and covered by repository Playwright desktop/mobile regression tests. Account claims are now provider-aware and post verification provider/subject fields; broader provider rollout beyond this UI surface remains.</span></li>
-        <li><span class="dot done"></span><span>Full <code>verify_specs</code> now passes in ADR-0050 enforce mode for all 18 temper-git specs, and <code>temper verify --specs-dir specs</code> passes the IOA cascade plus cross-validation report.</span></li>
-        <li><span class="dot"></span><span>The page should be updated whenever a phase changes state or a verification result lands.</span></li>
-      </ul>
-    </section>
-  </main>
-</body>
+        <article class="panel wide">
+          <h2>Verification Log</h2>
+          <table>
+            <thead>
+              <tr><th>Check</th><th>Status</th><th>Evidence</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Rust compile</td><td>Pass</td><td><code>cargo check -p temper-cli -p temper-platform -p temper-server</code></td></tr>
+              <tr><td>Temper install tests</td><td>Pass</td><td><code>cargo test -p temper-platform genesis_install</code> and <code>cargo test -p temper-cli genesis_app</code></td></tr>
+              <tr><td>Genesis WASM</td><td>Pass</td><td><code>cargo check -p scm_ingest_pack -p git_upload_pack -p app_registry</code> and <code>cargo test -p app_registry install_sub_write_records_pinned_app_ref</code></td></tr>
+              <tr><td>Genesis web</td><td>Pass</td><td><code>npm run check</code>, <code>npm run build</code>, and <code>npm run test:e2e</code> completed successfully.</td></tr>
+              <tr><td>Local live E2E</td><td>Pass</td><td><code>scripts/live-genesis-install-e2e-smoke.sh</code> pushed <code>genesis-e2e/tiny-notes-130750@c5cd887817b20e91c966aa4191b68405033468e5</code>, registered it, installed it by OData, TemperPaw-shaped request, and CLI, then used the installed <code>Note</code> entity.</td></tr>
+              <tr><td>Restart recovery</td><td>Pass</td><td>After restart, <code>tenant_installed_apps</code> contained <code>paw-odata-130750</code>, <code>paw-tool-130750</code>, and <code>paw-cli-130750</code>; each tenant still read back its installed <code>Note</code>.</td></tr>
+              <tr><td>Browser UI</td><td>Pass</td><td><code>http://127.0.0.1:3188/genesis/</code> showed the pushed app, <code>10 files</code>, <code>8 folders</code>, and the OData, CLI, TemperPaw, and clone commands.</td></tr>
+              <tr><td>Removed bypasses</td><td>Pass</td><td><code>rg</code> found no remaining runtime references to removed skill aliases or bypass env vars.</td></tr>
+              <tr><td>Railway auth</td><td>Blocked</td><td><code>railway --version</code> is <code>4.27.5</code>, but <code>railway whoami</code> returns <code>Unauthorized. Please run railway login again.</code></td></tr>
+            </tbody>
+          </table>
+        </article>
+      </section>
+    </main>
+  </body>
 </html>

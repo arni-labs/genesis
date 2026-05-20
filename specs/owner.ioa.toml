@@ -1,4 +1,4 @@
-# Owner — registry account namespace for Genesis apps.
+# Owner — registry account for Genesis apps.
 
 [automaton]
 name = "Owner"
@@ -12,7 +12,7 @@ kind = "input"
 from = ["PendingVerification"]
 to = "PendingVerification"
 params = ["AccountId", "DisplayName", "Contact", "StorageCapBytes", "RateLimitTier", "PublicKey", "VerificationProvider", "VerificationSubject", "VerificationRequestedAt"]
-hint = "Create a registry owner namespace that must be verified before it can publish to commons."
+hint = "Create a registry owner account that must be verified before it can publish to commons."
 
 [[action]]
 name = "RequestVerification"
@@ -28,7 +28,7 @@ kind = "input"
 from = ["PendingVerification", "Verified"]
 to = "Verified"
 params = ["VerificationProvider", "VerificationSubject", "VerifiedAt"]
-hint = "Operator/provider action proving the authenticated principal controls this owner namespace."
+hint = "Operator/provider action proving the authenticated principal controls this owner account."
 
 [[action]]
 name = "UpdateProfile"
@@ -52,14 +52,14 @@ kind = "input"
 from = ["PendingVerification", "Verified"]
 to = "Suspended"
 params = ["Reason"]
-hint = "Suspend this owner namespace."
+hint = "Suspend this owner account."
 
 [[action]]
 name = "Unsuspend"
 kind = "input"
 from = ["Suspended"]
 to = "PendingVerification"
-hint = "Restore this owner namespace to the verification queue."
+hint = "Restore this owner account to the verification queue."
 
 [[invariant]]
 name = "SuspendedBlocksOwnerWrites"

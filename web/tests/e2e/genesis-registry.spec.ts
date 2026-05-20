@@ -212,7 +212,7 @@ test.beforeEach(async ({ page }) => {
   await mockOData(page);
 });
 
-test('renders browse, lineage, closures, install copy, and account claim without browser errors', async ({
+test('renders browse, lineage, closures, and Genesis install surfaces without browser errors', async ({
   page
 }) => {
   const browserErrors: string[] = [];
@@ -246,36 +246,23 @@ test('renders browse, lineage, closures, install copy, and account claim without
   await expect(page.getByLabel('Lineage graph')).toBeVisible();
 
   await page.getByRole('button', { name: 'Install' }).click();
-  await expect(page.getByText(`temper genesis install alice/alice-notes@${childHash}`)).toBeVisible();
+  await expect(
+    page.getByText(`/tdata/Apps('app-alice-notes')/App.Install`)
+  ).toBeVisible();
+  await expect(
+    page.getByText(`temper install alice/alice-notes@${childHash} --tenant default --url`)
+  ).toBeVisible();
+  await expect(
+    page.getByText(`install_app({"source":"genesis","app_ref":"alice/alice-notes@${childHash}"`)
+  ).toBeVisible();
+  await expect(page.getByText('git clone')).toBeVisible();
 
   await page.getByPlaceholder('Search apps').fill('kernel');
   await expect(page.getByRole('button', { name: /kernel-core/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /alice-notes/ })).toHaveCount(0);
   await page.getByPlaceholder('Search apps').fill('');
-
-  await page.getByRole('button', { name: 'Account' }).click();
-  await page.getByLabel('Account ID').fill('newco');
-  await page.getByLabel('Display Name').fill('New Co');
-  await page.getByLabel('Contact').fill('newco@example.test');
-  await page.getByLabel('Verification Provider').selectOption('oauth');
-  await page.getByLabel('Verification Subject').fill('github:newco');
-  await page.getByRole('button', { name: 'Claim Namespace' }).click();
-
-  await expect(page.getByText('newco is queued for OAuth verification.')).toBeVisible();
-  await expect(page.getByText('Namespace claim saved')).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => window.localStorage.getItem('genesis.accountId')))
-    .toBe('newco');
-  await expect
-    .poll(() => page.evaluate(() => window.localStorage.getItem('genesis.verificationProvider')))
-    .toBe('oauth');
-  await expect
-    .poll(() => page.evaluate(() => window.localStorage.getItem('genesis.verificationSubject')))
-    .toBe('github:newco');
-
-  await page.getByRole('button', { name: /New Co/ }).click();
-  await expect(page.getByLabel('Verification Provider')).toHaveValue('oauth');
-  await expect(page.getByLabel('Verification Subject')).toHaveValue('github:newco');
+  await expect(page.getByRole('button', { name: 'Account' })).toHaveCount(0);
+  await expect(page.getByText('Claim Namespace')).toHaveCount(0);
 
   const horizontalOverflow = await page.evaluate(() => {
     const root = document.documentElement;

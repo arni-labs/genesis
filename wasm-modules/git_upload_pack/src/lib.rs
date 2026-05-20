@@ -615,7 +615,7 @@ fn fetch_object_body(
     principal: &Principal,
     kind: ObjectKind,
     sha: &str,
-    _repo_id: &str,
+    repo_id: &str,
     api_base: &str,
 ) -> Result<Vec<u8>, String> {
     let set = match kind {
@@ -624,9 +624,14 @@ fn fetch_object_body(
         ObjectKind::Blob => "Blobs",
         ObjectKind::Tag => "Tags",
     };
-    // Temper auto-assigns entity_id as a UUID; our SHA lives in the
-    // `Id` field. Use $filter to look it up rather than the key URL.
-    let url = format!("{api_base}/tdata/{set}?$filter=Id%20eq%20'{sha}'");
+    // Stored entity ids are repository-scoped so shared Git objects can appear
+    // in multiple repos. The Git SHA stays in the Id field.
+    let filter = format!(
+        "Id eq '{}' and RepositoryId eq '{}'",
+        sha.replace('\'', "''"),
+        repo_id.replace('\'', "''")
+    );
+    let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
     let (status, body) =
         streaming_get(principal, &url).map_err(|e| format!("fetch {set}({sha}): {e}"))?;
     if !(200..400).contains(&status) {
@@ -658,6 +663,19 @@ fn fetch_object_body(
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
     Ok(canonical[nul + 1..].to_vec())
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 fn streaming_get(principal: &Principal, url: &str) -> Result<(u16, String), String> {
