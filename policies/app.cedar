@@ -5,3 +5,4 @@
 // composite action_context checks.
 
 permit(principal, action, resource is App);
+permit(principal, action, resource is AppInstallation);

@@ -116,7 +116,6 @@ start_server() {
     TEMPER_OS_APP_TEMPER_GIT_MODE="$mode" \
     TEMPER_OS_APPS_DIR="$APP_WORKTREES_DIR" \
     TEMPER_GENESIS_WEB_DIR="${APP_DIR}/web/build" \
-    TEMPER_AUTO_INSTALL_APPS=true \
     TEMPER_TENANT="$auto_tenant" \
     cargo run -p temper-cli -- serve --port "$PORT" --storage turso --no-observe --app temper-git
   ) > "$TMP_DIR/server.log" 2>&1 &

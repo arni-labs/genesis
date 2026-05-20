@@ -169,7 +169,7 @@ temper-git bundle from the current directory:
 TEMPER_OS_APPS_DIR="$PWD" cargo run \
   --manifest-path temper/Cargo.toml \
   --release --bin temper \
-  -- serve --port 3000 --storage turso --skill temper-git
+  -- serve --port 3000 --storage turso --app temper-git
 ```
 
 In another terminal, register the wire-protocol routes and create a

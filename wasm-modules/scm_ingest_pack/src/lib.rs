@@ -34,11 +34,12 @@ temper_module! {
         let mut sub_writes = Vec::new();
         for obj in objects {
             let (entity_type, row) = object_sub_write(&repository_id, obj)?;
-            let entity_id = row
+            let object_sha = row
                 .get("Id")
                 .and_then(Value::as_str)
                 .ok_or_else(|| "object row missing Id".to_string())?
                 .to_string();
+            let entity_id = object_entity_id(&repository_id, &object_sha);
             sub_writes.push(json!({
                 "entity_type": entity_type,
                 "entity_id": entity_id,
@@ -431,6 +432,26 @@ fn is_zero_sha(value: &str) -> bool {
 
 fn ref_id_for(repository_id: &str, refname: &str) -> String {
     format!("rf-{}-{}", repository_id, refname.replace('/', "-"))
+}
+
+fn object_entity_id(repository_id: &str, sha: &str) -> String {
+    let mut repo = String::with_capacity(repository_id.len());
+    let mut last_dash = false;
+    for ch in repository_id.chars() {
+        if ch.is_ascii_alphanumeric() {
+            repo.push(ch.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            repo.push('-');
+            last_dash = true;
+        }
+    }
+    let repo = repo.trim_matches('-');
+    if repo.is_empty() {
+        format!("obj-{sha}")
+    } else {
+        format!("{repo}-{sha}")
+    }
 }
 
 fn build_object_row(

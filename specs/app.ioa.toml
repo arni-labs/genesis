@@ -112,6 +112,29 @@ action = "Update"
 generated_from = "new_hash"
 
 [[action]]
+name = "Install"
+kind = "Composite"
+from = ["Active"]
+to = "Active"
+params = ["TargetTenant", "AppRef", "Installer"]
+hint = "Install this pinned Genesis app into a Temper tenant. The spec records AppInstallation; the kernel materializes bytes only after this action succeeds."
+
+[[action.triggers]]
+name = "app_registry"
+kind = "wasm"
+module = "app_registry"
+
+[[action.cedar_gate]]
+principal = "request.principal"
+resource = "this"
+action = "App::Install"
+
+[[action.sub_writes]]
+target_entity = "AppInstallation"
+action = "Create"
+generated_from = "installation_record"
+
+[[action]]
 name = "Deprecate"
 kind = "input"
 from = ["Active"]

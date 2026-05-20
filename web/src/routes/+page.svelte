@@ -3,7 +3,6 @@
   import {
     AlertCircle,
     Boxes,
-    Check,
     Clipboard,
     Copy,
     File,
@@ -16,12 +15,9 @@
     Loader2,
     PackageCheck,
     RefreshCw,
-    Search,
-    ShieldCheck,
-    UserPlus
+    Search
   } from '@lucide/svelte';
   import {
-    createOwner,
     loadAppFiles,
     loadRegistrySnapshot,
     parseJsonList,
@@ -36,7 +32,7 @@
     RepositoryFile
   } from '$lib/types';
 
-  type WorkbenchTab = 'files' | 'overview' | 'lineage' | 'install' | 'account';
+  type WorkbenchTab = 'files' | 'overview' | 'lineage' | 'install';
 
   let apps: RegistryApp[] = [];
   let owners: Owner[] = [];
@@ -61,15 +57,6 @@
   let currentPath = '';
   let selectedFilePath = '';
 
-  let accountId = '';
-  let displayName = '';
-  let contact = '';
-  let verificationProvider = 'email_magic_link';
-  let verificationSubject = '';
-  let claimBusy = false;
-  let claimMessage = '';
-  let claimError = '';
-
   $: ownersById = new Map(owners.map((owner) => [owner.id || owner.accountId, owner]));
   $: filteredApps = apps
     .filter((app) => {
@@ -86,7 +73,6 @@
     .sort((a, b) => `${a.ownerId}/${a.name}`.localeCompare(`${b.ownerId}/${b.name}`));
   $: selectedApp =
     apps.find((app) => app.id === selectedAppId) ?? filteredApps[0] ?? apps[0] ?? null;
-  $: selectedOwner = selectedApp ? ownersById.get(selectedApp.ownerId) ?? null : null;
   $: selectedLineage = selectedApp
     ? lineages.find((lineage) => lineage.childRepositoryId === selectedApp.repositoryId) ?? null
     : null;
@@ -135,12 +121,6 @@
 
   onMount(() => {
     mounted = true;
-    accountId = window.localStorage.getItem('genesis.accountId') ?? '';
-    displayName = window.localStorage.getItem('genesis.displayName') ?? '';
-    contact = window.localStorage.getItem('genesis.contact') ?? '';
-    verificationProvider =
-      window.localStorage.getItem('genesis.verificationProvider') ?? 'email_magic_link';
-    verificationSubject = window.localStorage.getItem('genesis.verificationSubject') ?? '';
     void refresh();
   });
 
@@ -195,33 +175,6 @@
     }
   }
 
-  async function claimNamespace() {
-    claimBusy = true;
-    claimMessage = '';
-    claimError = '';
-    try {
-      const owner = await createOwner({
-        accountId,
-        displayName,
-        contact,
-        verificationProvider,
-        verificationSubject
-      });
-      owners = [owner, ...owners.filter((existing) => existing.id !== owner.id)];
-      window.localStorage.setItem('genesis.accountId', accountId.trim());
-      window.localStorage.setItem('genesis.displayName', displayName.trim());
-      window.localStorage.setItem('genesis.contact', contact.trim());
-      window.localStorage.setItem('genesis.verificationProvider', verificationProvider);
-      window.localStorage.setItem('genesis.verificationSubject', verificationSubject.trim());
-      claimMessage = `${owner.id} is queued for ${providerLabel(owner.verificationProvider)} verification.`;
-      showToast('Namespace claim saved');
-    } catch (error) {
-      claimError = error instanceof Error ? error.message : String(error);
-    } finally {
-      claimBusy = false;
-    }
-  }
-
   function selectApp(app: RegistryApp) {
     selectedAppId = app.id;
     activeTab = 'files';
@@ -238,20 +191,6 @@
       return;
     }
     selectedFilePath = entry.path;
-  }
-
-  function setAccountFromOwner(owner: Owner) {
-    accountId = owner.accountId || owner.id;
-    displayName = owner.displayName;
-    contact = owner.contact;
-    verificationProvider = owner.verificationProvider || 'email_magic_link';
-    verificationSubject = owner.verificationSubject;
-    window.localStorage.setItem('genesis.accountId', accountId);
-    window.localStorage.setItem('genesis.displayName', displayName);
-    window.localStorage.setItem('genesis.contact', contact);
-    window.localStorage.setItem('genesis.verificationProvider', verificationProvider);
-    window.localStorage.setItem('genesis.verificationSubject', verificationSubject);
-    showToast(`Account set to ${accountId}`);
   }
 
   async function copyText(value: string, label: string) {
@@ -336,25 +275,34 @@
     return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
   }
 
-  function providerLabel(value: string): string {
-    switch (value) {
-      case 'email_magic_link':
-        return 'email magic link';
-      case 'oauth':
-        return 'OAuth';
-      case 'manual':
-        return 'manual';
-      default:
-        return value || 'provider';
-    }
-  }
-
   function installHash(app: RegistryApp): string {
     return app.latestVersionHash || app.id;
   }
 
-  function installCommand(app: RegistryApp): string {
-    return `temper genesis install ${app.ownerId}/${app.name}@${installHash(app)}`;
+  function appRef(app: RegistryApp): string {
+    return `${app.ownerId}/${app.name}@${installHash(app)}`;
+  }
+
+  function escapedODataId(value: string): string {
+    return value.replace(/'/g, "''");
+  }
+
+  function odataInstallCommand(app: RegistryApp): string {
+    const ref = appRef(app);
+    const body = JSON.stringify({
+      TargetTenant: 'default',
+      AppRef: ref,
+      Installer: 'manual'
+    });
+    return `curl -sS -X POST "${location.origin}/tdata/Apps('${escapedODataId(app.id)}')/App.Install" -H "Content-Type: application/json" -H "X-Tenant-Id: default" -d '${body}'`;
+  }
+
+  function cliInstallCommand(app: RegistryApp): string {
+    return `temper install ${appRef(app)} --tenant default --url ${location.origin}`;
+  }
+
+  function temperPawInstallCommand(app: RegistryApp): string {
+    return `install_app({"source":"genesis","app_ref":"${appRef(app)}","tenant":"default","url":"${location.origin}"})`;
   }
 
   function cloneCommand(app: RegistryApp): string {
@@ -418,7 +366,7 @@
   <title>Genesis Registry</title>
   <meta
     name="description"
-    content="Browse Genesis apps, lineage, dependency closures, install hashes, and owner namespaces."
+    content="Browse Genesis apps, repository files, lineage, dependency closures, and pinned install commands."
   />
 </svelte:head>
 
@@ -560,13 +508,6 @@
               on:click={() => selectTab('install')}
             >
               <PackageCheck size={15} /> Install
-            </button>
-            <button
-              class:active={activeTab === 'account'}
-              type="button"
-              on:click={() => selectTab('account')}
-            >
-              <ShieldCheck size={15} /> Account
             </button>
           </nav>
 
@@ -834,21 +775,59 @@
                 <div class="install-grid">
                   <div class="install-card">
                     <div class="subhead">
-                      <h3>Install</h3>
+                      <h3>OData Action</h3>
                       <PackageCheck size={16} />
                     </div>
                     <div class="code-line">
-                      <code>{installCommand(selectedApp)}</code>
+                      <code>{odataInstallCommand(selectedApp)}</code>
                       <button
                         class="mini-button"
                         type="button"
-                        aria-label="Copy install command"
-                        on:click={() => copyText(installCommand(selectedApp), 'Install command')}
+                        aria-label="Copy OData install command"
+                        on:click={() => copyText(odataInstallCommand(selectedApp), 'OData install command')}
                       >
                         <Copy size={14} />
                       </button>
                     </div>
-                    <p class="muted-copy">This is the registry install surface for a pinned app version.</p>
+                    <p class="muted-copy">Spec-owned install surface for pinned Genesis app bytes.</p>
+                  </div>
+
+                  <div class="install-card">
+                    <div class="subhead">
+                      <h3>Temper CLI</h3>
+                      <PackageCheck size={16} />
+                    </div>
+                    <div class="code-line">
+                      <code>{cliInstallCommand(selectedApp)}</code>
+                      <button
+                        class="mini-button"
+                        type="button"
+                        aria-label="Copy Temper CLI install command"
+                        on:click={() => copyText(cliInstallCommand(selectedApp), 'Temper CLI install command')}
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <p class="muted-copy">CLI wrapper around the same App.Install OData action.</p>
+                  </div>
+
+                  <div class="install-card">
+                    <div class="subhead">
+                      <h3>TemperPaw Tool</h3>
+                      <PackageCheck size={16} />
+                    </div>
+                    <div class="code-line">
+                      <code>{temperPawInstallCommand(selectedApp)}</code>
+                      <button
+                        class="mini-button"
+                        type="button"
+                        aria-label="Copy TemperPaw tool install call"
+                        on:click={() => copyText(temperPawInstallCommand(selectedApp), 'TemperPaw install call')}
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <p class="muted-copy">Tool path for an agent to request the same pinned app install.</p>
                   </div>
 
                   <div class="install-card">
@@ -869,115 +848,6 @@
                     </div>
                     <p class="muted-copy">Smart HTTP reconstructs this repository from Temper objects.</p>
                   </div>
-                </div>
-              </section>
-            {:else if activeTab === 'account'}
-              <section class="account-view">
-                <div class="account-grid">
-                  <article>
-                    <div class="subhead">
-                      <h3>Claim Namespace</h3>
-                      <ShieldCheck size={16} />
-                    </div>
-                    <form class="form-grid" on:submit|preventDefault={claimNamespace}>
-                      <label class="field">
-                        <span>Account ID</span>
-                        <input bind:value={accountId} required placeholder="acme" />
-                      </label>
-                      <label class="field">
-                        <span>Display Name</span>
-                        <input bind:value={displayName} placeholder="Acme Labs" />
-                      </label>
-                      <label class="field">
-                        <span>Contact</span>
-                        <input bind:value={contact} placeholder="ops@example.com" />
-                      </label>
-                      <label class="field">
-                        <span>Verification Provider</span>
-                        <select bind:value={verificationProvider}>
-                          <option value="email_magic_link">Email magic link</option>
-                          <option value="oauth">OAuth</option>
-                          <option value="manual">Manual review</option>
-                        </select>
-                      </label>
-                      <label class="field">
-                        <span>Verification Subject</span>
-                        <input bind:value={verificationSubject} placeholder="email or provider subject" />
-                      </label>
-                      <button class="action-button" type="submit" disabled={claimBusy || !accountId.trim()}>
-                        {#if claimBusy}
-                          <Loader2 size={16} />
-                        {:else}
-                          <UserPlus size={16} />
-                        {/if}
-                        Claim Namespace
-                      </button>
-                    </form>
-
-                    {#if claimMessage}
-                      <div class="notice success inline-notice">
-                        <Check size={16} />
-                        <span>{claimMessage}</span>
-                      </div>
-                    {/if}
-                    {#if claimError}
-                      <div class="notice error inline-notice">
-                        <AlertCircle size={16} />
-                        <span>{claimError}</span>
-                      </div>
-                    {/if}
-                  </article>
-
-                  <article>
-                    <div class="subhead">
-                      <h3>Owners</h3>
-                      <UserPlus size={16} />
-                    </div>
-                    {#if selectedOwner}
-                      <div class="owner-list flush-list">
-                        <div class="owner-row">
-                          <div>
-                            <strong>{selectedOwner.displayName}</strong>
-                            <span>{selectedOwner.accountId} · {formatBytes(selectedOwner.storageCapBytes)}</span>
-                          </div>
-                          <span class="chip {statusClass(selectedOwner.status)}">{selectedOwner.status}</span>
-                        </div>
-                      </div>
-                      <div class="owner-verification">
-                        <div>
-                          <span>Provider</span>
-                          <strong>{providerLabel(selectedOwner.verificationProvider)}</strong>
-                        </div>
-                        <div>
-                          <span>Subject</span>
-                          <strong>{selectedOwner.verificationSubject || selectedOwner.contact || 'not set'}</strong>
-                        </div>
-                        <div>
-                          <span>Verified</span>
-                          <strong>{selectedOwner.verifiedAt ? displayDate(selectedOwner.verifiedAt) : selectedOwner.status}</strong>
-                        </div>
-                      </div>
-                    {/if}
-
-                    {#if owners.length}
-                      <div class="owner-list">
-                        {#each owners.slice(0, 8) as owner}
-                          <button class="owner-row" type="button" on:click={() => setAccountFromOwner(owner)}>
-                            <span>
-                              <strong>{owner.displayName}</strong>
-                              <span>{owner.accountId || owner.id} · {providerLabel(owner.verificationProvider)}</span>
-                            </span>
-                            <span class="chip {statusClass(owner.status)}">{owner.status}</span>
-                          </button>
-                        {/each}
-                      </div>
-                    {:else}
-                      <div class="notice">
-                        <ShieldCheck size={16} />
-                        <span>No Owner rows returned.</span>
-                      </div>
-                    {/if}
-                  </article>
                 </div>
 
                 {#if warnings.length}
