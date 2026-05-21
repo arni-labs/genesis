@@ -25,6 +25,27 @@ agent writes app files -> git push to Genesis -> RegisterNewApp/PublishNewVersio
   pinned Genesis app ref.
 - Railway deployment with Postgres-backed state:
   <https://genesis-production-164d.up.railway.app/genesis/>
+- The public Railway registry is seeded with the real TemperPaw, Katagami, and
+  Deep Sci-Fi app bundles listed below; deleted smoke-test apps are hidden from
+  the default UI.
+- Pinned app installs materialize the app dependency closure from Genesis rows
+  and repository objects, then recover after Railway redeploy from Postgres.
+
+## Seeded Railway Apps
+
+The current public Genesis registry contains:
+
+- TemperPaw core apps: `paw-fs`, `paw-agent`, `paw-research`,
+  `paw-channels`, `paw-compute`, `paw-ingest`, `paw-pm`, `paw-harness`,
+  `paw-heal`, `paw-managed-agents`, `paw-wiki`, `paw-foresight`,
+  `paw-consilium`, `paw-autoreason`, and `paw-skills`.
+- Katagami apps from the canonical Katagami workspace: `katagami-commons` and
+  `katagami-curation`.
+- Deep Sci-Fi reference apps: `dsf-harness` and `dsf-team`.
+
+Each app is stored as normal Genesis repository objects. The UI exposes the
+pinned `owner/app@hash` ref, Git clone URL, OData install path, CLI command,
+and TemperPaw-shaped tool call.
 
 ## Agent Path: Publish An App
 
@@ -68,6 +89,13 @@ This is the current low-level path an agent can use today.
    HASH="$(git rev-parse HEAD)"
    ```
 
+   For large app bundles, use Git's non-chunked request mode until streaming
+   request chunk support is added:
+
+   ```bash
+   git -c http.postBuffer=104857600 push "$GENESIS_URL/owner/name.git" main
+   ```
+
 5. Register the app row:
 
    ```bash
@@ -109,7 +137,10 @@ The Genesis UI also shows a TemperPaw-shaped command:
 install_app({"source":"genesis","app_ref":"owner/name@HASH","tenant":"target-tenant","url":"https://genesis.example"})
 ```
 
-TemperPaw itself is not fully migrated to this Genesis tool path yet.
+TemperPaw can call this same action from its install tool. A deployed
+TemperPaw instance should set Genesis as its default app source and pass pinned
+`owner/app@hash` refs instead of reading app bundles from GitHub, submodules,
+symlinks, or local catalog directories.
 
 ## Local Run
 
@@ -134,7 +165,24 @@ http://127.0.0.1:3000/genesis/
 
 ## Live Verification
 
-The current E2E proof publishes a real app, registers it, installs it through
+The current public Railway proof is:
+
+- URL: <https://genesis-production-164d.up.railway.app/genesis/>
+- Latest recovery redeploy: `2cc004bd-3691-4ff2-b826-9019ca309f9f`
+- Real app seed: 20 active installable app bundles, 913 reachable Git objects,
+  and 84 field-overflow bodies persisted through the Postgres shadow store.
+- Clone proof: `temperpaw/paw-agent`, `temperpaw/paw-patrol`,
+  `katagami/katagami-commons`, and `katagami/katagami-curation` clone from the
+  public Railway URL at their registered hashes.
+- Install proof: `temperpaw/paw-patrol@7deb98f716e5c0e709bb7871642bdb35400cd04b`
+  installed by OData and a TemperPaw-shaped request. The installed tenant
+  exposed `Files`, `Agents`, `PatrolRequests`, and `Signals`, and a real
+  `Signal` row was created and read back.
+- Recovery proof: after the fresh Railway redeploy above, `paw-agent` still
+  cloned and `paw-patrol` installed into `genesis-recovery-021518`; the
+  installed `Signals('sig-recovery-021518')` row read back successfully.
+
+The broader smoke proof publishes a tiny app, registers it, installs it through
 OData, a TemperPaw-shaped request, and the CLI, creates an entity from the
 installed app, restarts the service, and verifies recovery:
 
@@ -144,7 +192,8 @@ RUN_ID=200215 \
 scripts/live-genesis-install-e2e-smoke.sh
 ```
 
-Verified app ref:
+The smoke-test app from that run was archived/deleted after verification so the
+default registry view stays focused on real apps. Its archived ref was:
 
 ```text
 genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239
@@ -156,11 +205,9 @@ genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239
   command.
 - Push-to-create is not finished; first publish still needs repository/app
   registration.
-- Fresh deployments may need smart HTTP endpoints seeded before the first git
-  push; the live E2E script does this.
-- TemperPaw still installs from its local app catalog today. The Genesis-shaped
-  install path is implemented and verified, but TemperPaw needs a follow-up
-  migration to use it by default.
+- TemperPaw's old local catalog is not removed from the TemperPaw repository by
+  these two PRs. Genesis now has the real app bundles and install surface; the
+  TemperPaw deployment/config should switch its default source to Genesis.
 
 ## Read Next
 

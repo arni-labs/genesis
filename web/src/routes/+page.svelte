@@ -58,8 +58,12 @@
   let selectedFilePath = '';
 
   $: ownersById = new Map(owners.map((owner) => [owner.id || owner.accountId, owner]));
+  $: browsableApps = apps.filter((app) => app.status !== 'Deleted' && isInstallableApp(app));
   $: filteredApps = apps
     .filter((app) => {
+      if (!isInstallableApp(app)) {
+        return false;
+      }
       const query = search.trim().toLowerCase();
       const matchesQuery =
         !query ||
@@ -67,12 +71,21 @@
         app.ownerId.toLowerCase().includes(query) ||
         app.repositoryId.toLowerCase().includes(query) ||
         app.latestVersionHash.toLowerCase().includes(query);
-      const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
+      const matchesStatus =
+        statusFilter === 'all' ? app.status !== 'Deleted' : app.status === statusFilter;
       return matchesQuery && matchesStatus;
     })
     .sort((a, b) => `${a.ownerId}/${a.name}`.localeCompare(`${b.ownerId}/${b.name}`));
   $: selectedApp =
-    apps.find((app) => app.id === selectedAppId) ?? filteredApps[0] ?? apps[0] ?? null;
+    apps.find(
+      (app) =>
+        app.id === selectedAppId &&
+        isInstallableApp(app) &&
+        (statusFilter === 'Deleted' || app.status !== 'Deleted')
+    ) ??
+    filteredApps[0] ??
+    browsableApps[0] ??
+    null;
   $: selectedLineage = selectedApp
     ? lineages.find((lineage) => lineage.childRepositoryId === selectedApp.repositoryId) ?? null
     : null;
@@ -129,15 +142,27 @@
     loadError = '';
     try {
       const snapshot = await loadRegistrySnapshot();
-      apps = snapshot.apps;
+      const nextApps = snapshot.apps;
+      apps = nextApps;
       owners = snapshot.owners;
       lineages = snapshot.lineages;
       closures = snapshot.closures;
       warnings = snapshot.warnings.map(
         (warning) => `${warning.collection}: ${warning.message}`
       );
-      if (!selectedAppId || !apps.some((app) => app.id === selectedAppId)) {
-        selectedAppId = apps[0]?.id ?? '';
+      if (
+        !selectedAppId ||
+        !apps.some(
+          (app) =>
+            app.id === selectedAppId &&
+            isInstallableApp(app) &&
+            (statusFilter === 'Deleted' || app.status !== 'Deleted')
+        )
+      ) {
+        selectedAppId =
+          nextApps.find((app) => app.status !== 'Deleted' && isInstallableApp(app))?.id ??
+          nextApps.find(isInstallableApp)?.id ??
+          '';
       }
     } catch (error) {
       loadError = error instanceof Error ? error.message : String(error);
@@ -261,6 +286,10 @@
     return (app.name || app.id || 'G').slice(0, 1).toUpperCase();
   }
 
+  function isInstallableApp(app: RegistryApp): boolean {
+    return Boolean(app.ownerId && app.name && app.repositoryId && app.latestVersionHash);
+  }
+
   function formatBytes(value: number): string {
     if (!value) {
       return '0 B';
@@ -376,7 +405,10 @@
       <div class="brand-mark">G</div>
       <div>
         <h1>Genesis Registry</h1>
-        <p>{apps.length} apps · {lineages.length} lineage links · {closures.length} closures</p>
+        <p>
+          {browsableApps.length} installable apps · {lineages.length} lineage links ·
+          {closures.length} closures
+        </p>
       </div>
     </div>
     <div class="top-actions">

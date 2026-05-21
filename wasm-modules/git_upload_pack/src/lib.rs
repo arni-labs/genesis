@@ -34,6 +34,8 @@ use tg_wire::{
 pub(crate) const TEMPER_API: &str = "http://127.0.0.1:3000";
 pub(crate) const SYSTEM_TENANT: &str = "default";
 pub(crate) const SYSTEM_PRINCIPAL: &str = "git-upload-pack";
+const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
+const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
 
 mod auth;
 pub(crate) use auth::Principal;
@@ -266,7 +268,19 @@ fn temper_api_from_headers(headers: &[(String, String)]) -> String {
     headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("host"))
-        .map(|(_, v)| format!("http://{v}"))
+        .map(|(_, v)| {
+            let host = v.trim();
+            let scheme = if host.starts_with("localhost")
+                || host.starts_with("127.0.0.1")
+                || host.starts_with("0.0.0.0")
+                || host.starts_with("[::1]")
+            {
+                "http"
+            } else {
+                "https"
+            };
+            format!("{scheme}://{host}")
+        })
         .unwrap_or_else(|| TEMPER_API.to_string())
 }
 
@@ -304,7 +318,7 @@ fn query_param(http: &InboundHttp, key: &str) -> Option<String> {
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const READ_CHUNK: usize = 16 * 1024;
 const OUTBOUND_READ_CHUNK: usize = 64 * 1024;
-const MAX_OBJECT_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CACHED_OBJECT_BYTES: usize = 128 * 1024 * 1024;
 
 fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let principal = effective_principal(ctx, &http.headers);
@@ -356,7 +370,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
         match kind {
             ObjectKind::Commit | ObjectKind::Tree => {
                 let raw_body =
-                    fetch_object_body(&principal, kind, &sha, &repository_id, &api_base)?;
+                    fetch_object_body(ctx, &principal, kind, &sha, &repository_id, &api_base)?;
                 if matches!(kind, ObjectKind::Commit) {
                     let refs = tg_canonical::parse_commit_refs(&raw_body)
                         .map_err(|e| format!("commit {sha}: {e}"))?;
@@ -426,6 +440,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             &repository_id,
             &principal,
             &api_base,
+            ctx,
         )?;
         sb.finish().map_err(|e| format!("sideband finish: {e}"))?;
         pack_byte_count
@@ -438,6 +453,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             &repository_id,
             &principal,
             &api_base,
+            ctx,
         )?;
         pack_byte_count
     };
@@ -468,6 +484,7 @@ fn emit_pack_streaming<W: std::io::Write>(
     repository_id: &str,
     principal: &Principal,
     api_base: &str,
+    ctx: &Context,
 ) -> Result<(usize, W), String> {
     // Wrap the sink in a counting writer so we can report bytes
     // written without the caller having to track them.
@@ -481,7 +498,7 @@ fn emit_pack_streaming<W: std::io::Write>(
                 .remove(&sha)
                 .ok_or_else(|| format!("walk-cache miss for {sha}"))?,
             ObjectKind::Blob | ObjectKind::Tag => {
-                fetch_object_body(principal, kind, &sha, repository_id, api_base)?
+                fetch_object_body(ctx, principal, kind, &sha, repository_id, api_base)?
             }
         };
         emitter
@@ -612,12 +629,17 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
 }
 
 fn fetch_object_body(
+    ctx: &Context,
     principal: &Principal,
     kind: ObjectKind,
     sha: &str,
     repo_id: &str,
     api_base: &str,
 ) -> Result<Vec<u8>, String> {
+    if let Some(cached) = fetch_cached_object_body(api_base, repo_id, sha)? {
+        return Ok(cached);
+    }
+
     let set = match kind {
         ObjectKind::Commit => "Commits",
         ObjectKind::Tree => "Trees",
@@ -632,13 +654,14 @@ fn fetch_object_body(
         repo_id.replace('\'', "''")
     );
     let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
-    let (status, body) =
-        streaming_get(principal, &url).map_err(|e| format!("fetch {set}({sha}): {e}"))?;
-    if !(200..400).contains(&status) {
-        return Err(format!("{set}({sha}) status {status}"));
+    let response = ctx
+        .http_call("GET", &url, &principal.outbound_headers(), "")
+        .map_err(|e| format!("fetch {set}({sha}): {e}"))?;
+    if !(200..400).contains(&response.status) {
+        return Err(format!("{set}({sha}) status {}", response.status));
     }
     let parsed: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
+        serde_json::from_str(&response.body).map_err(|e| format!("object json: {e}"))?;
     let items = parsed
         .get("value")
         .and_then(|v| v.as_array())
@@ -651,18 +674,118 @@ fn fetch_object_body(
     let fields = row
         .get("fields")
         .ok_or_else(|| format!("{set}({sha}): row has no fields"))?;
-    let canonical_b64 = fields
+    let canonical_value = fields
         .get("CanonicalBytes")
-        .and_then(|v| v.as_str())
+        .or_else(|| fields.get("canonical_bytes"))
         .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
+    let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
     let canonical = B64
-        .decode(canonical_b64)
+        .decode(&canonical_b64)
         .map_err(|e| format!("base64 decode: {e}"))?;
     let nul = canonical
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
     Ok(canonical[nul + 1..].to_vec())
+}
+
+fn fetch_cached_object_body(
+    api_base: &str,
+    repo_id: &str,
+    sha: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let url = format!(
+        "{}/_internal/blobs/git-objects/{repo_id}/{sha}.raw",
+        api_base.trim_end_matches('/')
+    );
+    let (request, mut response, head) =
+        streaming_call("GET", &url, &[]).map_err(|e| format!("object-cache GET {sha}: {e}"))?;
+    request
+        .finish()
+        .map_err(|e| format!("object-cache GET {sha} request close: {e}"))?;
+    let head = head().map_err(|e| format!("object-cache GET {sha} response head: {e}"))?;
+    if head.status == 404 {
+        let _ = response.close();
+        return Ok(None);
+    }
+    if !(200..300).contains(&head.status) {
+        let _ = response.close();
+        return Err(format!(
+            "object-cache GET {sha} returned HTTP {}",
+            head.status
+        ));
+    }
+
+    let mut body = Vec::new();
+    let mut scratch = alloc::vec![0u8; OUTBOUND_READ_CHUNK];
+    loop {
+        match response.read_next_chunk(&mut scratch) {
+            Ok(None) => break,
+            Ok(Some(n)) => {
+                if body.len() + n > MAX_CACHED_OBJECT_BYTES {
+                    let _ = response.close();
+                    return Err(format!(
+                        "object-cache GET {sha} exceeds {MAX_CACHED_OBJECT_BYTES} bytes"
+                    ));
+                }
+                body.extend_from_slice(&scratch[..n]);
+            }
+            Err(e) => {
+                let _ = response.close();
+                return Err(format!("object-cache GET {sha} response body: {e}"));
+            }
+        }
+    }
+    let _ = response.close();
+    Ok(Some(body))
+}
+
+fn resolve_field_value(
+    ctx: &Context,
+    principal: &Principal,
+    api_base: &str,
+    value: &serde_json::Value,
+) -> Result<String, String> {
+    if let Some(value) = value.as_str() {
+        return Ok(value.to_string());
+    }
+
+    let Some(blob_key) = field_overflow_blob_key(value)? else {
+        return Err("field value is neither string nor supported blob ref".to_string());
+    };
+    let url = format!(
+        "{}/_internal/blobs/{blob_key}",
+        api_base.trim_end_matches('/')
+    );
+    let response = ctx
+        .http_call("GET", &url, &principal.outbound_headers(), "")
+        .map_err(|e| format!("field-overflow GET {blob_key}: {e}"))?;
+    if !(200..300).contains(&response.status) {
+        return Err(format!(
+            "field-overflow GET {blob_key} returned HTTP {}",
+            response.status
+        ));
+    }
+    serde_json::from_str(&response.body).map_err(|e| format!("field-overflow {blob_key} json: {e}"))
+}
+
+fn field_overflow_blob_key(value: &serde_json::Value) -> Result<Option<String>, String> {
+    let Some(obj) = value.as_object() else {
+        return Ok(None);
+    };
+    let Some(blob_key) = obj.get(FIELD_OVERFLOW_REF_KEY).and_then(|v| v.as_str()) else {
+        return Ok(None);
+    };
+    let encoding = obj
+        .get(FIELD_OVERFLOW_ENCODING_KEY)
+        .and_then(|v| v.as_str())
+        .unwrap_or("json");
+    if encoding != "json" {
+        return Err(format!(
+            "field-overflow encoding {encoding:?} is not supported"
+        ));
+    }
+    Ok(Some(blob_key.to_string()))
 }
 
 fn urlencode(s: &str) -> String {
@@ -678,37 +801,31 @@ fn urlencode(s: &str) -> String {
     out
 }
 
-fn streaming_get(principal: &Principal, url: &str) -> Result<(u16, String), String> {
-    let headers = principal.outbound_headers();
-    let header_refs: Vec<(&str, &str)> = headers
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let (request, mut response, head) =
-        streaming_call("GET", url, &header_refs).map_err(|e| format!("stream begin: {e}"))?;
-    request
-        .finish()
-        .map_err(|e| format!("stream request close: {e}"))?;
-    let head = head().map_err(|e| format!("stream response head: {e}"))?;
+    #[test]
+    fn field_overflow_blob_key_accepts_json_refs() {
+        let value = json!({
+            FIELD_OVERFLOW_REF_KEY: "field-overflow/sha256/abc.json",
+            FIELD_OVERFLOW_ENCODING_KEY: "json",
+        });
 
-    let mut body = Vec::new();
-    let mut scratch = alloc::vec![0u8; OUTBOUND_READ_CHUNK];
-    loop {
-        match response.read_next_chunk(&mut scratch) {
-            Ok(None) => break,
-            Ok(Some(n)) => {
-                if body.len() + n > MAX_OBJECT_RESPONSE_BYTES {
-                    return Err(format!(
-                        "stream response exceeds {MAX_OBJECT_RESPONSE_BYTES} bytes"
-                    ));
-                }
-                body.extend_from_slice(&scratch[..n]);
-            }
-            Err(e) => return Err(format!("stream response read: {e}")),
-        }
+        assert_eq!(
+            field_overflow_blob_key(&value).unwrap().as_deref(),
+            Some("field-overflow/sha256/abc.json")
+        );
     }
 
-    let body = String::from_utf8(body).map_err(|e| format!("stream response utf8: {e}"))?;
-    Ok((head.status, body))
+    #[test]
+    fn field_overflow_blob_key_rejects_unknown_encoding() {
+        let value = json!({
+            FIELD_OVERFLOW_REF_KEY: "field-overflow/sha256/abc.json",
+            FIELD_OVERFLOW_ENCODING_KEY: "raw",
+        });
+
+        let err = field_overflow_blob_key(&value).unwrap_err();
+        assert!(err.contains("not supported"));
+    }
 }

@@ -223,4 +223,7 @@ type = "wasm"
 module = "scm_ingest_pack"
 
 [integration.config]
-timeout_secs = 120
+timeout_secs = 300
+max_fuel = 20000000000
+max_memory = 536870912
+max_response_bytes = 134217728
