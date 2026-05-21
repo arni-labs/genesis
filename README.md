@@ -168,7 +168,7 @@ http://127.0.0.1:3000/genesis/
 The current public Railway proof is:
 
 - URL: <https://genesis-production-164d.up.railway.app/genesis/>
-- Latest recovery redeploy: `2cc004bd-3691-4ff2-b826-9019ca309f9f`
+- Latest verified redeploy: `8db49199-0713-4e5a-a6d5-56580a321c27`
 - Real app seed: 20 active installable app bundles, 913 reachable Git objects,
   and 84 field-overflow bodies persisted through the Postgres shadow store.
 - Clone proof: `temperpaw/paw-agent`, `temperpaw/paw-patrol`,
@@ -179,8 +179,9 @@ The current public Railway proof is:
   exposed `Files`, `Agents`, `PatrolRequests`, and `Signals`, and a real
   `Signal` row was created and read back.
 - Recovery proof: after the fresh Railway redeploy above, `paw-agent` still
-  cloned and `paw-patrol` installed into `genesis-recovery-021518`; the
-  installed `Signals('sig-recovery-021518')` row read back successfully.
+  cloned at `65fbd22270e4bf7304de2d9b6895a465c332d602` and `paw-patrol`
+  installed into `genesis-final-031238`; the installed
+  `Signals('sig-final-031246')` row read back successfully.
 
 The broader smoke proof publishes a tiny app, registers it, installs it through
 OData, a TemperPaw-shaped request, and the CLI, creates an entity from the
