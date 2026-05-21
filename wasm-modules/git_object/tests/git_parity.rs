@@ -5,14 +5,16 @@
 //! any test here fails, the compat contract is broken and no
 //! downstream work can proceed.
 //!
-//! Run: `cargo test --package tg-canonical --test git_parity`.
+//! Run: `cargo test --package genesis-git-object --test git_parity`.
 //! Skip: set `TG_SKIP_GIT_PARITY=1` (useful in CI environments
 //! without a git binary; not recommended — CI should install git).
 
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use tg_canonical::{Commit, Mode, Tag, TreeEntry, blob_hash, commit_hash, tag_hash, tree_hash};
+use genesis_git_object::{
+    Commit, Mode, Tag, TreeEntry, blob_hash, commit_hash, tag_hash, tree_hash,
+};
 
 fn git_available() -> bool {
     if std::env::var("TG_SKIP_GIT_PARITY").ok().as_deref() == Some("1") {
@@ -56,7 +58,7 @@ fn git_hash_object(content: &[u8], kind: &str) -> String {
 /// Create a throwaway git repo at a tempdir; return the path.
 fn mktemp_repo() -> std::path::PathBuf {
     let base = std::env::temp_dir().join(format!(
-        "tg-canonical-{}",
+        "genesis-git-object-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

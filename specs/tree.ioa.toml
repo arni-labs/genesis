@@ -4,7 +4,7 @@
 # `TreeEntry` children, each pointing at another tree or a blob. The
 # tree's Id is the SHA-1 hex of the canonical serialization
 # `tree <body_len>\0<entries>` where entries are sorted per git's
-# name-order (see `canonical/src/tree.rs::sort_entries`).
+# name-order (see `wasm-modules/git_object/src/tree.rs::sort_entries`).
 #
 # Immutable. Append-only via POST. Cedar denies PATCH/DELETE.
 # Garbage collection of unreachable trees is Phase 2.
@@ -40,4 +40,4 @@ name = "Create"
 kind = "input"
 from = ["Durable"]
 params = ["repository_id", "canonical_bytes"]
-hint = "Record a tree. Id must equal the SHA-1 of `tree <body_len>\\0<entries>` with entries sorted per canonical/tree.rs."
+hint = "Record a tree. Id must equal the SHA-1 of `tree <body_len>\\0<entries>` with entries sorted per git_object/tree.rs."

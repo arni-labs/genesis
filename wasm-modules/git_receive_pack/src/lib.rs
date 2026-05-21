@@ -1,11 +1,9 @@
 //! git_receive_pack — smart-HTTP receive-pack WASM integration.
 //!
-//! Handles the two endpoints git clients hit during push:
-//!
-//!   * `GET  /{owner}/{repo}.git/info/refs?service=git-receive-pack`
-//!     → ref advertisement.
-//!   * `POST /{owner}/{repo}.git/git-receive-pack`
-//!     → pkt-line command list + pack-v2 stream.
+//! Handles `POST /{owner}/{repo}.git/git-receive-pack`: pkt-line
+//! command list parsing plus pack-byte forwarding into the
+//! spec-owned `Repository.IngestPack` action bridge. The preceding
+//! `/info/refs` advertisement phase lives in `git_refs_advertise`.
 //!
 //! For `POST /git-receive-pack`, this module is now only the Git wire
 //! adapter. It reads the streamed body, parses the receive-pack command list,
@@ -33,7 +31,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use sha2::{Digest, Sha256};
 use temper_wasm_sdk::http_stream::InboundHttp;
 use temper_wasm_sdk::prelude::*;
-use tg_wire::{AdvertisedRef, CommandKind, Service, advertise_info_refs, commands};
+use tg_wire::{CommandKind, commands};
 
 /// Cap on the command-list bytes accumulated before pack parsing
 /// begins. The list is pkt-line framed (4-hex length + payload) and
@@ -48,11 +46,6 @@ const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
 const FIELD_OVERFLOW_SIZE_KEY: &str = "__temper_blob_size";
 const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
 pub(crate) const TEMPER_API: &str = "http://127.0.0.1:3000";
-pub(crate) const SYSTEM_TENANT: &str = "default";
-pub(crate) const SYSTEM_PRINCIPAL: &str = "git-receive-pack";
-
-mod auth;
-pub(crate) use auth::Principal;
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
@@ -66,72 +59,11 @@ temper_module! {
         let raw = http.path.as_str();
         let path = raw.split('?').next().unwrap_or(raw);
 
-        if http.method == "GET" && path.ends_with("/info/refs") {
-            return serve_info_refs(&ctx, &http);
-        }
         if http.method == "POST" && path.ends_with("/git-receive-pack") {
             return serve_receive_pack(&ctx, &http);
         }
         respond_text(&http, 404, "text/plain", "no receive-pack route matches")
     }
-}
-
-fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
-    let service = match query_param(http, "service").as_deref() {
-        Some("git-receive-pack") => Service::ReceivePack,
-        Some("git-upload-pack") | None => Service::UploadPack,
-        Some(other) => {
-            return respond_text(
-                http,
-                400,
-                "text/plain",
-                &format!("unknown service '{other}' on /info/refs"),
-            );
-        }
-    };
-
-    let owner = http.params.get("owner").cloned().unwrap_or_default();
-    let repo = http.params.get("repo").cloned().unwrap_or_default();
-    let repository_id = format!("rp-{owner}-{repo}");
-    let principal = effective_principal(ctx, &http.headers);
-    let api_base = temper_api_from_headers(&http.headers);
-    let refs_rows = fetch_refs_for_repo(ctx, &principal, &repository_id, &api_base)?;
-
-    let owned: Vec<(String, String)> = refs_rows
-        .into_iter()
-        .filter(|r| r.status == "Active" && r.name != "HEAD")
-        .map(|r| (r.target_sha, r.name))
-        .collect();
-    let refs: Vec<AdvertisedRef<'_>> = owned
-        .iter()
-        .map(|(sha, name)| AdvertisedRef {
-            sha: sha.as_str(),
-            name: name.as_str(),
-        })
-        .collect();
-
-    let body =
-        advertise_info_refs(service, &refs).map_err(|e| format!("advertise_info_refs: {e}"))?;
-    http.submit_response_head(
-        200,
-        &[
-            ("content-type", service.content_type()),
-            ("cache-control", "no-cache"),
-        ],
-    )
-    .map_err(|e| format!("submit_response_head: {e}"))?;
-    let mut writer = http.response_body();
-    writer
-        .write_all_chunk(&body)
-        .map_err(|e| format!("response_body write: {e}"))?;
-    writer
-        .finish()
-        .map_err(|e| format!("response_body close: {e}"))?;
-    Ok(json!({
-        "bytes_written": body.len(),
-        "ref_count": refs.len(),
-        "repository_id": repository_id,
-    }))
 }
 
 fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
@@ -213,7 +145,7 @@ fn receive_pack_client_request_id(
     command_bytes: &[u8],
     pack_bytes: &[u8],
 ) -> String {
-    let mut hasher = tg_canonical::Sha1::new();
+    let mut hasher = genesis_git_object::Sha1::new();
     hasher.update(repository_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(command_bytes);
@@ -229,82 +161,6 @@ fn command_list_declares_capability(command_bytes: &[u8], needle: &str) -> bool 
     command_bytes
         .windows(needle.len())
         .any(|window| window == needle.as_bytes())
-}
-
-fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
-    let resolved = auth::resolve_principal(ctx, headers);
-    if resolved.is_anonymous() {
-        Principal::system()
-    } else {
-        resolved
-    }
-}
-
-struct RefRow {
-    name: String,
-    target_sha: String,
-    status: String,
-}
-
-fn fetch_refs_for_repo(
-    ctx: &Context,
-    principal: &Principal,
-    repository_id: &str,
-    api_base: &str,
-) -> Result<Vec<RefRow>, String> {
-    let url = format!("{api_base}/tdata/Refs");
-    let resp = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("fetch refs: {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("fetch refs status {}", resp.status));
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("refs parse: {e}"))?;
-    let items = parsed
-        .get("value")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let mut rows = Vec::with_capacity(items.len());
-    for row in items {
-        let fields = row
-            .get("fields")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let repo = fields
-            .get("RepositoryId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if repo != repository_id {
-            continue;
-        }
-        let name = fields
-            .get("Name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let target_sha = fields
-            .get("TargetCommitSha")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let status = fields
-            .get("Status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        if name.is_empty() || target_sha.is_empty() {
-            continue;
-        }
-        rows.push(RefRow {
-            name,
-            target_sha,
-            status,
-        });
-    }
-    rows.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(rows)
 }
 
 fn temper_api_from_headers(headers: &[(String, String)]) -> String {
@@ -468,19 +324,6 @@ fn respond_text(
         .finish()
         .map_err(|e| format!("response_body close: {e}"))?;
     Ok(json!({ "status": status }))
-}
-
-fn query_param(http: &InboundHttp, key: &str) -> Option<String> {
-    let qs = http.path.splitn(2, '?').nth(1)?;
-    for pair in qs.split('&') {
-        let mut it = pair.splitn(2, '=');
-        let k = it.next()?;
-        let v = it.next().unwrap_or("");
-        if k == key {
-            return Some(v.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]

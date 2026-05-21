@@ -949,7 +949,7 @@ impl<'a> RepositoryObjectGraph<'a> {
                 id: tree_id.to_string(),
             }
         })?;
-        let parsed = tg_canonical::parse_tree(&tree.body).map_err(|e| {
+        let parsed = parse_git_tree_body(&tree.body).map_err(|e| {
             ClosureResolveError::InvalidRepositoryObject {
                 kind: "Tree".to_string(),
                 id: tree_id.to_string(),
@@ -961,10 +961,10 @@ impl<'a> RepositoryObjectGraph<'a> {
             .map(|entry| RegistryTreeEntry {
                 tree_id: tree_id.to_string(),
                 repository_id: repository_id.to_string(),
-                path: entry.name,
+                path: entry.path,
                 mode: entry.mode,
                 object_sha: entry.sha,
-                kind: if entry.is_tree { "Tree" } else { "Blob" }.to_string(),
+                kind: entry.kind,
             })
             .collect::<Vec<_>>();
         entries.sort_by(|a, b| a.path.cmp(&b.path));
@@ -1107,6 +1107,67 @@ fn entry_is_tree(entry: &RegistryTreeEntry) -> bool {
         || entry.kind.eq_ignore_ascii_case("tree")
         || entry.mode == "40000"
         || entry.mode == "040000"
+}
+
+struct ParsedGitTreeEntry {
+    path: String,
+    mode: String,
+    sha: String,
+    kind: String,
+}
+
+fn parse_git_tree_body(body: &[u8]) -> Result<Vec<ParsedGitTreeEntry>, String> {
+    let mut entries = Vec::new();
+    let mut cursor = 0usize;
+    while cursor < body.len() {
+        let mode_end = find_byte(body, cursor, b' ')
+            .ok_or_else(|| format!("entry at byte {cursor} missing mode delimiter"))?;
+        if mode_end == cursor {
+            return Err(format!("entry at byte {cursor} has empty mode"));
+        }
+        let mode = core::str::from_utf8(&body[cursor..mode_end])
+            .map_err(|e| format!("entry mode at byte {cursor} is not UTF-8: {e}"))?
+            .to_string();
+
+        let name_start = mode_end + 1;
+        let name_end = find_byte(body, name_start, 0)
+            .ok_or_else(|| format!("entry at byte {cursor} missing name terminator"))?;
+        if name_end == name_start {
+            return Err(format!("entry at byte {cursor} has empty path"));
+        }
+        let path = String::from_utf8(body[name_start..name_end].to_vec())
+            .map_err(|e| format!("entry path at byte {cursor} is not UTF-8: {e}"))?;
+
+        let sha_start = name_end + 1;
+        let sha_end = sha_start + 20;
+        if sha_end > body.len() {
+            return Err(format!("entry '{path}' is missing its 20-byte object id"));
+        }
+        let sha = hex_lower(&body[sha_start..sha_end]);
+        let kind = if mode == "40000" || mode == "040000" {
+            "Tree"
+        } else {
+            "Blob"
+        }
+        .to_string();
+
+        entries.push(ParsedGitTreeEntry {
+            path,
+            mode,
+            sha,
+            kind,
+        });
+        cursor = sha_end;
+    }
+    Ok(entries)
+}
+
+fn find_byte(bytes: &[u8], start: usize, needle: u8) -> Option<usize> {
+    bytes
+        .get(start..)?
+        .iter()
+        .position(|&byte| byte == needle)
+        .map(|offset| start + offset)
 }
 
 fn parse_odata_collection<T>(
@@ -1793,23 +1854,23 @@ temper-git = "@old-git"
     }
 
     fn tree_with_app_toml(repository_id: &str, object_sha: &str) -> RegistryTree {
-        let entries = vec![tg_canonical::TreeEntry {
-            mode: tg_canonical::Mode::RegularFile,
-            name: b"app.toml".to_vec(),
-            object_sha: object_sha.to_string(),
-        }];
-        let id = tg_canonical::tree_hash(entries.clone());
-        let canonical = tg_canonical::tree_canonical_bytes(entries);
-        let body_start = canonical
-            .iter()
-            .position(|&byte| byte == 0)
-            .expect("canonical tree has a git object header")
-            + 1;
+        let mut body = b"100644 app.toml\0".to_vec();
+        body.extend_from_slice(&hex_to_object_id(object_sha));
         RegistryTree {
-            id,
+            id: "tree-with-app-toml".to_string(),
             repository_id: repository_id.to_string(),
-            body: canonical[body_start..].to_vec(),
+            body,
         }
+    }
+
+    fn hex_to_object_id(value: &str) -> [u8; 20] {
+        assert_eq!(value.len(), 40, "git object ids must be 40 hex chars");
+        let mut out = [0u8; 20];
+        for (index, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
+            let pair = std::str::from_utf8(chunk).expect("hex pair should be UTF-8");
+            out[index] = u8::from_str_radix(pair, 16).expect("object id should be lowercase hex");
+        }
+        out
     }
 
     fn blob(repository_id: &str, id: &str, content: &str) -> RegistryBlob {

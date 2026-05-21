@@ -29,6 +29,7 @@ from = ["Active"]
 to = "Active"
 params = ["Name", "RepositoryId", "Description", "Exports", "Visibility"]
 hint = "Register a genesis app. Composite contract creates or updates the App row after the Repository exists."
+record_parent_event = false
 
 [[action.triggers]]
 name = "app_registry"

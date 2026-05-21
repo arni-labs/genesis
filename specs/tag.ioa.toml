@@ -5,7 +5,8 @@
 # entity covers annotated tags only — those that have their own
 # tag-object with tagger, message, and optional signature.
 #
-# Id = SHA-1 hex of canonical tag bytes (see `canonical/src/tag.rs`).
+# Id = SHA-1 hex of canonical tag bytes (see
+# `wasm-modules/git_object/src/tag.rs`).
 # Immutable.
 #
 # Target is the tagged object (typically a Commit; can be any object

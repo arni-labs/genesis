@@ -102,13 +102,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "genesis-git-object"
+version = "0.0.1"
+
+[[package]]
 name = "genesis-registry"
 version = "0.0.1"
 dependencies = [
  "base64",
  "serde_json",
  "sha2",
- "tg-canonical",
  "toml",
 ]
 
@@ -117,11 +120,22 @@ name = "git_receive_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-object",
  "serde",
  "serde_json",
  "sha2",
  "temper-wasm-sdk",
- "tg-canonical",
+ "tg-wire",
+]
+
+[[package]]
+name = "git_refs_advertise"
+version = "0.0.1"
+dependencies = [
+ "base64",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
  "tg-wire",
 ]
 
@@ -130,11 +144,11 @@ name = "git_upload_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-object",
  "serde",
  "serde_json",
  "sha2",
  "temper-wasm-sdk",
- "tg-canonical",
  "tg-wire",
 ]
 
@@ -205,11 +219,11 @@ name = "scm_ingest_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-object",
  "serde",
  "serde_json",
  "sha2",
  "temper-wasm-sdk",
- "tg-canonical",
  "tg-wire",
 ]
 
@@ -311,10 +325,6 @@ dependencies = [
  "serde",
  "serde_json",
 ]
-
-[[package]]
-name = "tg-canonical"
-version = "0.0.1"
 
 [[package]]
 name = "tg-wire"

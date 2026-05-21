@@ -35,6 +35,12 @@ criticality = "app-required"
 startup_loading = "eager"
 
 [[wasm_modules]]
+name = "git_refs_advertise"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "eager"
+
+[[wasm_modules]]
 name = "git_receive_pack"
 target = "wasm32-wasip1"
 criticality = "app-required"
