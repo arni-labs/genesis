@@ -23,8 +23,10 @@ agent writes app files -> git push to Genesis -> RegisterNewApp/PublishNewVersio
   copyable OData, CLI, TemperPaw-shaped, and clone commands.
 - `temper install owner/app@hash --tenant ... --url ...` for installing a
   pinned Genesis app ref.
-- Railway deployment with Postgres-backed state:
-  <https://genesis-production-164d.up.railway.app/genesis/>
+- Vercel-hosted Genesis UI:
+  <https://genesis-registry-ui.vercel.app>
+- Railway deployment with Postgres-backed API/git state:
+  <https://genesis-production-164d.up.railway.app>
 - The public Railway registry is seeded with the real TemperPaw, Katagami, and
   Deep Sci-Fi app bundles listed below; deleted smoke-test apps are hidden from
   the default UI.
@@ -165,12 +167,20 @@ http://127.0.0.1:3000/genesis/
 
 ## Live Verification
 
-The current public Railway proof is:
+The current public proof is:
 
-- URL: <https://genesis-production-164d.up.railway.app/genesis/>
+- Vercel UI URL: <https://genesis-registry-ui.vercel.app>
+- Railway API/git URL: <https://genesis-production-164d.up.railway.app>
 - Latest verified redeploy: `8db49199-0713-4e5a-a6d5-56580a321c27`
+- Vercel production deploy:
+  <https://genesis-registry-odhduxc8y-rita-agafonovas-projects.vercel.app>
+  aliased to <https://genesis-registry-ui.vercel.app>
 - Real app seed: 20 active installable app bundles, 913 reachable Git objects,
   and 84 field-overflow bodies persisted through the Postgres shadow store.
+- UI proof: the Vercel page loaded `paw-agent`, `katagami-curation`, and
+  `paw-patrol` from the Railway API, opened the `paw-patrol` file browser, and
+  showed OData, CLI, TemperPaw-shaped, and clone commands pointing at the
+  Railway registry URL.
 - Clone proof: `temperpaw/paw-agent`, `temperpaw/paw-patrol`,
   `katagami/katagami-commons`, and `katagami/katagami-curation` clone from the
   public Railway URL at their registered hashes.

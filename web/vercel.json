@@ -1,0 +1,11 @@
+{
+  "buildCommand": "GENESIS_BASE_PATH= VITE_TEMPER_API_BASE=https://genesis-production-164d.up.railway.app VITE_TEMPER_TENANT_ID=default npm run build",
+  "installCommand": "npm ci",
+  "outputDirectory": "build",
+  "rewrites": [
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}

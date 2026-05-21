@@ -57,6 +57,8 @@
   let currentPath = '';
   let selectedFilePath = '';
 
+  const configuredApiBase = (import.meta.env.VITE_TEMPER_API_BASE ?? '').replace(/\/$/, '');
+
   $: ownersById = new Map(owners.map((owner) => [owner.id || owner.accountId, owner]));
   $: browsableApps = apps.filter((app) => app.status !== 'Deleted' && isInstallableApp(app));
   $: filteredApps = apps
@@ -316,6 +318,10 @@
     return value.replace(/'/g, "''");
   }
 
+  function registryApiBase(): string {
+    return configuredApiBase || location.origin;
+  }
+
   function odataInstallCommand(app: RegistryApp): string {
     const ref = appRef(app);
     const body = JSON.stringify({
@@ -323,19 +329,19 @@
       AppRef: ref,
       Installer: 'manual'
     });
-    return `curl -sS -X POST "${location.origin}/tdata/Apps('${escapedODataId(app.id)}')/App.Install" -H "Content-Type: application/json" -H "X-Tenant-Id: default" -d '${body}'`;
+    return `curl -sS -X POST "${registryApiBase()}/tdata/Apps('${escapedODataId(app.id)}')/App.Install" -H "Content-Type: application/json" -H "X-Tenant-Id: default" -d '${body}'`;
   }
 
   function cliInstallCommand(app: RegistryApp): string {
-    return `temper install ${appRef(app)} --tenant default --url ${location.origin}`;
+    return `temper install ${appRef(app)} --tenant default --url ${registryApiBase()}`;
   }
 
   function temperPawInstallCommand(app: RegistryApp): string {
-    return `install_app({"source":"genesis","app_ref":"${appRef(app)}","tenant":"default","url":"${location.origin}"})`;
+    return `install_app({"source":"genesis","app_ref":"${appRef(app)}","tenant":"default","url":"${registryApiBase()}"})`;
   }
 
   function cloneCommand(app: RegistryApp): string {
-    return `git clone ${location.origin}/${app.ownerId}/${app.name}.git`;
+    return `git clone ${registryApiBase()}/${app.ownerId}/${app.name}.git`;
   }
 
   function closureEntries(closure: Closure): Array<[string, string]> {

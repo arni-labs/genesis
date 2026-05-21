@@ -12,6 +12,8 @@ web/build/
 web/node_modules/
 web/test-results/
 web/playwright-report/
+web/.vercel/
+.vercel/
 
 # Temper submodule build artifacts (when populated)
 /temper/target/

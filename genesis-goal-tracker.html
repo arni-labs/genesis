@@ -71,14 +71,14 @@
     <main>
       <header class="hero">
         <div class="hero-copy">
-          <p class="muted">Last updated: 2026-05-21 02:18 EDT</p>
-          <h1>Genesis-Only Install and Railway Deployment</h1>
-          <p class="muted">Two-PR implementation tracking for Temper platform install support plus the Genesis registry, UI, live proof, and Railway packaging.</p>
+          <p class="muted">Last updated: 2026-05-21 11:38 EDT</p>
+          <h1>Genesis-Only Install, Railway API, and Vercel UI</h1>
+          <p class="muted">Two-PR implementation tracking for Temper platform install support plus the Genesis registry, UI, live proof, Railway API packaging, and Vercel UI hosting.</p>
           <div class="meter" aria-label="100 percent complete"><span style="width: 100%"></span></div>
         </div>
         <div>
           <div class="percent">100%</div>
-          <p class="muted">Real TemperPaw, Katagami, and Deep Sci-Fi apps are seeded in Genesis, installable by pinned ref, and verified live on Railway after redeploy recovery.</p>
+          <p class="muted">Real TemperPaw, Katagami, and Deep Sci-Fi apps are seeded in Genesis, installable by pinned ref, and verified live through Vercel against the Railway Postgres-backed registry.</p>
         </div>
       </header>
 
@@ -86,7 +86,8 @@
         <div class="metric"><span class="muted">Temper PR</span><strong><a href="https://github.com/nerdsane/temper/pull/257">#257</a></strong><span class="muted">Ready for review after latest push</span></div>
         <div class="metric"><span class="muted">Genesis PR</span><strong><a href="https://github.com/nerdsane/temper-git/pull/5">#5</a></strong><span class="muted">Ready for review after latest push</span></div>
         <div class="metric"><span class="muted">Local E2E</span><strong>Pass</strong><span class="muted">OData, TemperPaw-shaped, CLI, restart recovery</span></div>
-        <div class="metric"><span class="muted">Railway E2E</span><strong>Pass</strong><span class="muted"><a href="https://genesis-production-164d.up.railway.app/genesis/">Public Genesis registry</a></span></div>
+        <div class="metric"><span class="muted">Railway API E2E</span><strong>Pass</strong><span class="muted"><a href="https://genesis-production-164d.up.railway.app">Postgres-backed registry</a></span></div>
+        <div class="metric"><span class="muted">Vercel UI</span><strong>Pass</strong><span class="muted"><a href="https://genesis-registry-ui.vercel.app">Static registry UI</a></span></div>
       </section>
 
       <section class="grid">
@@ -101,6 +102,7 @@
             <li><span class="dot done"></span><span>Updated the Genesis UI into a cleaner registry workbench with GitHub-like file browsing and copyable install commands.</span></li>
             <li><span class="dot done"></span><span>Added root Railway packaging: <code>Dockerfile</code>, <code>.dockerignore</code>, and <code>railway.toml</code>.</span></li>
             <li><span class="dot done"></span><span>Deployed dedicated Genesis Railway service backed by Railway Postgres at <a href="https://genesis-production-164d.up.railway.app/genesis/">genesis-production-164d.up.railway.app</a>.</span></li>
+            <li><span class="dot done"></span><span>Deployed the Genesis UI to Vercel at <a href="https://genesis-registry-ui.vercel.app">genesis-registry-ui.vercel.app</a>, configured to call the Railway API/git registry.</span></li>
             <li><span class="dot done"></span><span>Seeded the Railway registry with TemperPaw, Katagami, and Deep Sci-Fi app rows and normal Genesis repository refs.</span></li>
             <li><span class="dot done"></span><span>Cleaned the old <code>genesis-e2e/tiny-notes-200215</code> smoke app by marking it deleted/archived and hiding deleted apps from the default UI.</span></li>
             <li><span class="dot done"></span><span>Persisted internal Genesis object and field-overflow blob bodies into Postgres shadow storage so repository bytes recover after Railway redeploys.</span></li>
@@ -161,13 +163,14 @@
               <tr><td>Removed bypasses</td><td>Pass</td><td><code>rg</code> found no remaining runtime references to removed skill aliases or bypass env vars.</td></tr>
               <tr><td>Temper PR mergeability</td><td>Pass</td><td>GitHub reports <a href="https://github.com/nerdsane/temper/pull/257">Temper PR #257</a> as open, ready for review, <code>mergeStateStatus=CLEAN</code>, with all required checks successful at <code>9d0ca37f</code>.</td></tr>
               <tr><td>Temper PR CI fix</td><td>Pass</td><td>Merged latest <code>main</code>, carried full-state query-plane projection batches through the Genesis branch, then split query-plane storage impls into <code>storage/query_plane_impls.rs</code> so the readability ratchet stayed below baseline. Local gates passed: <code>cargo check -p temper-platform -p temper-server -p temper-store-turso</code>, <code>bash scripts/readability-ratchet.sh check .ci/readability-baseline.env</code>, <code>cargo test -p temper-platform genesis_install --lib</code>, and <code>cargo test -p temper-store-turso query_projection_batch</code>.</td></tr>
-              <tr><td>Genesis PR readiness</td><td>Pass</td><td>GitHub reports <a href="https://github.com/nerdsane/temper-git/pull/5">Genesis PR #5</a> at <code>5837aa2</code> as open, ready for review, and <code>mergeStateStatus=CLEAN</code>.</td></tr>
+              <tr><td>Genesis PR readiness</td><td>Pass</td><td>GitHub reports <a href="https://github.com/nerdsane/temper-git/pull/5">Genesis PR #5</a> as open, ready for review, and <code>mergeStateStatus=CLEAN</code>; this Vercel update is pushed to the same PR branch.</td></tr>
               <tr><td>Railway auth</td><td>Pass</td><td><code>railway whoami</code> reports <code>Logged in as Rita Agafonova (Rita.mirai@gmail.com)</code>.</td></tr>
               <tr><td>Railway deployment</td><td>Pass</td><td>Service <code>genesis</code> deployed final branch head successfully as deployment <code>8db49199-0713-4e5a-a6d5-56580a321c27</code> with Railway Postgres and <code>TEMPER_EVENT_STORE=postgres</code>; public URL is <a href="https://genesis-production-164d.up.railway.app">https://genesis-production-164d.up.railway.app</a>.</td></tr>
               <tr><td>Railway public API</td><td>Pass</td><td><code>/healthz</code> returns HTTP 200; <code>/genesis/</code> returns HTTP 200; OData metadata includes <code>App</code>, <code>AppInstallation</code>, and <code>Apps</code>.</td></tr>
               <tr><td>Real app registry seed</td><td>Pass</td><td>Public Genesis has 20 active installable app bundles: 16 TemperPaw apps, 2 Katagami apps, and 2 Deep Sci-Fi apps. The old <code>genesis-e2e/tiny-notes-200215</code> row is <code>Deleted</code> and hidden from the default UI.</td></tr>
               <tr><td>Repository object durability</td><td>Pass</td><td>Seeded 913 reachable Git objects and 84 field-overflow bodies for the real app set through the Railway internal blob endpoint after the Postgres shadow-write patch.</td></tr>
               <tr><td>Railway browser UI</td><td>Pass</td><td><a href="https://genesis-production-164d.up.railway.app/genesis/">The public Genesis UI</a> renders only installable active apps by default, hides deleted/test rows, and opens GitHub-like files for seeded app bundles.</td></tr>
+              <tr><td>Vercel hosted UI</td><td>Pass</td><td><a href="https://genesis-registry-ui.vercel.app">The Vercel UI</a> returns HTTP 200, loads <code>paw-agent</code>, <code>katagami-curation</code>, and <code>paw-patrol</code> from the Railway API, opens <code>paw-patrol</code> files, and shows install/clone commands pointing at <code>https://genesis-production-164d.up.railway.app</code>.</td></tr>
               <tr><td>Railway live E2E</td><td>Pass</td><td><code>scripts/live-genesis-install-e2e-smoke.sh</code> pushed <code>genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239</code>, registered it, installed it by OData, TemperPaw-shaped request, and CLI, then used the installed <code>Note</code> entity.</td></tr>
               <tr><td>Railway restart recovery</td><td>Pass</td><td>After service restart, tenants <code>paw-odata-200215</code>, <code>paw-tool-200215</code>, and <code>paw-cli-200215</code> still read back their installed <code>Note</code> entities from Postgres-backed state.</td></tr>
               <tr><td>Public clone real apps</td><td>Pass</td><td>Cloned <code>temperpaw/paw-agent</code> at <code>65fbd22270e4bf7304de2d9b6895a465c332d602</code>, <code>temperpaw/paw-patrol</code> at <code>7deb98f716e5c0e709bb7871642bdb35400cd04b</code>, <code>katagami/katagami-commons</code> at <code>b9fc95c88bb157075be5da081ffb2557aaaf7df3</code>, and <code>katagami/katagami-curation</code> at <code>ef61708fc005368cb4f0144516be97142df7a757</code>.</td></tr>
