@@ -150,7 +150,7 @@ Build the WASM modules and serve Temper with Genesis bootstrapped:
 
 ```bash
 rustup target add wasm32-wasip1
-cargo build -p git_upload_pack -p git_receive_pack -p scm_ingest_pack -p app_registry \
+cargo build -p git_refs_advertise -p git_upload_pack -p git_receive_pack -p scm_ingest_pack -p app_registry \
   --target wasm32-wasip1 --release
 
 TEMPER_OS_APPS_DIR="$PWD" cargo run \

@@ -31,9 +31,10 @@ Working locally end-to-end today:
 
 Available libraries:
 
-- `tg-canonical` — byte-exact git-object serialization + SHA-1, plus
-  minimal commit/tree parsers for DAG walks, parity-verified against
-  real `git`.
+- `genesis-git-object` — byte-exact git-object serialization + SHA-1,
+  plus minimal commit/tree parsers for DAG walks, parity-verified
+  against real `git`. The crate lives under `wasm-modules/git_object`
+  and is owned by the WASM execution boundary.
 - `tg-wire` — pkt-line framing, `/info/refs` advertisement, pack-v2
   parser **and** emitter, receive-pack command-list parser, all
   parity-verified against real `git`.
@@ -83,7 +84,7 @@ Scope (all in tree):
      - Read request body into a bounded buffer (v0: 64 MiB cap).
      - Parse command list.
      - Parse pack via `tg_wire::parse_pack`.
-     - For each object, compute SHA-1 via `tg_canonical`
+     - For each object, compute SHA-1 via `genesis_git_object`
        (already does this byte-exactly), POST to the matching entity
        set (`/tdata/Blobs`, `/tdata/Trees`, `/tdata/Commits`,
        `/tdata/Tags`).
@@ -116,7 +117,8 @@ Scope (all in tree):
    then flush or `done`. Server responds with `NAK` (no common base)
    or `ACK <sha> common` when the client has one of our commits,
    ending with `ACK <sha>` on done.
-2. **Reachable-object walker** (new `tg_canonical::walk`): starting
+2. **Reachable-object walker** (`genesis_git_object` parsers plus the
+   upload-pack phase walker): starting
    from the wanted commit shas, BFS over parent refs + tree entries,
    collecting every commit/tree/blob SHA the client doesn't already
    have (exclusion via the `have` set).
@@ -124,15 +126,16 @@ Scope (all in tree):
    object set as `PACK\0\0\0\2<count>` + per-object (type + size
    header) + zlib-deflated body + 20-byte SHA-1 trailer. Non-delta
    entries only in v0.
-4. **`git_upload_pack` module extension**: branch on method. GET
-   /info/refs keeps the existing advertisement path; POST
-   /git-upload-pack does the full negotiate + walk + emit flow,
+4. **`git_refs_advertise` + `git_upload_pack` phases**:
+   `git_refs_advertise` handles GET /info/refs advertisement;
+   `git_upload_pack` handles POST /git-upload-pack negotiation,
+   object walk, and pack emission,
    with sidebands:
    - sideband 1 (pack bytes): the pack we're emitting.
    - sideband 2 (progress): optional `Counting objects: N\n`,
      `Compressing: ...`, etc.
    - sideband 3 (error): propagate any failure.
-5. **`git_upload_pack` advertisement refs**: the empty-repo
+5. **`git_refs_advertise` advertisement refs**: the empty-repo
    advertisement we ship today is fine for cloning empty repos but
    won't let git clone populated ones. Need to query
    `/tdata/Refs?$filter=RepositoryId eq ...` from the guest when
@@ -162,7 +165,7 @@ doesn't exist yet. Two shapes:
 Gate 1 — receive-pack — **green**:
 - `git init && git commit -m hi && git push temper-git main` exits 0,
   advertises the new ref back on the next `git ls-remote`.
-- `tg-wire` + `tg-canonical` tests green.
+- `tg-wire` + `genesis-git-object` tests green.
 
 Gate 2 — upload-pack POST — **green**:
 - After Gate 1, a fresh clone from a different working tree reproduces

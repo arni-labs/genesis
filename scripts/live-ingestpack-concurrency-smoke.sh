@@ -26,6 +26,10 @@ REMOTE="${BASE_URL}/${OWNER}/${REPO}.git"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/temper-ingestpack-race.XXXXXX")"
 cleanup() {
+  if [[ "${KEEP_TMP:-}" == "1" ]]; then
+    printf 'Keeping temp dir: %s\n' "$TMP_DIR" >&2
+    return
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -88,6 +92,7 @@ ensure_endpoint() {
   local id="$1"
   local body="$2"
   if entity_exists "HttpEndpoints" "$id"; then
+    curl -fsS -X PATCH "${api_headers[@]}" -d "$body" "${BASE_URL}/tdata/HttpEndpoints('${id}')" >/dev/null
     return
   fi
   post_json "/tdata/HttpEndpoints" "$body"
@@ -118,6 +123,26 @@ collection_for_git_type() {
   esac
 }
 
+object_entity_id() {
+  node -e '
+    const repoId = process.argv[1];
+    const sha = process.argv[2];
+    let repo = "";
+    let lastDash = false;
+    for (const ch of repoId) {
+      if (/^[A-Za-z0-9]$/.test(ch)) {
+        repo += ch.toLowerCase();
+        lastDash = false;
+      } else if (!lastDash) {
+        repo += "-";
+        lastDash = true;
+      }
+    }
+    repo = repo.replace(/^-+|-+$/g, "");
+    process.stdout.write(repo ? `${repo}-${sha}` : `obj-${sha}`);
+  ' "$REPO_ID" "$1"
+}
+
 write_object_inventory() {
   local client="$1"
   local out="$2"
@@ -130,11 +155,12 @@ write_object_inventory() {
 assert_objects_present() {
   local inventory="$1"
   local checked=0
-  local sha kind collection
+  local sha kind collection entity_id
   while read -r sha kind; do
     collection="$(collection_for_git_type "$kind")"
-    if ! entity_exists "$collection" "$sha"; then
-      printf 'Expected winner %s object %s in %s, but it was absent\n' "$kind" "$sha" "$collection" >&2
+    entity_id="$(object_entity_id "$sha")"
+    if ! entity_exists "$collection" "$entity_id"; then
+      printf 'Expected winner %s object %s (%s) in %s, but it was absent\n' "$kind" "$sha" "$entity_id" "$collection" >&2
       exit 1
     fi
     checked=$((checked + 1))
@@ -149,11 +175,12 @@ assert_objects_present() {
 assert_objects_absent() {
   local inventory="$1"
   local checked=0
-  local sha kind collection
+  local sha kind collection entity_id
   while read -r sha kind; do
     collection="$(collection_for_git_type "$kind")"
-    if entity_exists "$collection" "$sha"; then
-      printf 'Rejected push leaked %s object %s into %s\n' "$kind" "$sha" "$collection" >&2
+    entity_id="$(object_entity_id "$sha")"
+    if entity_exists "$collection" "$entity_id"; then
+      printf 'Rejected push leaked %s object %s (%s) into %s\n' "$kind" "$sha" "$entity_id" "$collection" >&2
       exit 1
     fi
     checked=$((checked + 1))
@@ -166,8 +193,12 @@ assert_objects_absent() {
 }
 
 printf 'Seeding smart-HTTP endpoints for %s\n' "$BASE_URL"
+INFO_REFS_ENDPOINT_ID="he-info-refs-${RUN_ID}"
+INFO_REFS_PREFIX="/${OWNER}/${REPO}.git/info/refs"
+ensure_endpoint "$INFO_REFS_ENDPOINT_ID" \
+  "{\"Id\":$(json_escape "$INFO_REFS_ENDPOINT_ID"),\"PathPrefix\":$(json_escape "$INFO_REFS_PREFIX"),\"Methods\":\"GET\",\"IntegrationModule\":\"git_refs_advertise\",\"RequiresAuth\":false,\"TimeoutSecs\":60}"
 ensure_endpoint "he-info-refs" \
-  '{"Id":"he-info-refs","PathPrefix":"/{owner}/{repo}.git/info/refs","Methods":"GET","IntegrationModule":"git_upload_pack","RequiresAuth":false,"TimeoutSecs":60}'
+  '{"Id":"he-info-refs","PathPrefix":"/{owner}/{repo}.git/info/refs","Methods":"GET","IntegrationModule":"git_refs_advertise","RequiresAuth":false,"TimeoutSecs":60}'
 ensure_endpoint "he-upload-pack" \
   '{"Id":"he-upload-pack","PathPrefix":"/{owner}/{repo}.git/git-upload-pack","Methods":"POST","IntegrationModule":"git_upload_pack","RequiresAuth":false,"TimeoutSecs":300,"MaxFuel":20000000000,"MaxMemory":536870912,"MaxResponseBytes":134217728}'
 ensure_endpoint "he-receive-pack" \

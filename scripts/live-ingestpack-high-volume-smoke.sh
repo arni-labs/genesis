@@ -92,6 +92,7 @@ ensure_endpoint() {
   local id="$1"
   local body="$2"
   if entity_exists "HttpEndpoints" "$id"; then
+    curl -fsS -X PATCH "${api_headers[@]}" -d "$body" "${BASE_URL}/tdata/HttpEndpoints('${id}')" >/dev/null
     return
   fi
   post_json "/tdata/HttpEndpoints" "$body"
@@ -126,8 +127,12 @@ collection_count_for_repo() {
 }
 
 printf 'Seeding smart-HTTP endpoints for %s\n' "$BASE_URL"
+INFO_REFS_ENDPOINT_ID="he-info-refs-${RUN_ID}"
+INFO_REFS_PREFIX="/${OWNER}/${REPO}.git/info/refs"
+ensure_endpoint "$INFO_REFS_ENDPOINT_ID" \
+  "{\"Id\":$(json_escape "$INFO_REFS_ENDPOINT_ID"),\"PathPrefix\":$(json_escape "$INFO_REFS_PREFIX"),\"Methods\":\"GET\",\"IntegrationModule\":\"git_refs_advertise\",\"RequiresAuth\":false,\"TimeoutSecs\":60}"
 ensure_endpoint "he-info-refs" \
-  '{"Id":"he-info-refs","PathPrefix":"/{owner}/{repo}.git/info/refs","Methods":"GET","IntegrationModule":"git_upload_pack","RequiresAuth":false,"TimeoutSecs":60}'
+  '{"Id":"he-info-refs","PathPrefix":"/{owner}/{repo}.git/info/refs","Methods":"GET","IntegrationModule":"git_refs_advertise","RequiresAuth":false,"TimeoutSecs":60}'
 ensure_endpoint "he-upload-pack" \
   '{"Id":"he-upload-pack","PathPrefix":"/{owner}/{repo}.git/git-upload-pack","Methods":"POST","IntegrationModule":"git_upload_pack","RequiresAuth":false,"TimeoutSecs":300,"MaxFuel":20000000000,"MaxMemory":536870912,"MaxResponseBytes":134217728}'
 ensure_endpoint "he-receive-pack" \

@@ -9,8 +9,8 @@
 # the TreeEntry rows (each tree owns its entries). The canonical tree
 # bytes are computed from these rows at serialize time.
 #
-# Immutable after creation; `sort_entries` in tg-canonical enforces
-# canonical ordering at tree-hash time.
+# Immutable after creation; `sort_entries` in the git_object helper
+# crate enforces canonical ordering at tree-hash time.
 
 [automaton]
 name = "TreeEntry"

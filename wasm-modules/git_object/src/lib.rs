@@ -1,4 +1,4 @@
-//! # tg-canonical — byte-exact git object serialization + SHA-1
+//! # genesis-git-object — byte-exact git object serialization + SHA-1
 //!
 //! This crate is the foundation of temper-git's byte-exact compat
 //! contract (see [ADR-0003][adr-0003]). It does exactly one thing:

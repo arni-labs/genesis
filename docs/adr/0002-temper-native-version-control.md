@@ -86,8 +86,8 @@ needs (parse a pack, read entity state, emit a response), and streams
 its response back.
 
 **Implementations (initial set):**
-- `git_upload_pack` — handles `GET /{owner}/{repo}.git/info/refs?service=git-upload-pack`
-  and `POST /{owner}/{repo}.git/git-upload-pack`.
+- `git_refs_advertise` — handles `GET /{owner}/{repo}.git/info/refs?service=...`.
+- `git_upload_pack` — handles `POST /{owner}/{repo}.git/git-upload-pack`.
 - `git_receive_pack` — handles `/info/refs?service=git-receive-pack` and
   `POST /{owner}/{repo}.git/git-receive-pack`.
 - `github_rest_contents` — `GET/PUT/DELETE /api/v3/repos/{owner}/{repo}/contents/{path}`.

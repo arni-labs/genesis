@@ -1,7 +1,8 @@
 # Commit — git commit object.
 #
 # Id = SHA-1 hex of the canonical commit bytes (see
-# `canonical/src/commit.rs::commit_canonical_bytes`). Immutable.
+# `wasm-modules/git_object/src/commit.rs::commit_canonical_bytes`).
+# Immutable.
 #
 # One commit row references one Tree (`TreeSha`) and zero-or-more
 # parent commits (`ParentShas`). Zero parents = initial commit; one

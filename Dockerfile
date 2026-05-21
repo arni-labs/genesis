@@ -20,15 +20,18 @@ COPY . .
 
 # Build Genesis WASM integrations and place them where app.toml declares them.
 RUN cargo build --release --target wasm32-wasip1 \
+    -p git_refs_advertise \
     -p git_upload_pack \
     -p git_receive_pack \
     -p scm_ingest_pack \
     -p app_registry
 RUN mkdir -p \
+    wasm/git_refs_advertise \
     wasm/git_upload_pack \
     wasm/git_receive_pack \
     wasm/scm_ingest_pack \
     wasm/app_registry \
+    && cp target/wasm32-wasip1/release/git_refs_advertise.wasm wasm/git_refs_advertise/git_refs_advertise.wasm \
     && cp target/wasm32-wasip1/release/git_upload_pack.wasm wasm/git_upload_pack/git_upload_pack.wasm \
     && cp target/wasm32-wasip1/release/git_receive_pack.wasm wasm/git_receive_pack/git_receive_pack.wasm \
     && cp target/wasm32-wasip1/release/scm_ingest_pack.wasm wasm/scm_ingest_pack/scm_ingest_pack.wasm \
@@ -38,7 +41,7 @@ RUN cargo build --manifest-path temper/Cargo.toml --profile dist --bin temper
 
 RUN mkdir -p /opt/genesis-os-apps/temper-git \
     && cp app.toml APP.md README.md /opt/genesis-os-apps/temper-git/ \
-    && cp -R specs policies docs registry canonical wire wasm wasm-modules /opt/genesis-os-apps/temper-git/
+    && cp -R specs policies docs registry wire wasm wasm-modules /opt/genesis-os-apps/temper-git/
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y \
