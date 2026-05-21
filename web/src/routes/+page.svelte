@@ -408,7 +408,31 @@
 <main class="shell">
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark">G</div>
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M5 4 C 11 8, 13 16, 19 20"
+            stroke="rgba(255,255,255,0.95)"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+          <path
+            d="M19 4 C 13 8, 11 16, 5 20"
+            stroke="rgba(255,255,255,0.95)"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+          <circle cx="6.6" cy="6.4" r="1.05" fill="#a3e635" />
+          <circle cx="9.2" cy="9.6" r="1.05" fill="#ffffff" />
+          <circle cx="12" cy="12" r="1.1" fill="#a3e635" />
+          <circle cx="14.8" cy="14.4" r="1.05" fill="#ffffff" />
+          <circle cx="17.4" cy="17.6" r="1.05" fill="#a3e635" />
+          <circle cx="17.4" cy="6.4" r="1.05" fill="#ffffff" />
+          <circle cx="14.8" cy="9.6" r="1.05" fill="#a3e635" />
+          <circle cx="9.2" cy="14.4" r="1.05" fill="#a3e635" />
+          <circle cx="6.6" cy="17.6" r="1.05" fill="#ffffff" />
+        </svg>
+      </div>
       <div>
         <h1>Genesis Registry</h1>
         <p>
@@ -727,12 +751,25 @@
                   <svg class="lineage-svg" viewBox="0 0 760 260" role="img" aria-label="Lineage graph">
                     <defs>
                       <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                        <path d="M0,0 L0,6 L7,3 z" fill="#8b9585" />
+                        <path d="M0,0 L0,6 L7,3 z" fill="#a5b4fc" />
                       </marker>
+                      <linearGradient id="selected-fill" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#eef2ff" />
+                        <stop offset="100%" stop-color="#f7fee7" />
+                      </linearGradient>
                     </defs>
 
                     {#if parentApp}
-                      <line x1="206" y1="130" x2="318" y2="130" stroke="#8b9585" stroke-width="2" marker-end="url(#arrow)" />
+                      <line
+                        x1="206"
+                        y1="130"
+                        x2="318"
+                        y2="130"
+                        stroke="#a5b4fc"
+                        stroke-width="2"
+                        stroke-dasharray="3 4"
+                        marker-end="url(#arrow)"
+                      />
                     {/if}
                     {#each childApps.slice(0, 2) as child, index}
                       <line
@@ -740,32 +777,36 @@
                         y1="130"
                         x2="552"
                         y2={index === 0 ? 88 : 172}
-                        stroke="#8b9585"
+                        stroke="#a5b4fc"
                         stroke-width="2"
+                        stroke-dasharray="3 4"
                         marker-end="url(#arrow)"
                       />
                     {/each}
 
                     {#if parentApp}
                       <g transform="translate(34 96)">
-                        <rect width="172" height="68" rx="8" fill="#fff8e5" stroke="#e6ca8b" />
-                        <text class="svg-label" x="14" y="28">{parentApp.name}</text>
-                        <text class="svg-meta" x="14" y="48">{shortHash(selectedLineage?.parentCommit ?? parentApp.latestVersionHash, 18)}</text>
+                        <rect width="172" height="68" rx="14" fill="#ffffff" stroke="#e2e8f0" />
+                        <circle cx="14" cy="20" r="3" fill="#a3e635" />
+                        <text class="svg-label" x="26" y="26">{parentApp.name}</text>
+                        <text class="svg-meta" x="14" y="50">{shortHash(selectedLineage?.parentCommit ?? parentApp.latestVersionHash, 18)}</text>
                       </g>
                     {/if}
 
                     <g transform="translate(318 88)">
-                      <rect width="142" height="84" rx="8" fill="#ecf8f5" stroke="#176f67" />
-                      <text class="svg-label" x="14" y="30">{selectedApp.name}</text>
-                      <text class="svg-meta" x="14" y="52">{selectedApp.ownerId}</text>
-                      <text class="svg-meta" x="14" y="68">{shortHash(selectedApp.latestVersionHash, 18)}</text>
+                      <rect width="142" height="84" rx="14" fill="url(#selected-fill)" stroke="#6366f1" stroke-width="1.4" />
+                      <circle cx="14" cy="20" r="3" fill="#4f46e5" />
+                      <text class="svg-label" x="26" y="26">{selectedApp.name}</text>
+                      <text class="svg-meta" x="14" y="50">{selectedApp.ownerId}</text>
+                      <text class="svg-meta" x="14" y="66">{shortHash(selectedApp.latestVersionHash, 18)}</text>
                     </g>
 
                     {#each childApps.slice(0, 2) as child, index}
                       <g transform={`translate(552 ${index === 0 ? 54 : 138})`}>
-                        <rect width="172" height="68" rx="8" fill="#ffffff" stroke="#d7dcd0" />
-                        <text class="svg-label" x="14" y="28">{child.name}</text>
-                        <text class="svg-meta" x="14" y="48">{child.ownerId}</text>
+                        <rect width="172" height="68" rx="14" fill="#ffffff" stroke="#e2e8f0" />
+                        <circle cx="14" cy="20" r="3" fill="#a3e635" />
+                        <text class="svg-label" x="26" y="26">{child.name}</text>
+                        <text class="svg-meta" x="14" y="50">{child.ownerId}</text>
                       </g>
                     {/each}
 
