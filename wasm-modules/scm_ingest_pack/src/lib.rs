@@ -17,23 +17,35 @@ use alloc::vec::Vec;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use temper_wasm_sdk::http_stream::streaming_call;
 use temper_wasm_sdk::prelude::*;
 use tg_wire::pack;
 
 const TEMPER_API: &str = "http://127.0.0.1:3000";
+const FIELD_INLINE_MAX_BYTES: usize = 131_072;
+const FIELD_OVERFLOW_BLOB_PREFIX: &str = "field-overflow/sha256/";
+const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
+const FIELD_OVERFLOW_SIZE_KEY: &str = "__temper_blob_size";
+const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
+const HTTP_STREAM_READ_CHUNK_BYTES: usize = 64 * 1024;
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
         let repository_id = ctx.entity_id.clone();
+        let api_base = temper_api_base(&ctx);
+        let blob_endpoint = blob_endpoint(&ctx, &api_base);
         let ref_updates = parse_ref_updates(&repository_id, &ctx.trigger_params)?;
-        let objects = match decode_pack_bytes(&ctx.trigger_params)? {
-            Some(pack_bytes) => parse_pack_objects(&ctx, &repository_id, &pack_bytes)?,
+        let pack_bytes = decode_pack_bytes(&blob_endpoint, &ctx.trigger_params)?;
+        let pack_byte_count = pack_bytes.as_ref().map(Vec::len).unwrap_or_default();
+        let objects = match pack_bytes {
+            Some(pack_bytes) => parse_pack_objects(&ctx, &api_base, &repository_id, &pack_bytes)?,
             None => Vec::new(),
         };
 
         let mut sub_writes = Vec::new();
         for obj in objects {
-            let (entity_type, row) = object_sub_write(&repository_id, obj)?;
+            let (entity_type, row) = object_sub_write(&ctx, &blob_endpoint, &repository_id, obj)?;
             let object_sha = row
                 .get("Id")
                 .and_then(Value::as_str)
@@ -50,10 +62,24 @@ temper_module! {
 
         let object_count = sub_writes.len();
         let ref_update_count = ref_updates.len();
-        let pr_updates = pr_head_updates_for_refs(&ctx, &repository_id, &ref_updates)?;
+        let pr_updates = pr_head_updates_for_refs(&ctx, &api_base, &repository_id, &ref_updates)?;
         let pr_update_count = pr_updates.len();
         sub_writes.extend(ref_updates.into_iter().map(RefSubWrite::into_sub_write));
         sub_writes.extend(pr_updates);
+        let sub_write_count = sub_writes.len();
+
+        let _ = ctx.log_structured(
+            "info",
+            "scm_ingest_pack_result",
+            &json!({
+                "repository_id": repository_id,
+                "pack_bytes": pack_byte_count,
+                "object_count": object_count,
+                "ref_update_count": ref_update_count,
+                "pr_update_count": pr_update_count,
+                "sub_write_count": sub_write_count,
+            }),
+        );
 
         Ok(json!({
             "object_count": object_count,
@@ -64,11 +90,21 @@ temper_module! {
     }
 }
 
-fn decode_pack_bytes(params: &Value) -> Result<Option<Vec<u8>>, String> {
+fn decode_pack_bytes(blob_endpoint: &str, params: &Value) -> Result<Option<Vec<u8>>, String> {
     let Some(raw) = params.get("PackBytes").or_else(|| params.get("pack_bytes")) else {
         return Ok(None);
     };
+    if let Some(blob_key) = field_overflow_blob_key(raw)? {
+        let serialized = get_overflow_blob(blob_endpoint, &blob_key)?;
+        let value: Value = serde_json::from_str(&serialized)
+            .map_err(|e| format!("PackBytes blob-ref JSON parse: {e}"))?;
+        return decode_pack_bytes_value(&value);
+    }
 
+    decode_pack_bytes_value(raw)
+}
+
+fn decode_pack_bytes_value(raw: &Value) -> Result<Option<Vec<u8>>, String> {
     if let Some(encoded) = raw.as_str() {
         let bytes = B64
             .decode(encoded)
@@ -91,11 +127,12 @@ fn decode_pack_bytes(params: &Value) -> Result<Option<Vec<u8>>, String> {
         return Ok(None);
     }
 
-    Err("PackBytes must be a base64 string, byte array, null, or omitted".to_string())
+    Err("PackBytes must be a base64 string, byte array, blob ref, null, or omitted".to_string())
 }
 
 fn parse_pack_objects(
     ctx: &Context,
+    api_base: &str,
     repository_id: &str,
     pack_bytes: &[u8],
 ) -> Result<Vec<pack::PackObject>, String> {
@@ -105,7 +142,7 @@ fn parse_pack_objects(
     let mut objects = Vec::with_capacity(parser.object_count() as usize);
     while let Some(obj) = parser
         .next_object_with_ref_delta_base(|sha| {
-            fetch_existing_delta_base(ctx, repository_id, sha)
+            fetch_existing_delta_base(ctx, api_base, repository_id, sha)
                 .map_err(|e| pack::PackError::DeltaBaseMissing(format!("{sha}: {e}")))
         })
         .map_err(|e| format!("pack next: {e}"))?
@@ -117,6 +154,8 @@ fn parse_pack_objects(
 }
 
 fn object_sub_write(
+    ctx: &Context,
+    blob_endpoint: &str,
     repository_id: &str,
     obj: pack::PackObject,
 ) -> Result<(&'static str, Value), String> {
@@ -133,7 +172,15 @@ fn object_sub_write(
     };
     Ok((
         entity_type,
-        build_object_row(obj.kind, &sha, repository_id, &obj.data, &canonical),
+        build_object_row(
+            ctx,
+            blob_endpoint,
+            obj.kind,
+            &sha,
+            repository_id,
+            &obj.data,
+            &canonical,
+        )?,
     ))
 }
 
@@ -236,6 +283,7 @@ fn parse_ref_updates(repository_id: &str, params: &Value) -> Result<Vec<RefSubWr
 
 fn pr_head_updates_for_refs(
     ctx: &Context,
+    api_base: &str,
     repository_id: &str,
     ref_updates: &[RefSubWrite],
 ) -> Result<Vec<Value>, String> {
@@ -244,7 +292,9 @@ fn pr_head_updates_for_refs(
         if update.action == "Delete" || is_zero_sha(&update.new_sha) {
             continue;
         }
-        for pr in fetch_open_pull_requests_for_source_ref(ctx, repository_id, &update.name)? {
+        for pr in
+            fetch_open_pull_requests_for_source_ref(ctx, api_base, repository_id, &update.name)?
+        {
             out.push(json!({
                 "entity_type": "PullRequest",
                 "entity_id": pr.entity_id,
@@ -266,6 +316,7 @@ struct PullRequestTarget {
 
 fn fetch_open_pull_requests_for_source_ref(
     ctx: &Context,
+    api_base: &str,
     repository_id: &str,
     source_ref: &str,
 ) -> Result<Vec<PullRequestTarget>, String> {
@@ -275,7 +326,7 @@ fn fetch_open_pull_requests_for_source_ref(
         odata_string_literal(source_ref)
     );
     let url = format!(
-        "{TEMPER_API}/tdata/PullRequests?$filter={}&$top=1000",
+        "{api_base}/tdata/PullRequests?$filter={}&$top=1000",
         urlencode(&filter)
     );
     let resp = ctx
@@ -342,6 +393,7 @@ fn is_open_pull_request_status(status: &str) -> bool {
 
 fn fetch_existing_delta_base(
     ctx: &Context,
+    api_base: &str,
     repository_id: &str,
     sha: &str,
 ) -> Result<Option<pack::PackObject>, String> {
@@ -351,7 +403,7 @@ fn fetch_existing_delta_base(
         (pack::ObjectKind::Blob, "Blobs"),
         (pack::ObjectKind::Tag, "Tags"),
     ] {
-        if let Some(data) = fetch_existing_object_body(ctx, repository_id, set, sha)? {
+        if let Some(data) = fetch_existing_object_body(ctx, api_base, repository_id, set, sha)? {
             return Ok(Some(pack::PackObject { kind, data }));
         }
     }
@@ -360,6 +412,7 @@ fn fetch_existing_delta_base(
 
 fn fetch_existing_object_body(
     ctx: &Context,
+    api_base: &str,
     repository_id: &str,
     set: &str,
     sha: &str,
@@ -369,7 +422,7 @@ fn fetch_existing_object_body(
         odata_string_literal(sha),
         odata_string_literal(repository_id)
     );
-    let url = format!("{TEMPER_API}/tdata/{set}?$filter={}", urlencode(&filter));
+    let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
     let resp = ctx
         .http_call("GET", &url, &[], "")
         .map_err(|e| format!("fetch {set}({sha}): {e}"))?;
@@ -401,6 +454,22 @@ fn fetch_existing_object_body(
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
     Ok(Some(canonical[nul + 1..].to_vec()))
+}
+
+fn temper_api_base(ctx: &Context) -> String {
+    ctx.config
+        .get("temper_api_url")
+        .map(|value| value.trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| TEMPER_API.to_string())
+}
+
+fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
+    ctx.get_secret("blob_endpoint")
+        .ok()
+        .map(|value| value.trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("{api_base}/_internal/blobs"))
 }
 
 fn urlencode(s: &str) -> String {
@@ -455,28 +524,30 @@ fn object_entity_id(repository_id: &str, sha: &str) -> String {
 }
 
 fn build_object_row(
+    ctx: &Context,
+    blob_endpoint: &str,
     kind: pack::ObjectKind,
     sha: &str,
     repository_id: &str,
     raw: &[u8],
     canonical: &[u8],
-) -> Value {
+) -> Result<Value, String> {
     let canonical_b64 = B64.encode(canonical);
     let created_at = "1970-01-01T00:00:00Z";
-    match kind {
+    Ok(match kind {
         pack::ObjectKind::Blob => json!({
             "Id": sha,
             "RepositoryId": repository_id,
             "Size": raw.len(),
-            "Content": B64.encode(raw),
-            "CanonicalBytes": canonical_b64,
+            "Content": maybe_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
+            "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
         pack::ObjectKind::Tree => json!({
             "Id": sha,
             "RepositoryId": repository_id,
-            "CanonicalBytes": canonical_b64,
+            "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
@@ -501,7 +572,7 @@ fn build_object_row(
                 "Author": author,
                 "Committer": committer,
                 "Message": message,
-                "CanonicalBytes": canonical_b64,
+                "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -531,7 +602,7 @@ fn build_object_row(
                 "TagName": name,
                 "Tagger": tagger,
                 "Message": message,
-                "CanonicalBytes": canonical_b64,
+                "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -540,6 +611,109 @@ fn build_object_row(
             }
             row
         }
+    })
+}
+
+fn maybe_stage_field_value(
+    ctx: &Context,
+    blob_endpoint: &str,
+    value: String,
+) -> Result<Value, String> {
+    let json_value = Value::String(value);
+    let serialized =
+        serde_json::to_vec(&json_value).map_err(|e| format!("field-overflow serialize: {e}"))?;
+    if serialized.len() <= FIELD_INLINE_MAX_BYTES {
+        return Ok(json_value);
+    }
+
+    let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
+    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
+    Ok(blob_ref)
+}
+
+fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
+    let Some(obj) = value.as_object() else {
+        return Ok(None);
+    };
+    let Some(blob_key) = obj.get(FIELD_OVERFLOW_REF_KEY).and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let encoding = obj
+        .get(FIELD_OVERFLOW_ENCODING_KEY)
+        .and_then(Value::as_str)
+        .unwrap_or("json");
+    if encoding != "json" {
+        return Err(format!(
+            "PackBytes blob-ref encoding {encoding:?} is not supported"
+        ));
+    }
+    Ok(Some(blob_key.to_string()))
+}
+
+fn overflow_blob_ref_for_serialized(serialized: &[u8]) -> (String, Value) {
+    let digest = Sha256::digest(serialized);
+    let blob_key = format!("{FIELD_OVERFLOW_BLOB_PREFIX}{digest:x}.json");
+    (
+        blob_key.clone(),
+        json!({
+            FIELD_OVERFLOW_REF_KEY: blob_key,
+            FIELD_OVERFLOW_SIZE_KEY: serialized.len(),
+            FIELD_OVERFLOW_ENCODING_KEY: "json",
+        }),
+    )
+}
+
+fn get_overflow_blob(blob_endpoint: &str, blob_key: &str) -> Result<String, String> {
+    let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
+    let (request_body, mut response_body, response_head) = streaming_call("GET", &url, &[])
+        .map_err(|e| format!("field-overflow GET {blob_key} stream begin: {e}"))?;
+    request_body
+        .finish()
+        .map_err(|e| format!("field-overflow GET {blob_key} request close: {e}"))?;
+    let head =
+        response_head().map_err(|e| format!("field-overflow GET {blob_key} response head: {e}"))?;
+    if !(200..300).contains(&head.status) {
+        let _ = response_body.close();
+        return Err(format!(
+            "field-overflow GET {blob_key} returned HTTP {}",
+            head.status
+        ));
+    }
+
+    let mut out = Vec::new();
+    let mut buf = alloc::vec![0u8; HTTP_STREAM_READ_CHUNK_BYTES];
+    loop {
+        let Some(n) = response_body
+            .read_next_chunk(&mut buf)
+            .map_err(|e| format!("field-overflow GET {blob_key} response body: {e}"))?
+        else {
+            break;
+        };
+        out.extend_from_slice(&buf[..n]);
+    }
+    let _ = response_body.close();
+    String::from_utf8(out).map_err(|e| format!("field-overflow GET {blob_key} utf8: {e}"))
+}
+
+fn put_overflow_blob(
+    ctx: &Context,
+    blob_endpoint: &str,
+    blob_key: &str,
+    serialized: &[u8],
+) -> Result<(), String> {
+    let body = core::str::from_utf8(serialized)
+        .map_err(|e| format!("field-overflow body was not utf-8: {e}"))?;
+    let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
+    let response = ctx
+        .http_call("PUT", &url, &[], body)
+        .map_err(|e| format!("field-overflow PUT {blob_key}: {e}"))?;
+    if (200..300).contains(&response.status) {
+        Ok(())
+    } else {
+        Err(format!(
+            "field-overflow PUT {blob_key} returned HTTP {}",
+            response.status
+        ))
     }
 }
 
@@ -611,5 +785,20 @@ mod tests {
             urlencode(&filter),
             "RepositoryId%20eq%20%27repo%20%27%27%20one%27%20and%20SourceRef%20eq%20%27refs%2Fheads%2Ffeature%2Fa%20b%27"
         );
+    }
+
+    #[test]
+    fn overflow_blob_ref_matches_temper_field_contract() {
+        let serialized = serde_json::to_vec(&Value::String("x".repeat(FIELD_INLINE_MAX_BYTES)))
+            .expect("serialize");
+        let (key, value) = overflow_blob_ref_for_serialized(&serialized);
+
+        assert!(key.starts_with(FIELD_OVERFLOW_BLOB_PREFIX));
+        assert_eq!(value[FIELD_OVERFLOW_REF_KEY].as_str(), Some(key.as_str()));
+        assert_eq!(
+            value[FIELD_OVERFLOW_SIZE_KEY].as_u64(),
+            Some(serialized.len() as u64)
+        );
+        assert_eq!(value[FIELD_OVERFLOW_ENCODING_KEY].as_str(), Some("json"));
     }
 }

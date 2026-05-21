@@ -207,6 +207,7 @@ dependencies = [
  "base64",
  "serde",
  "serde_json",
+ "sha2",
  "temper-wasm-sdk",
  "tg-canonical",
  "tg-wire",
