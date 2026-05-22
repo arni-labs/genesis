@@ -1,11 +1,11 @@
 # temper-git workspace.
 #
 # Contains:
-#   * `wasm-modules/git_object/` — byte-exact git object serialization +
-#                      SHA-1 hashing. Pure Rust source owned by the WASM
-#                      implementation boundary and linked only into modules.
-#   * `wasm-modules/*/` — each runtime phase is a separate cdylib crate.
-#                      Added as members once scaffolded.
+#   * `crates/git_object/` — byte-exact git object serialization +
+#                      SHA-1 hashing. Pure Rust helper code linked into
+#                      the runtime WASM integrations.
+#   * `wasm/*/` — each runtime integration is a separate cdylib crate
+#                      packaged with its shipped .wasm artifact.
 #
 # Temper's own workspace (at `temper/`) is a submodule — not a workspace
 # member. Our WASM modules depend on `temper-wasm-sdk` from there via
@@ -16,12 +16,12 @@ resolver = "2"
 members = [
     "registry",
     "wire",
-    "wasm-modules/git_object",
-    "wasm-modules/git_refs_advertise",
-    "wasm-modules/app_registry",
-    "wasm-modules/scm_ingest_pack",
-    "wasm-modules/git_upload_pack",
-    "wasm-modules/git_receive_pack",
+    "crates/git_object",
+    "wasm/git_refs_advertise",
+    "wasm/app_registry",
+    "wasm/scm_ingest_pack",
+    "wasm/git_upload_pack",
+    "wasm/git_receive_pack",
 ]
 
 [workspace.package]

@@ -41,7 +41,7 @@ RUN cargo build --manifest-path temper/Cargo.toml --profile dist --bin temper
 
 RUN mkdir -p /opt/genesis-os-apps/temper-git \
     && cp app.toml APP.md README.md /opt/genesis-os-apps/temper-git/ \
-    && cp -R specs policies docs registry wire wasm wasm-modules /opt/genesis-os-apps/temper-git/
+    && cp -R specs policies docs registry wire wasm crates /opt/genesis-os-apps/temper-git/
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y \
