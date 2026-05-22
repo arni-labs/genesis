@@ -47,7 +47,7 @@ PRs that skip any of these for "small changes" don't merge.
 ## Reviews
 
 - Two signoffs required on anything that touches
-  `specs/`, `wasm-modules/git_*/`, or `wasm-modules/github_*/`.
+  `specs/`, `wasm/git_*/`, or `wasm/github_*/`.
 - Docs-only PRs (`docs/`, `CLAUDE.md`, `README.md`) can land with one
   signoff.
 - Kernel-level changes go into Temper first, then the submodule

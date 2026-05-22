@@ -296,7 +296,7 @@ Fields:
 - `PathPrefix: Edm.String` — e.g. `/{owner}/{repo}.git/info/refs`
 - `Methods: Collection(Edm.String)` (`GET`, `POST`)
 - `IntegrationModule: Edm.String` — WASM module name (e.g.
-  `git_upload_pack`).
+  `git_refs_advertise`).
 - `RequiresAuth: Edm.Boolean`
 - `TimeoutSecs: Edm.Int32`
 
@@ -304,18 +304,22 @@ Fields:
 
 Each is a Rust crate compiled to `wasm32-wasip1`, using `temper-wasm-sdk`.
 
-### `git_upload_pack`
+### `git_refs_advertise`
 
 Triggers: HttpEndpoint match on
 - `GET /{owner}/{repo}.git/info/refs?service=git-upload-pack`
-- `POST /{owner}/{repo}.git/git-upload-pack`
 
-Flow for GET (advertisement):
+Flow:
 1. Look up Repository by `{owner}/{repo}`.
 2. Emit pkt-line header `# service=git-upload-pack`.
 3. For every Ref on the repo, emit pkt-line with capabilities on the
    first, just `sha refs/heads/main` on subsequent.
 4. Flush pkt.
+
+### `git_upload_pack`
+
+Triggers: HttpEndpoint match on
+- `POST /{owner}/{repo}.git/git-upload-pack`
 
 Flow for POST (pack streaming):
 1. Parse pkt-line body: `want <sha>` lines, `have <sha>` lines, `done`.
@@ -465,7 +469,8 @@ authenticated).
    - Hash-byte-match harness tests against real `git` output.
 
 2. **Protocol handlers.**
-   - `git_upload_pack` WASM: pkt-line + non-delta pack emission.
+   - `git_refs_advertise` WASM: pkt-line ref advertisement.
+   - `git_upload_pack` WASM: non-delta pack emission.
    - `git_receive_pack` WASM: pack parsing + SHA-1 verification.
    - `HttpEndpoint` routing (K-1).
    - `http_call_streaming` (K-2).

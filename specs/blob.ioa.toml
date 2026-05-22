@@ -2,8 +2,8 @@
 #
 # One blob = the byte content of one file version. Immutable. Keyed by
 # SHA-1 hex of the canonical serialization `blob <len>\0<bytes>` (see
-# `canonical/src/blob.rs` for the emitter that produces those bytes
-# byte-exactly against `git hash-object`).
+# `crates/git_object/src/blob.rs` for the emitter that produces
+# those bytes byte-exactly against `git hash-object`).
 #
 # Content lives inline on the entity row. No spill tier. Very large
 # blobs (e.g. ML models, >1 GiB) would need chunking; out of scope
@@ -46,10 +46,11 @@ query_indexed = false
 # --- Actions ---
 #
 # Blob rows are created by the scm_write_file / git_receive_pack
-# integrations which compute the SHA-1 via canonical/ first. Create
-# is a self-loop on Durable that captures the canonical byte
-# content + repo scope. No other input actions exist, so the row is
-# immutable by omission; Cedar additionally denies PATCH/DELETE.
+# integrations which compute the SHA-1 via the git_object WASM-owned
+# helper crate first. Create is a self-loop on Durable that captures
+# the canonical byte content + repo scope. No other input actions
+# exist, so the row is immutable by omission; Cedar additionally
+# denies PATCH/DELETE.
 
 [[action]]
 name = "Create"

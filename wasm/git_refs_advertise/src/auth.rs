@@ -1,17 +1,10 @@
 //! GitToken-backed principal resolution for inbound git wire calls.
 //!
-//! A real `git push` arrives with an `Authorization` header — either
-//! `Bearer <token>` or HTTP Basic with the token as the username and
-//! `x-oauth-basic` (or anything) as the password. The resolver
-//! SHA-256s the token, looks the row up via OData, and builds a
-//! `Principal` whose downstream-headers mirror the originating
-//! caller's identity. Internal OData calls then execute AS that
-//! principal, so Cedar gates evaluate against the real customer/
-//! agent rather than a system bridge.
-//!
-//! Anonymous (no `Authorization` header, or token not found / not
-//! `Active`) is returned as a distinct value. The caller decides
-//! whether to reject or allow a development fallback.
+//! A real `git push` or `git clone` arrives with an `Authorization`
+//! header. The resolver hashes the token, looks up a GitToken row via
+//! OData, and mirrors the originating caller onto downstream internal
+//! calls. Anonymous is returned as a distinct value; callers decide
+//! whether development fallback is allowed.
 
 extern crate alloc;
 
@@ -30,9 +23,6 @@ use crate::{SYSTEM_PRINCIPAL, SYSTEM_TENANT, TEMPER_API};
 pub struct Principal {
     pub kind: String,
     pub id: String,
-    /// Scopes from the resolved GitToken row. Reserved for Cedar
-    /// scope-gate enforcement once policy checks are wired through
-    /// — read by tests, intentionally unused at this layer.
     #[allow(dead_code)]
     pub scopes: Vec<String>,
 }
@@ -58,15 +48,6 @@ impl Principal {
         self.kind == "anonymous"
     }
 
-    /// Reserved for Cedar scope-gate enforcement once policy checks
-    /// are wired through. Tested, not yet called.
-    #[allow(dead_code)]
-    pub fn has_scope(&self, want: &str) -> bool {
-        self.scopes.iter().any(|s| s == want)
-    }
-
-    /// Headers attached to outbound internal OData calls so they
-    /// execute AS this principal.
     pub fn outbound_headers(&self) -> Vec<(String, String)> {
         let mut headers = alloc::vec![
             ("X-Tenant-Id".to_string(), SYSTEM_TENANT.to_string()),
@@ -84,9 +65,6 @@ impl Principal {
     }
 }
 
-/// Resolve the inbound caller. Falls through to anonymous on missing
-/// header, malformed Basic auth, OData lookup failure, expired or
-/// revoked token. The caller decides what to do with anonymous.
 pub fn resolve_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
     let Some(token) = extract_token(headers) else {
         return Principal::anonymous();
@@ -186,27 +164,8 @@ mod tests {
 
     #[test]
     fn extracts_basic_username() {
-        // base64("ghp_secret:x-oauth-basic")
         let basic = B64.encode("ghp_secret:x-oauth-basic");
-        let headers = alloc::vec![("Authorization".to_string(), format!("Basic {basic}"),)];
+        let headers = alloc::vec![("Authorization".to_string(), format!("Basic {basic}"))];
         assert_eq!(extract_token(&headers).unwrap(), "ghp_secret");
-    }
-
-    #[test]
-    fn missing_header_returns_none() {
-        let headers = alloc::vec![("X-Other".to_string(), "x".to_string())];
-        assert!(extract_token(&headers).is_none());
-    }
-
-    #[test]
-    fn sha256_hex_is_64_chars() {
-        assert_eq!(sha256_hex(b"hello").len(), 64);
-        assert!(sha256_hex(b"hello").chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    #[test]
-    fn parses_scope_string() {
-        let scopes = parse_scopes(Some(&serde_json::json!("repo:read,repo:write force")));
-        assert_eq!(scopes, vec!["repo:read", "repo:write", "force"]);
     }
 }

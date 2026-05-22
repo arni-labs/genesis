@@ -17,6 +17,9 @@ temper-git uses MADR (Markdown Architectural Decision Records).
   WASM integrations. No host-side Rust extensions.
 - [0003-byte-exact-git-compat.md](0003-byte-exact-git-compat.md) —
   byte-exact git compatibility is a product guarantee, enforced by CI.
+- [0009-genesis-only-app-install-and-restart-recovery.md](0009-genesis-only-app-install-and-restart-recovery.md)
+  — Genesis is the app source of truth; installed app refs recover from target
+  Temper instance storage on restart.
 
 ## Proposed
 

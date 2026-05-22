@@ -4,7 +4,8 @@
 Cargo.lock.bak
 
 # WASM build artifacts
-wasm-modules/*/target/
+wasm/*/target/
+crates/*/target/
 
 # Frontend build artifacts
 web/.svelte-kit/
@@ -33,6 +34,9 @@ web/.vercel/
 # Local test fixtures (recorded github.com responses get checked in under
 # tests/fixtures/; ad-hoc scratch goes here)
 .scratch/
+
+# Local goal/progress trackers are operator-local and should not ship.
+/genesis-goal-tracker.html
 
 # Tarballs / build outputs
 *.tgz

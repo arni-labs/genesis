@@ -20,7 +20,7 @@ agent writes app files -> git push to Genesis -> RegisterNewApp/PublishNewVersio
 - Spec-owned app actions: `RegisterNewApp`, `PublishNewVersion`, `Fork`, and
   `Install`.
 - Genesis UI app browsing, GitHub-like file browsing, lineage view, and
-  copyable OData, CLI, TemperPaw-shaped, and clone commands.
+  copyable OData, CLI, TemperPaw tool, and clone commands.
 - `temper install owner/app@hash --tenant ... --url ...` for installing a
   pinned Genesis app ref.
 - Vercel-hosted Genesis UI:
@@ -47,11 +47,27 @@ The current public Genesis registry contains:
 
 Each app is stored as normal Genesis repository objects. The UI exposes the
 pinned `owner/app@hash` ref, Git clone URL, OData install path, CLI command,
-and TemperPaw-shaped tool call.
+and TemperPaw tool call.
 
-## Agent Path: Publish An App
+## Agent Path: Publish Or Update An App
 
-This is the current low-level path an agent can use today.
+The primary agent surface is:
+
+```python
+ref = temper.publish_app({
+    "path": "/workspace/my-app",
+    "owner": "owner",
+    "name": "name",
+    "registry_url": GENESIS_URL,
+    "message": "Publish my app"
+})
+```
+
+`temper.update_app(...)` uses the same shape and returns a new pinned
+`owner/name@hash` ref. Internally these tools use Genesis' git transport; agents
+should not hand-roll git and curl as the normal workflow.
+
+The current low-level/admin path is:
 
 1. Create or choose an app bundle directory. A bundle may contain:
 
@@ -66,6 +82,11 @@ This is the current low-level path an agent can use today.
    adrs/
    seed-data/
    ```
+
+   Runtime WASM integrations live under `wasm/<module>/`; Cargo build
+   output stays in `target/`, and Temper loads the packaged
+   `wasm/<module>/<module>.wasm` artifact. Shared Rust helper crates, if
+   present, belong under `crates/`.
 
 2. Create the Genesis repository row:
 
@@ -133,16 +154,15 @@ Or use the CLI wrapper:
 temper install owner/name@HASH --tenant target-tenant --url "$GENESIS_URL"
 ```
 
-The Genesis UI also shows a TemperPaw-shaped command:
+The Genesis UI also shows the TemperPaw tool call:
 
 ```text
-install_app({"source":"genesis","app_ref":"owner/name@HASH","tenant":"target-tenant","url":"https://genesis.example"})
+temper.install_app({"app_ref":"owner/name@HASH","tenant":"target-tenant","registry_url":"https://genesis.example"})
 ```
 
-TemperPaw can call this same action from its install tool. A deployed
-TemperPaw instance should set Genesis as its default app source and pass pinned
-`owner/app@hash` refs instead of reading app bundles from GitHub, submodules,
-symlinks, or local catalog directories.
+TemperPaw calls the local Temper Genesis installer, which materializes the
+pinned closure from Genesis into that Temper instance and records durable
+installed-app provenance. Use `temper.search_apps(...)` to discover app refs.
 
 ## Local Run
 
@@ -150,7 +170,7 @@ Build the WASM modules and serve Temper with Genesis bootstrapped:
 
 ```bash
 rustup target add wasm32-wasip1
-cargo build -p git_upload_pack -p git_receive_pack -p scm_ingest_pack -p app_registry \
+cargo build -p git_refs_advertise -p git_upload_pack -p git_receive_pack -p scm_ingest_pack -p app_registry \
   --target wasm32-wasip1 --release
 
 TEMPER_OS_APPS_DIR="$PWD" cargo run \
@@ -171,21 +191,22 @@ The current public proof is:
 
 - Vercel UI URL: <https://genesis-registry-ui.vercel.app>
 - Railway API/git URL: <https://genesis-production-164d.up.railway.app>
-- Latest verified redeploy: `8db49199-0713-4e5a-a6d5-56580a321c27`
+- Latest verified Railway deploy: `a494ba4c-429c-4cec-bb88-5e4965c5a9c5`
 - Vercel production deploy:
-  <https://genesis-registry-odhduxc8y-rita-agafonovas-projects.vercel.app>
+  <https://genesis-registry-dwvt6o7gs-rita-agafonovas-projects.vercel.app>
   aliased to <https://genesis-registry-ui.vercel.app>
-- Real app seed: 20 active installable app bundles, 913 reachable Git objects,
-  and 84 field-overflow bodies persisted through the Postgres shadow store.
+- Real app seed: 20 normal active installable app bundles plus the bootstrap
+  `temper-git` platform app, with smoke-test apps marked `Deleted` so the
+  default registry view stays focused on real apps.
 - UI proof: the Vercel page loaded `paw-agent`, `katagami-curation`, and
   `paw-patrol` from the Railway API, opened the `paw-patrol` file browser, and
-  showed OData, CLI, TemperPaw-shaped, and clone commands pointing at the
+  showed OData, CLI, TemperPaw tool, and clone commands pointing at the
   Railway registry URL.
 - Clone proof: `temperpaw/paw-agent`, `temperpaw/paw-patrol`,
   `katagami/katagami-commons`, and `katagami/katagami-curation` clone from the
   public Railway URL at their registered hashes.
 - Install proof: `temperpaw/paw-patrol@7deb98f716e5c0e709bb7871642bdb35400cd04b`
-  installed by OData and a TemperPaw-shaped request. The installed tenant
+  installed by OData and the TemperPaw tool-shaped request. The installed tenant
   exposed `Files`, `Agents`, `PatrolRequests`, and `Signals`, and a real
   `Signal` row was created and read back.
 - Recovery proof: after the fresh Railway redeploy above, `paw-agent` still
@@ -194,12 +215,12 @@ The current public proof is:
   `Signals('sig-final-031246')` row read back successfully.
 
 The broader smoke proof publishes a tiny app, registers it, installs it through
-OData, a TemperPaw-shaped request, and the CLI, creates an entity from the
+OData, the TemperPaw-shaped path, and the CLI, creates an entity from the
 installed app, restarts the service, and verifies recovery:
 
 ```bash
 TEMPER_URL=https://genesis-production-164d.up.railway.app \
-RUN_ID=200215 \
+RUN_ID=rail133900 \
 scripts/live-genesis-install-e2e-smoke.sh
 ```
 
@@ -207,7 +228,7 @@ The smoke-test app from that run was archived/deleted after verification so the
 default registry view stays focused on real apps. Its archived ref was:
 
 ```text
-genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239
+genesis-e2e/tiny-notes-rail133900@8ff05405d769eccbeeb7cab3b15cf96dc269abb8
 ```
 
 ## Current Sharp Edges
@@ -216,15 +237,21 @@ genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239
   command.
 - Push-to-create is not finished; first publish still needs repository/app
   registration.
-- TemperPaw's old local catalog is not removed from the TemperPaw repository by
-  these two PRs. Genesis now has the real app bundles and install surface; the
-  TemperPaw deployment/config should switch its default source to Genesis.
+- Genesis does not yet build WASM artifacts on publish. Today app bundles must
+  include packaged `wasm/<module>/<module>.wasm` files; Temper install/reconcile
+  hashes those existing bytes, persists them, and caches them for execution.
+  Roadmap: build and verify WASM artifacts once during Genesis publish with a
+  pinned toolchain, store them with the app ref, and keep install deterministic.
+- TemperPaw still keeps local app directories for development and test fixtures,
+  but the normal agent-facing install/search/publish/update path is Genesis.
+  Fresh production bootstrap should be configured with pinned Genesis refs; warm
+  restart recovers already-installed app state from the Temper instance DB.
 
 ## Read Next
 
 - [`APP.md`](APP.md) - app-level summary.
-- [`genesis-goal-tracker.html`](genesis-goal-tracker.html) - implementation and
-  verification tracker.
+- [`docs/adr/0009-genesis-only-app-install-and-restart-recovery.md`](docs/adr/0009-genesis-only-app-install-and-restart-recovery.md)
+  - Genesis-only app install and restart recovery decision.
 - [`docs/rfc/0003-genesis-app-registry.md`](docs/rfc/0003-genesis-app-registry.md)
   - registry design.
 - [`docs/rfc/0002-push-and-clone.md`](docs/rfc/0002-push-and-clone.md) - git

@@ -12,16 +12,9 @@ path = "src/lib.rs"
 
 [dependencies]
 temper-wasm-sdk = { workspace = true }
-tg-canonical = { path = "../../canonical" }
+genesis-git-object = { path = "../../crates/git_object" }
 tg-wire = { path = "../../wire" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 sha2 = { version = "0.10", default-features = false }
-
-[profile.release]
-opt-level = "s"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
