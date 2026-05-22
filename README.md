@@ -191,12 +191,13 @@ The current public proof is:
 
 - Vercel UI URL: <https://genesis-registry-ui.vercel.app>
 - Railway API/git URL: <https://genesis-production-164d.up.railway.app>
-- Latest verified redeploy: `8db49199-0713-4e5a-a6d5-56580a321c27`
+- Latest verified Railway deploy: `a494ba4c-429c-4cec-bb88-5e4965c5a9c5`
 - Vercel production deploy:
-  <https://genesis-registry-odhduxc8y-rita-agafonovas-projects.vercel.app>
+  <https://genesis-registry-dwvt6o7gs-rita-agafonovas-projects.vercel.app>
   aliased to <https://genesis-registry-ui.vercel.app>
-- Real app seed: 20 active installable app bundles, 913 reachable Git objects,
-  and 84 field-overflow bodies persisted through the Postgres shadow store.
+- Real app seed: 20 normal active installable app bundles plus the bootstrap
+  `temper-git` platform app, with smoke-test apps marked `Deleted` so the
+  default registry view stays focused on real apps.
 - UI proof: the Vercel page loaded `paw-agent`, `katagami-curation`, and
   `paw-patrol` from the Railway API, opened the `paw-patrol` file browser, and
   showed OData, CLI, TemperPaw tool, and clone commands pointing at the
@@ -214,12 +215,12 @@ The current public proof is:
   `Signals('sig-final-031246')` row read back successfully.
 
 The broader smoke proof publishes a tiny app, registers it, installs it through
-OData, the TemperPaw tool path, and the CLI, creates an entity from the
+OData, the TemperPaw-shaped path, and the CLI, creates an entity from the
 installed app, restarts the service, and verifies recovery:
 
 ```bash
 TEMPER_URL=https://genesis-production-164d.up.railway.app \
-RUN_ID=200215 \
+RUN_ID=rail133900 \
 scripts/live-genesis-install-e2e-smoke.sh
 ```
 
@@ -227,7 +228,7 @@ The smoke-test app from that run was archived/deleted after verification so the
 default registry view stays focused on real apps. Its archived ref was:
 
 ```text
-genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239
+genesis-e2e/tiny-notes-rail133900@8ff05405d769eccbeeb7cab3b15cf96dc269abb8
 ```
 
 ## Current Sharp Edges
