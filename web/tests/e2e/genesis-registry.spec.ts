@@ -226,7 +226,7 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'Genesis Registry' })).toBeVisible();
-  await expect(page.getByText('2 apps · 1 lineage links · 1 closures')).toBeVisible();
+  await expect(page.getByText('2 installable apps · 1 lineage links · 1 closures')).toBeVisible();
   await expect(page.getByRole('button', { name: /alice-notes/ })).toBeVisible();
   await page.getByRole('button', { name: /alice-notes/ }).click();
 
@@ -253,7 +253,7 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
     page.getByText(`temper install alice/alice-notes@${childHash} --tenant default --url`)
   ).toBeVisible();
   await expect(
-    page.getByText(`install_app({"source":"genesis","app_ref":"alice/alice-notes@${childHash}"`)
+    page.getByText(`temper.install_app({"app_ref":"alice/alice-notes@${childHash}"`)
   ).toBeVisible();
   await expect(page.getByText('git clone')).toBeVisible();
 
