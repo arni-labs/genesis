@@ -1,11 +1,11 @@
 [package]
-name = "tg-canonical"
+name = "genesis-git-object"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Byte-exact canonical serialization of git objects (blob, tree, commit, tag) with SHA-1 hashing. The foundation of temper-git's byte-exact compat contract."
+description = "WASM-owned byte-exact Git object serialization and parsing for Genesis phase modules."
 
 [lib]
 # Library lives on host (for tests + any Rust-side consumers) and also

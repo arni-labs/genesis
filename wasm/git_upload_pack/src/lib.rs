@@ -1,17 +1,8 @@
-//! git_upload_pack — smart-HTTP upload-pack WASM integration.
+//! git_upload_pack — smart-HTTP upload-pack POST WASM integration.
 //!
-//! Handles the two endpoints git clients hit during fetch/clone:
-//!
-//!   * `GET  /{owner}/{repo}.git/info/refs?service=git-upload-pack`
-//!     → advertisement (ref list + capabilities, wrapped in pkt-line).
-//!   * `POST /{owner}/{repo}.git/git-upload-pack`
-//!     → want/have negotiation + pack-v2 emission.
-//!
-//! Slice B piece 1 (this commit): real ref advertisement — queries
-//! /tdata/Refs for the repo and emits one line per active ref so
-//! `git clone` sees the repo as non-empty and proceeds to POST.
-//!
-//! Piece 2 (next): pack emission on POST.
+//! Handles `POST /{owner}/{repo}.git/git-upload-pack`: want/have
+//! negotiation and pack-v2 emission. The preceding `/info/refs`
+//! advertisement phase lives in `git_refs_advertise`.
 
 #![forbid(unsafe_code)]
 
@@ -26,10 +17,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp, streaming_call};
 use temper_wasm_sdk::prelude::*;
-use tg_wire::{
-    AdvertisedRef, ObjectKind, PackEmitter, Service, SidebandWriter, advertise_info_refs,
-    encode_into, flush,
-};
+use tg_wire::{ObjectKind, PackEmitter, SidebandWriter, encode_into, flush};
 
 pub(crate) const TEMPER_API: &str = "http://127.0.0.1:3000";
 pub(crate) const SYSTEM_TENANT: &str = "default";
@@ -52,203 +40,10 @@ temper_module! {
         let raw = http.path.as_str();
         let path = raw.split('?').next().unwrap_or(raw);
 
-        if http.method == "GET" && path.ends_with("/info/refs") {
-            return serve_info_refs(&ctx, &http);
-        }
         if http.method == "POST" && path.ends_with("/git-upload-pack") {
             return serve_upload_pack(&ctx, &http);
         }
         respond_text(&http, 404, "text/plain", "no upload-pack route matches")
-    }
-}
-
-fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
-    let service = match query_param(http, "service").as_deref() {
-        Some("git-upload-pack") | None => Service::UploadPack,
-        Some("git-receive-pack") => Service::ReceivePack,
-        Some(other) => {
-            return respond_text(
-                http,
-                400,
-                "text/plain",
-                &format!("unknown service '{other}' on /info/refs"),
-            );
-        }
-    };
-
-    // Derive the convention-based Repository id from path params.
-    let owner = http.params.get("owner").cloned().unwrap_or_default();
-    let repo = http.params.get("repo").cloned().unwrap_or_default();
-    let repository_id = format!("rp-{owner}-{repo}");
-
-    let principal = effective_principal(ctx, &http.headers);
-    let api_base = temper_api_from_headers(&http.headers);
-
-    // Query /tdata/Refs and filter client-side on RepositoryId. We
-    // don't assume $filter support yet; the payload is small enough
-    // (tens of refs typical) that full-list-then-filter is fine.
-    let refs_rows = fetch_refs_for_repo(ctx, &principal, &repository_id, &api_base)?;
-
-    let mut owned: Vec<(String, String)> = refs_rows
-        .into_iter()
-        .filter(|r| r.status == "Active")
-        .map(|r| (r.target_sha, r.name))
-        .collect();
-    let default_branch =
-        fetch_repository_default_branch(ctx, &principal, &repository_id, &api_base)
-            .unwrap_or_else(|_| "main".to_string());
-    add_symbolic_head_advertisement(&mut owned, &default_branch);
-    let refs: Vec<AdvertisedRef<'_>> = owned
-        .iter()
-        .map(|(sha, name)| AdvertisedRef {
-            sha: sha.as_str(),
-            name: name.as_str(),
-        })
-        .collect();
-
-    let body =
-        advertise_info_refs(service, &refs).map_err(|e| format!("advertise_info_refs: {e}"))?;
-
-    http.submit_response_head(
-        200,
-        &[
-            ("content-type", service.content_type()),
-            ("cache-control", "no-cache"),
-        ],
-    )
-    .map_err(|e| format!("submit_response_head: {e}"))?;
-
-    let mut writer = http.response_body();
-    writer
-        .write_all_chunk(&body)
-        .map_err(|e| format!("response_body write: {e}"))?;
-    writer
-        .finish()
-        .map_err(|e| format!("response_body close: {e}"))?;
-
-    Ok(json!({
-        "bytes_written": body.len(),
-        "ref_count": refs.len(),
-        "repository_id": repository_id,
-        "default_branch": default_branch,
-    }))
-}
-
-struct RefRow {
-    name: String,
-    target_sha: String,
-    status: String,
-}
-
-fn fetch_refs_for_repo(
-    ctx: &Context,
-    principal: &Principal,
-    repository_id: &str,
-    api_base: &str,
-) -> Result<Vec<RefRow>, String> {
-    let url = format!("{api_base}/tdata/Refs");
-    let resp = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("fetch refs: {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("fetch refs status {}", resp.status));
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("refs parse: {e}"))?;
-    let items = parsed
-        .get("value")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let mut rows = Vec::with_capacity(items.len());
-    for row in items {
-        let fields = row
-            .get("fields")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let repo = fields
-            .get("RepositoryId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if repo != repository_id {
-            continue;
-        }
-        let name = fields
-            .get("Name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let target_sha = fields
-            .get("TargetCommitSha")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let status = fields
-            .get("Status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        if name.is_empty() || target_sha.is_empty() {
-            continue;
-        }
-        rows.push(RefRow {
-            name,
-            target_sha,
-            status,
-        });
-    }
-    // Deterministic order: HEAD first (if present), then refs/ sorted.
-    rows.sort_by(|a, b| {
-        let a_is_head = a.name == "HEAD";
-        let b_is_head = b.name == "HEAD";
-        match (a_is_head, b_is_head) {
-            (true, false) => core::cmp::Ordering::Less,
-            (false, true) => core::cmp::Ordering::Greater,
-            _ => a.name.cmp(&b.name),
-        }
-    });
-    Ok(rows)
-}
-
-fn fetch_repository_default_branch(
-    ctx: &Context,
-    principal: &Principal,
-    repository_id: &str,
-    api_base: &str,
-) -> Result<String, String> {
-    let url = format!("{api_base}/tdata/Repositories('{repository_id}')");
-    let resp = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("fetch repository: {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("fetch repository status {}", resp.status));
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("repository parse: {e}"))?;
-    let default_branch = parsed
-        .get("fields")
-        .and_then(|v| v.get("DefaultBranch"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("main")
-        .trim();
-    if default_branch.is_empty() {
-        Ok("main".to_string())
-    } else {
-        Ok(default_branch.to_string())
-    }
-}
-
-fn add_symbolic_head_advertisement(refs: &mut Vec<(String, String)>, default_branch: &str) {
-    if refs.iter().any(|(_, name)| name == "HEAD") {
-        return;
-    }
-    let default_ref = if default_branch.starts_with("refs/") {
-        default_branch.to_string()
-    } else {
-        format!("refs/heads/{default_branch}")
-    };
-    if let Some((sha, _)) = refs.iter().find(|(_, name)| name == &default_ref) {
-        refs.insert(0, (sha.clone(), "HEAD".to_string()));
     }
 }
 
@@ -300,19 +95,6 @@ fn respond_text(
         .finish()
         .map_err(|e| format!("response_body close: {e}"))?;
     Ok(json!({ "status": status }))
-}
-
-fn query_param(http: &InboundHttp, key: &str) -> Option<String> {
-    let qs = http.path.splitn(2, '?').nth(1)?;
-    for pair in qs.split('&') {
-        let mut it = pair.splitn(2, '=');
-        let k = it.next()?;
-        let v = it.next().unwrap_or("");
-        if k == key {
-            return Some(v.to_string());
-        }
-    }
-    None
 }
 
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
@@ -372,14 +154,14 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
                 let raw_body =
                     fetch_object_body(ctx, &principal, kind, &sha, &repository_id, &api_base)?;
                 if matches!(kind, ObjectKind::Commit) {
-                    let refs = tg_canonical::parse_commit_refs(&raw_body)
+                    let refs = genesis_git_object::parse_commit_refs(&raw_body)
                         .map_err(|e| format!("commit {sha}: {e}"))?;
                     queue.push_back((refs.tree, ObjectKind::Tree));
                     for p in refs.parents {
                         queue.push_back((p, ObjectKind::Commit));
                     }
                 } else {
-                    let entries = tg_canonical::parse_tree(&raw_body)
+                    let entries = genesis_git_object::parse_tree(&raw_body)
                         .map_err(|e| format!("tree {sha}: {e}"))?;
                     for entry in entries {
                         let k = if entry.is_tree {

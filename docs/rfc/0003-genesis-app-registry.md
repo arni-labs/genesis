@@ -643,6 +643,11 @@ Documented for direction; not implemented in v1.
   Agent).
 - **Cedar-queryable lineage.** Policies that reference lineage
   ("only forks of canonical paw-heal can be installed in production").
+- **Build-on-publish for WASM artifacts.** Agents may push source, but
+  Genesis should compile and verify runtime WASM once during publish,
+  using a pinned toolchain, then store the resulting artifacts with the
+  content-addressed app ref. Temper install remains a deterministic
+  byte install/reconcile step, not a hidden Cargo build.
 - **Async publish.** Queue + background push; useful if push sizes
   grow.
 - **Paid tier for private apps / enterprise features.** When usage

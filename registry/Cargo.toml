@@ -10,7 +10,6 @@ repository.workspace = true
 base64 = "0.22"
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tg-canonical = { path = "../canonical" }
 toml = "0.8"
 
 [[bin]]

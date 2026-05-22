@@ -243,22 +243,25 @@ fn parse_ref_updates(repository_id: &str, params: &Value) -> Result<Vec<RefSubWr
         if is_zero_sha(&new_sha) {
             out.push(RefSubWrite {
                 name,
-                old_sha,
+                old_sha: old_sha.clone(),
                 new_sha,
                 entity_id,
                 action: "Delete",
-                params: json!({}),
+                params: json!({
+                    "PreviousCommitSha": old_sha,
+                }),
             });
         } else if is_zero_sha(&old_sha) {
             out.push(RefSubWrite {
                 name: name.clone(),
-                old_sha,
+                old_sha: old_sha.clone(),
                 new_sha: new_sha.clone(),
                 entity_id,
                 action: "Create",
                 params: json!({
                     "RepositoryId": repository_id,
                     "Name": name,
+                    "PreviousCommitSha": old_sha,
                     "TargetCommitSha": new_sha,
                     "Kind": if name.starts_with("refs/tags/") { "tag" } else { "branch" },
                 }),
@@ -552,7 +555,7 @@ fn build_object_row(
             "CreatedAt": created_at,
         }),
         pack::ObjectKind::Commit => {
-            let parsed = tg_canonical::parse_commit(raw).ok();
+            let parsed = genesis_git_object::parse_commit(raw).ok();
             let (tree, parents, author, committer, message, gpg) = match &parsed {
                 Some(c) => (
                     c.tree.clone(),
@@ -582,7 +585,7 @@ fn build_object_row(
             row
         }
         pack::ObjectKind::Tag => {
-            let parsed = tg_canonical::parse_tag(raw).ok();
+            let parsed = genesis_git_object::parse_tag(raw).ok();
             let (target, ttype, name, tagger, message, gpg) = match &parsed {
                 Some(t) => (
                     t.object.clone(),
@@ -719,7 +722,7 @@ fn put_overflow_blob(
 
 fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {
     let header = format!("{} {}\0", prefix, body.len());
-    let mut hasher = tg_canonical::Sha1::new();
+    let mut hasher = genesis_git_object::Sha1::new();
     hasher.update(header.as_bytes());
     hasher.update(body);
     hasher.hex()
@@ -753,6 +756,50 @@ mod tests {
         assert_eq!(
             update.params["TargetCommitSha"],
             "2222222222222222222222222222222222222222"
+        );
+    }
+
+    #[test]
+    fn ref_create_carries_previous_sha_for_kernel_cas() {
+        let update = parse_ref_updates(
+            "rp-acme-demo",
+            &json!({
+                "RefUpdates": [{
+                    "Name": "refs/heads/main",
+                    "PreviousCommitSha": "0000000000000000000000000000000000000000",
+                    "NewCommitSha": "2222222222222222222222222222222222222222"
+                }]
+            }),
+        )
+        .unwrap()
+        .remove(0);
+
+        assert_eq!(update.action, "Create");
+        assert_eq!(
+            update.params["PreviousCommitSha"],
+            "0000000000000000000000000000000000000000"
+        );
+    }
+
+    #[test]
+    fn ref_update_carries_previous_sha_for_kernel_cas() {
+        let update = parse_ref_updates(
+            "rp-acme-demo",
+            &json!({
+                "RefUpdates": [{
+                    "Name": "refs/heads/main",
+                    "PreviousCommitSha": "1111111111111111111111111111111111111111",
+                    "NewCommitSha": "2222222222222222222222222222222222222222"
+                }]
+            }),
+        )
+        .unwrap()
+        .remove(0);
+
+        assert_eq!(update.action, "Update");
+        assert_eq!(
+            update.params["PreviousCommitSha"],
+            "1111111111111111111111111111111111111111"
         );
     }
 

@@ -77,7 +77,7 @@ discipline section. Then the RFCs.
 Temper is vendored at a pinned commit via git submodule at `temper/`.
 The product is:
 - `temper/` — the kernel this project builds on
-- `specs/`, `policies/`, `wasm-modules/` — the temper-git app bundle
+- `specs/`, `policies/`, `wasm/`, `crates/` — the temper-git app bundle
 
 Do **not** patch `temper/` files in place on a feature branch. If a
 kernel change is needed, it goes into Temper proper and the submodule
