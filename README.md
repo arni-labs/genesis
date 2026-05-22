@@ -67,6 +67,11 @@ This is the current low-level path an agent can use today.
    seed-data/
    ```
 
+   Runtime WASM integrations live under `wasm/<module>/`; Cargo build
+   output stays in `target/`, and Temper loads the packaged
+   `wasm/<module>/<module>.wasm` artifact. Shared Rust helper crates, if
+   present, belong under `crates/`.
+
 2. Create the Genesis repository row:
 
    ```bash
@@ -216,6 +221,11 @@ genesis-e2e/tiny-notes-200215@21559ab9908e58109bd175672313b76baab54239
   command.
 - Push-to-create is not finished; first publish still needs repository/app
   registration.
+- Genesis does not yet build WASM artifacts on publish. Today app bundles must
+  include packaged `wasm/<module>/<module>.wasm` files; Temper install/reconcile
+  hashes those existing bytes, persists them, and caches them for execution.
+  Roadmap: build and verify WASM artifacts once during Genesis publish with a
+  pinned toolchain, store them with the app ref, and keep install deterministic.
 - TemperPaw's old local catalog is not removed from the TemperPaw repository by
   these two PRs. Genesis now has the real app bundles and install surface; the
   TemperPaw deployment/config should switch its default source to Genesis.

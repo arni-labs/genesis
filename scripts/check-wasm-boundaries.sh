@@ -7,7 +7,12 @@ cd "$ROOT"
 fail=0
 
 if [[ -d canonical ]]; then
-  printf 'error: root canonical/ directory must not exist; Git object logic belongs under wasm-modules/git_object\n' >&2
+  printf 'error: root canonical/ directory must not exist; Git object logic belongs under crates/git_object\n' >&2
+  fail=1
+fi
+
+if [[ -d wasm-modules ]]; then
+  printf 'error: root wasm-modules/ directory must not exist; runtime integrations belong under wasm/<module> and helpers under crates/\n' >&2
   fail=1
 fi
 

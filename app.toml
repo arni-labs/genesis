@@ -6,9 +6,9 @@
 # specs/model.csdl.xml, and Cedar policies at policies/*.cedar
 # automatically — no need to enumerate them here.
 #
-# WASM integrations land in wasm-modules/ per RFC-0001 phased
-# delivery. Once the binaries exist, list each one here as a
-# [[wasm_modules]] stanza.
+# Runtime WASM integrations live under wasm/<name>/. Cargo writes build
+# output under target/; Temper loads the packaged wasm/<name>/<name>.wasm
+# artifact declared by each [[wasm_modules]] stanza.
 
 name = "temper-git"
 description = "Temper-native, byte-exact, GitHub-compatible SCM. Byte-exact smart-HTTP git wire + GitHub REST v3 subset, backed by IOA entities and Cedar policies."
@@ -20,9 +20,8 @@ startup_install = "core"
 # then includes policies/commons/*.cedar as guardrail overlays.
 mode = "operator"
 
-# WASM integrations the app ships. Built per module under
-# `wasm/<name>/target/wasm32-wasip1/release/<name>.wasm` and copied
-# into the image by deploy/Dockerfile.
+# WASM integrations the app ships. Docker and local release builds compile
+# into root target/ and refresh the packaged wasm/<name>/<name>.wasm files.
 [[wasm_modules]]
 name = "git_upload_pack"
 target = "wasm32-wasip1"

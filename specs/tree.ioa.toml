@@ -4,7 +4,7 @@
 # `TreeEntry` children, each pointing at another tree or a blob. The
 # tree's Id is the SHA-1 hex of the canonical serialization
 # `tree <body_len>\0<entries>` where entries are sorted per git's
-# name-order (see `wasm-modules/git_object/src/tree.rs::sort_entries`).
+# name-order (see `crates/git_object/src/tree.rs::sort_entries`).
 #
 # Immutable. Append-only via POST. Cedar denies PATCH/DELETE.
 # Garbage collection of unreachable trees is Phase 2.

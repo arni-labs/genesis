@@ -1,6 +1,6 @@
 [package]
-name = "git_receive_pack"
-description = "WASM integration: git smart-HTTP receive-pack surface for temper-git."
+name = "scm_ingest_pack"
+description = "WASM integration: parse Repository.IngestPack params into composite sub-writes."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,16 +12,9 @@ path = "src/lib.rs"
 
 [dependencies]
 temper-wasm-sdk = { workspace = true }
-genesis-git-object = { path = "../git_object" }
+genesis-git-object = { path = "../../crates/git_object" }
 tg-wire = { path = "../../wire" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-sha2 = { version = "0.10", default-features = false }
-
-[profile.release]
-opt-level = "s"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true

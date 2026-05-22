@@ -33,8 +33,8 @@ Available libraries:
 
 - `genesis-git-object` — byte-exact git-object serialization + SHA-1,
   plus minimal commit/tree parsers for DAG walks, parity-verified
-  against real `git`. The crate lives under `wasm-modules/git_object`
-  and is owned by the WASM execution boundary.
+  against real `git`. The crate lives under `crates/git_object` and is
+  linked into the runtime WASM integrations.
 - `tg-wire` — pkt-line framing, `/info/refs` advertisement, pack-v2
   parser **and** emitter, receive-pack command-list parser, all
   parity-verified against real `git`.

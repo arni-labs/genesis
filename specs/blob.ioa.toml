@@ -2,7 +2,7 @@
 #
 # One blob = the byte content of one file version. Immutable. Keyed by
 # SHA-1 hex of the canonical serialization `blob <len>\0<bytes>` (see
-# `wasm-modules/git_object/src/blob.rs` for the emitter that produces
+# `crates/git_object/src/blob.rs` for the emitter that produces
 # those bytes byte-exactly against `git hash-object`).
 #
 # Content lives inline on the entity row. No spill tier. Very large
