@@ -256,7 +256,7 @@
   }
 
   function temperPawInstallCommand(app: RegistryApp): string {
-    return `install_app({"source":"genesis","app_ref":"${appRef(app)}","tenant":"default","url":"${registryApiBase()}"})`;
+    return `temper.install_app({"app_ref":"${appRef(app)}","tenant":"default","registry_url":"${registryApiBase()}"})`;
   }
 
   function cloneCommand(app: RegistryApp): string {
