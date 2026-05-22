@@ -225,27 +225,29 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
 
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: 'Genesis Registry' })).toBeVisible();
-  await expect(page.getByText('2 installable apps · 1 lineage links · 1 closures')).toBeVisible();
-  await expect(page.getByRole('button', { name: /alice-notes/ })).toBeVisible();
-  await page.getByRole('button', { name: /alice-notes/ }).click();
+  await expect(page.getByRole('heading', { name: 'Genesis.' })).toBeVisible();
+  await expect(page.getByText('Live')).toBeVisible();
+  await expect(page.getByRole('link', { name: /alice-notes/ })).toBeVisible();
+  await page.getByRole('link', { name: /alice-notes/ }).click();
 
   await expect(page.getByRole('heading', { name: 'alice-notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: /app.toml/ })).toBeVisible();
   await page.getByRole('button', { name: /app.toml/ }).click();
   await expect(page.getByText('name = "alice-notes"')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Overview' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
   await expect(page.getByText('Alice', { exact: true })).toBeVisible();
   await expect(page.getByText('cl-test-realpack')).toBeVisible();
   await expect(page.getByText(/kernel-core:/)).toBeVisible();
 
-  await page.getByRole('button', { name: 'Lineage' }).click();
+  await page.getByRole('tab', { name: 'Lineage' }).click();
   await expect(page.getByText('team/kernel-core')).toBeVisible();
-  await expect(page.getByText('alice/alice-notes', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('tabpanel', { name: 'Lineage' }).getByText('alice/alice-notes', { exact: true })
+  ).toBeVisible();
   await expect(page.getByLabel('Lineage graph')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Install' }).click();
+  await page.getByRole('tab', { name: 'Install' }).click();
   await expect(
     page.getByText(`/tdata/Apps('app-alice-notes')/App.Install`)
   ).toBeVisible();
@@ -257,10 +259,11 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   ).toBeVisible();
   await expect(page.getByText('git clone')).toBeVisible();
 
-  await page.getByPlaceholder('Search apps').fill('kernel');
-  await expect(page.getByRole('button', { name: /kernel-core/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /alice-notes/ })).toHaveCount(0);
-  await page.getByPlaceholder('Search apps').fill('');
+  await page.goto('/');
+  await page.getByPlaceholder('Search apps, owners, hashes').fill('kernel');
+  await expect(page.getByRole('link', { name: /kernel-core/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /alice-notes/ })).toHaveCount(0);
+  await page.getByPlaceholder('Search apps, owners, hashes').fill('');
   await expect(page.getByRole('button', { name: 'Account' })).toHaveCount(0);
   await expect(page.getByText('Claim Namespace')).toHaveCount(0);
 
