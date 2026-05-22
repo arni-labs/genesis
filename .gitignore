@@ -35,6 +35,9 @@ web/.vercel/
 # tests/fixtures/; ad-hoc scratch goes here)
 .scratch/
 
+# Local goal/progress trackers are operator-local and should not ship.
+/genesis-goal-tracker.html
+
 # Tarballs / build outputs
 *.tgz
 *.tar.gz
