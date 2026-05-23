@@ -69,6 +69,7 @@ export type AppFilesSnapshot = {
   repositoryId: string;
   commitHash: string;
   commit: GitCommit | null;
+  versions: GitCommit[];
   files: RepositoryFile[];
 };
 
