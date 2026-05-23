@@ -43,7 +43,7 @@
       icon: PackageCheck,
       command: paw,
       copyLabel: 'TemperPaw install call',
-      description: 'Tool path for an agent to request the same pinned app install.'
+      description: 'Agent tool path for the same pinned app install.'
     },
     {
       title: 'Clone',

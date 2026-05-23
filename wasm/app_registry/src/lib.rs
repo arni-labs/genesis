@@ -108,7 +108,9 @@ fn run_install(ctx: &Context) -> Result<Value, String> {
                 app.latest_version_hash.trim_start_matches('@')
             )
         });
-    let installation_id = installation_id(&app.id, &target_tenant, &app.latest_version_hash);
+    let version_hash =
+        app_ref_version_hash(&app_ref).unwrap_or_else(|| app.latest_version_hash.clone());
+    let installation_id = installation_id(&app.id, &target_tenant, &version_hash);
     let sub_writes = vec![json!({
         "entity_type": "AppInstallation",
         "entity_id": installation_id.clone(),
@@ -116,7 +118,7 @@ fn run_install(ctx: &Context) -> Result<Value, String> {
         "params": {
             "AppId": app.id,
             "AppRef": app_ref,
-            "VersionHash": app.latest_version_hash,
+            "VersionHash": version_hash,
             "TargetTenant": target_tenant,
             "ClosureId": "",
             "Installer": params.installer.unwrap_or_else(|| "unknown".to_string()),
@@ -557,6 +559,12 @@ fn installation_id(app_id: &str, target_tenant: &str, version_hash: &str) -> Str
             .take(16)
             .collect::<String>()
     )
+}
+
+fn app_ref_version_hash(app_ref: &str) -> Option<String> {
+    let (_, hash) = app_ref.rsplit_once('@')?;
+    let normalized = hash.trim().trim_start_matches('@');
+    (!normalized.is_empty()).then(|| normalized.to_string())
 }
 
 fn sanitize_id_component(input: &str) -> String {
@@ -1043,7 +1051,7 @@ mod tests {
             "fields": {
                 "OwnerId": "acme",
                 "Name": "notes",
-                "LatestVersionHash": "1111111111111111111111111111111111111111"
+                "LatestVersionHash": "2222222222222222222222222222222222222222"
             }
         });
 
@@ -1062,6 +1070,10 @@ mod tests {
         assert_eq!(
             writes[0]["params"]["AppRef"],
             "acme/notes@1111111111111111111111111111111111111111"
+        );
+        assert_eq!(
+            writes[0]["params"]["VersionHash"],
+            "1111111111111111111111111111111111111111"
         );
     }
 
