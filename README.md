@@ -7,7 +7,7 @@ installs happen through the spec-owned `App.Install` action.
 The primary user is an agent. The clean mental model is:
 
 ```text
-agent writes app files -> git push to Genesis -> RegisterNewApp/PublishNewVersion -> install owner/app@hash
+agent fixes app files -> publish/update in Genesis -> install owner/app@hash -> verify
 ```
 
 ## What Works Now
@@ -19,8 +19,8 @@ agent writes app files -> git push to Genesis -> RegisterNewApp/PublishNewVersio
   `AppInstallation`.
 - Spec-owned app actions: `RegisterNewApp`, `PublishNewVersion`, `Fork`, and
   `Install`.
-- Genesis UI app browsing, GitHub-like file browsing, lineage view, and
-  copyable OData, CLI, TemperPaw tool, and clone commands.
+- Genesis UI app browsing, GitHub-like file browsing, version evolution,
+  lineage view, and copyable OData, CLI, TemperPaw tool, and clone commands.
 - `temper install owner/app@hash --tenant ... --url ...` for installing a
   pinned Genesis app ref.
 - Vercel-hosted Genesis UI:
@@ -46,8 +46,8 @@ The current public Genesis registry contains:
 - Deep Sci-Fi reference apps: `dsf-harness` and `dsf-team`.
 
 Each app is stored as normal Genesis repository objects. The UI exposes the
-pinned `owner/app@hash` ref, Git clone URL, OData install path, CLI command,
-and TemperPaw tool call.
+pinned `owner/app@hash` ref, version chain, Git clone URL, OData install path,
+CLI command, and TemperPaw tool call.
 
 ## Agent Path: Publish Or Update An App
 
@@ -66,6 +66,12 @@ ref = temper.publish_app({
 `temper.update_app(...)` uses the same shape and returns a new pinned
 `owner/name@hash` ref. Internally these tools use Genesis' git transport; agents
 should not hand-roll git and curl as the normal workflow.
+
+When an installed app is wrong, broken, or missing a sensor/capability, the
+agent should update the app package itself and publish the next Genesis version.
+That is a normal version update: the same `App` and `Repository` advance to a
+new commit hash through `PublishNewVersion`. `Lineage` is reserved for forks,
+imports, and derivatives where a child app/repository points back to a parent.
 
 The current low-level/admin path is:
 
@@ -164,6 +170,10 @@ TemperPaw calls the local Temper Genesis installer, which materializes the
 pinned closure from Genesis into that Temper instance and records durable
 installed-app provenance. Use `temper.search_apps(...)` to discover app refs.
 
+The UI's Versions tab shows install commands for each pinned commit. Installing
+an older pinned ref records that selected version hash; it does not silently
+install the latest version.
+
 ## Local Run
 
 Build the WASM modules and serve Temper with Genesis bootstrapped:
@@ -252,6 +262,8 @@ genesis-e2e/tiny-notes-rail133900@8ff05405d769eccbeeb7cab3b15cf96dc269abb8
 - [`APP.md`](APP.md) - app-level summary.
 - [`docs/adr/0009-genesis-only-app-install-and-restart-recovery.md`](docs/adr/0009-genesis-only-app-install-and-restart-recovery.md)
   - Genesis-only app install and restart recovery decision.
+- [`docs/adr/0010-agent-app-repair-and-version-evolution.md`](docs/adr/0010-agent-app-repair-and-version-evolution.md)
+  - agent-first app repair and version-vs-lineage semantics.
 - [`docs/rfc/0003-genesis-app-registry.md`](docs/rfc/0003-genesis-app-registry.md)
   - registry design.
 - [`docs/rfc/0002-push-and-clone.md`](docs/rfc/0002-push-and-clone.md) - git

@@ -169,6 +169,7 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
       repositoryId: app.repositoryId,
       commitHash: app.latestVersionHash,
       commit: null,
+      versions: [],
       files: []
     };
   }
@@ -184,6 +185,7 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
   ]);
 
   const commits = commitRows.map(normalizeCommit);
+  const versions = orderCommitsForLatest(commits, app.latestVersionHash);
   const trees = treeRows.map(normalizeTree);
   const blobs = blobRows.map(normalizeBlob);
   const commit =
@@ -196,6 +198,7 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     repositoryId: app.repositoryId,
     commitHash: app.latestVersionHash,
     commit,
+    versions,
     files: commit ? buildRepositoryFiles(commit.treeSha, trees, blobs) : []
   };
 }
@@ -375,6 +378,54 @@ function normalizeBlob(row: EntityRow): GitBlob {
     createdAt: stateStringField(row, 'CreatedAt'),
     raw: row
   };
+}
+
+function orderCommitsForLatest(commits: GitCommit[], latestHash: string): GitCommit[] {
+  const byId = new Map(commits.map((commit) => [commit.id, commit]));
+  const visited = new Set<string>();
+  const ordered: GitCommit[] = [];
+
+  let cursor = latestHash;
+  while (cursor && byId.has(cursor) && !visited.has(cursor)) {
+    const commit = byId.get(cursor)!;
+    ordered.push(commit);
+    visited.add(cursor);
+    cursor = parseParentShas(commit.parentShas)[0] ?? '';
+  }
+
+  const remaining = commits
+    .filter((commit) => !visited.has(commit.id))
+    .sort((a, b) => {
+      const bDate = Date.parse(b.createdAt);
+      const aDate = Date.parse(a.createdAt);
+      if (Number.isFinite(bDate) && Number.isFinite(aDate) && bDate !== aDate) {
+        return bDate - aDate;
+      }
+      return b.id.localeCompare(a.id);
+    });
+
+  return [...ordered, ...remaining];
+}
+
+function parseParentShas(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0);
+    }
+  } catch {
+    // Git parent lists from older projections are stored as plain strings.
+  }
+
+  return trimmed
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function buildRepositoryFiles(

@@ -8,6 +8,7 @@
   import Topbar from '$lib/components/Topbar.svelte';
   import DetailHero from '$lib/components/DetailHero.svelte';
   import FilesTab from '$lib/components/FilesTab.svelte';
+  import VersionsTab from '$lib/components/VersionsTab.svelte';
   import OverviewTab from '$lib/components/OverviewTab.svelte';
   import LineageTab from '$lib/components/LineageTab.svelte';
   import InstallTab from '$lib/components/InstallTab.svelte';
@@ -27,7 +28,7 @@
     RepositoryFile
   } from '$lib/types';
 
-  type WorkbenchTab = 'files' | 'overview' | 'lineage' | 'install';
+  type WorkbenchTab = 'files' | 'versions' | 'overview' | 'lineage' | 'install';
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
 
   const configuredApiBase = (import.meta.env.VITE_TEMPER_API_BASE ?? '').replace(/\/$/, '');
@@ -42,9 +43,11 @@
   let filesLoadKey = '';
   let currentPath = '';
   let selectedFilePath = '';
+  let selectedVersionHash = '';
 
   const tabItems: TabItem[] = [
     { value: 'files', label: 'Files' },
+    { value: 'versions', label: 'Versions' },
     { value: 'overview', label: 'Overview' },
     { value: 'lineage', label: 'Lineage' },
     { value: 'install', label: 'Install' }
@@ -83,6 +86,7 @@
   $: exportsList = selectedApp ? parseJsonList(selectedApp.exports) : [];
   $: mutationList = selectedLineage ? parseJsonList(selectedLineage.mutations) : [];
   $: fileEntries = fileSnapshot?.files ?? [];
+  $: versionEntries = fileSnapshot?.versions ?? [];
   $: visibleEntries = entriesForPath(fileEntries, currentPath);
   $: selectedFile =
     fileEntries.find((entry) => entry.path === selectedFilePath && entry.kind !== 'directory') ??
@@ -107,6 +111,7 @@
     fileSnapshot = null;
     selectedFilePath = '';
     currentPath = '';
+    selectedVersionHash = '';
   }
 
   onMount(() => {
@@ -125,6 +130,7 @@
       const snapshot = await loadAppFilesCached(app);
       if (filesLoadKey !== key) return;
       fileSnapshot = snapshot;
+      selectedVersionHash = snapshot.commitHash;
       currentPath = initialBrowserPath(snapshot.files);
       selectedFilePath =
         entriesForPath(snapshot.files, currentPath).find((entry) => entry.kind !== 'directory')
@@ -225,12 +231,12 @@
     return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
   }
 
-  function installHash(app: RegistryApp): string {
-    return app.latestVersionHash || app.id;
+  function installHash(app: RegistryApp, hash = ''): string {
+    return hash || app.latestVersionHash || app.id;
   }
 
-  function appRef(app: RegistryApp): string {
-    return `${app.ownerId}/${app.name}@${installHash(app)}`;
+  function appRef(app: RegistryApp, hash = ''): string {
+    return `${app.ownerId}/${app.name}@${installHash(app, hash)}`;
   }
 
   function escapedODataId(value: string): string {
@@ -241,8 +247,8 @@
     return configuredApiBase || (typeof location !== 'undefined' ? location.origin : '');
   }
 
-  function odataInstallCommand(app: RegistryApp): string {
-    const ref = appRef(app);
+  function odataInstallCommand(app: RegistryApp, hash = ''): string {
+    const ref = appRef(app, hash);
     const body = JSON.stringify({
       TargetTenant: 'default',
       AppRef: ref,
@@ -251,12 +257,12 @@
     return `curl -sS -X POST "${registryApiBase()}/tdata/Apps('${escapedODataId(app.id)}')/App.Install" -H "Content-Type: application/json" -H "X-Tenant-Id: default" -d '${body}'`;
   }
 
-  function cliInstallCommand(app: RegistryApp): string {
-    return `temper install ${appRef(app)} --tenant default --url ${registryApiBase()}`;
+  function cliInstallCommand(app: RegistryApp, hash = ''): string {
+    return `temper install ${appRef(app, hash)} --tenant default --url ${registryApiBase()}`;
   }
 
-  function temperPawInstallCommand(app: RegistryApp): string {
-    return `temper.install_app({"app_ref":"${appRef(app)}","tenant":"default","registry_url":"${registryApiBase()}"})`;
+  function temperPawInstallCommand(app: RegistryApp, hash = ''): string {
+    return `temper.install_app({"app_ref":"${appRef(app, hash)}","tenant":"default","registry_url":"${registryApiBase()}"})`;
   }
 
   function cloneCommand(app: RegistryApp): string {
@@ -311,7 +317,7 @@
   <meta
     name="description"
     content={selectedApp?.description ||
-      'Inspect Genesis app files, lineage, dependency closures, and pinned install commands.'}
+      'Inspect Genesis app files, versions, lineage, dependency closures, and pinned install commands.'}
   />
 </svelte:head>
 
@@ -395,6 +401,25 @@
               {shortHash}
               {formatBytes}
               {fileKindLabel}
+            />
+          </BitsTabs.Content>
+          <BitsTabs.Content value="versions">
+            <VersionsTab
+              app={selectedApp}
+              versions={versionEntries}
+              selectedHash={selectedVersionHash || selectedApp.latestVersionHash}
+              loading={filesLoading}
+              error={filesError}
+              installCommands={{
+                appRef: appRef(selectedApp, selectedVersionHash),
+                odata: odataInstallCommand(selectedApp, selectedVersionHash),
+                cli: cliInstallCommand(selectedApp, selectedVersionHash),
+                paw: temperPawInstallCommand(selectedApp, selectedVersionHash)
+              }}
+              {shortHash}
+              {displayDate}
+              onSelect={(hash) => (selectedVersionHash = hash)}
+              onCopy={copyText}
             />
           </BitsTabs.Content>
           <BitsTabs.Content value="overview">

@@ -8,8 +8,10 @@ type EntityRow = {
 
 const parentHash = '1111111111111111111111111111111111111111';
 const childHash = '2222222222222222222222222222222222222222';
+const oldChildHash = '5555555555555555555555555555555555555555';
 const parentTreeHash = '3333333333333333333333333333333333333333';
 const childTreeHash = '4444444444444444444444444444444444444444';
+const oldChildTreeHash = '6666666666666666666666666666666666666666';
 const readmeBlobHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const manifestBlobHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
@@ -124,11 +126,20 @@ const commits = [
   row('Commit', childHash, 'Durable', {
     RepositoryId: 'rp-alice-notes',
     TreeSha: childTreeHash,
-    ParentShas: parentHash,
+    ParentShas: oldChildHash,
     Author: 'Alice <alice@example.test>',
     Committer: 'Alice <alice@example.test>',
     Message: 'add notes app\n',
     CreatedAt: '2026-05-19T08:04:00Z'
+  }),
+  row('Commit', oldChildHash, 'Durable', {
+    RepositoryId: 'rp-alice-notes',
+    TreeSha: oldChildTreeHash,
+    ParentShas: '',
+    Author: 'Alice <alice@example.test>',
+    Committer: 'Alice <alice@example.test>',
+    Message: 'initial notes app\n',
+    CreatedAt: '2026-05-19T08:02:00Z'
   })
 ];
 
@@ -144,6 +155,12 @@ const trees = [
     CanonicalBytes: treeCanonical([
       { mode: '100644', name: 'README.md', sha: readmeBlobHash },
       { mode: '100644', name: 'app.toml', sha: manifestBlobHash }
+    ])
+  }),
+  row('Tree', oldChildTreeHash, 'Durable', {
+    RepositoryId: 'rp-alice-notes',
+    CanonicalBytes: treeCanonical([
+      { mode: '100644', name: 'README.md', sha: readmeBlobHash }
     ])
   })
 ];
@@ -235,6 +252,15 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await page.getByRole('button', { name: /app.toml/ }).click();
   await expect(page.getByText('name = "alice-notes"')).toBeVisible();
 
+  await page.getByRole('tab', { name: 'Versions' }).click();
+  const versionsPanel = page.getByRole('tabpanel', { name: 'Versions' });
+  await expect(page.getByText('Version Chain')).toBeVisible();
+  await expect(page.getByRole('button', { name: /add notes app/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /initial notes app/ })).toBeVisible();
+  await expect(versionsPanel.getByText(`alice/alice-notes@${childHash}`, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /initial notes app/ }).click();
+  await expect(versionsPanel.getByText(`alice/alice-notes@${oldChildHash}`, { exact: true })).toBeVisible();
+
   await page.getByRole('tab', { name: 'Overview' }).click();
   await expect(page.getByText('Alice', { exact: true })).toBeVisible();
   await expect(page.getByText('cl-test-realpack')).toBeVisible();
@@ -248,16 +274,17 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await expect(page.getByLabel('Lineage graph')).toBeVisible();
 
   await page.getByRole('tab', { name: 'Install' }).click();
+  const installPanel = page.getByRole('tabpanel', { name: 'Install', exact: true });
   await expect(
-    page.getByText(`/tdata/Apps('app-alice-notes')/App.Install`)
+    installPanel.getByText(`/tdata/Apps('app-alice-notes')/App.Install`)
   ).toBeVisible();
   await expect(
-    page.getByText(`temper install alice/alice-notes@${childHash} --tenant default --url`)
+    installPanel.getByText(`temper install alice/alice-notes@${childHash} --tenant default --url`)
   ).toBeVisible();
   await expect(
-    page.getByText(`temper.install_app({"app_ref":"alice/alice-notes@${childHash}"`)
+    installPanel.getByText(`temper.install_app({"app_ref":"alice/alice-notes@${childHash}"`)
   ).toBeVisible();
-  await expect(page.getByText('git clone')).toBeVisible();
+  await expect(installPanel.getByText('git clone')).toBeVisible();
 
   await page.goto('/');
   await page.getByPlaceholder('Search apps, owners, hashes').fill('kernel');
