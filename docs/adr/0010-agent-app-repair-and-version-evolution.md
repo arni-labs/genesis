@@ -27,6 +27,11 @@ Publishing a new version writes git objects, then `App.PublishNewVersion`
 advances `LatestVersionHash`. The pinned ref `owner/name@hash` is the install
 unit.
 
+Genesis is git-native, so a normal update may push objects and advance
+`refs/heads/main` before the registry action runs. `App.PublishNewVersion`
+treats a ref that already points at the pushed hash as valid and updates
+`App.LatestVersionHash`; it still rejects divergent refs.
+
 `Lineage` remains reserved for app-to-app ancestry: forks, imports, and future
 merge/graft relationships where a child app/repository records a parent
 app/repository and parent commit.

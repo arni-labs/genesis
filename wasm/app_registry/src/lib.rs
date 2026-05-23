@@ -76,12 +76,14 @@ fn run_fork(ctx: &Context) -> Result<Value, String> {
 fn run_publish_new_version(ctx: &Context) -> Result<Value, String> {
     let params = PublishParams::from_value(&ctx.trigger_params)?;
     let app = AppSnapshot::from_entity_state(&ctx.entity_id, &ctx.entity_state)?;
-    let sub_writes = build_publish_sub_writes(&app, &params)?;
+    let ref_name = normalize_ref_name(&params.ref_name);
+    let current_ref = fetch_repository_ref(ctx, &app.repository_id, &ref_name)?;
+    let sub_writes = build_publish_sub_writes(&app, &params, &current_ref)?;
 
     Ok(json!({
         "app_id": app.id,
         "repository_id": app.repository_id,
-        "ref_name": normalize_ref_name(&params.ref_name),
+        "ref_name": ref_name,
         "new_hash": params.new_hash,
         "sub_write_count": sub_writes.len(),
         "sub_writes": sub_writes,
@@ -473,6 +475,7 @@ fn build_fork_sub_writes(parent: &ParentApp, params: &ForkParams) -> Result<Vec<
 fn build_publish_sub_writes(
     app: &AppSnapshot,
     params: &PublishParams,
+    current_ref: &RefSnapshot,
 ) -> Result<Vec<Value>, String> {
     if params.new_hash == app.latest_version_hash {
         return Err("NewHash must differ from the current LatestVersionHash".to_string());
@@ -480,9 +483,10 @@ fn build_publish_sub_writes(
 
     let ref_name = normalize_ref_name(&params.ref_name);
     let ref_id = ref_id_for(&app.repository_id, &ref_name);
+    let mut writes = Vec::new();
 
-    Ok(vec![
-        json!({
+    if current_ref.target_commit_sha == app.latest_version_hash {
+        writes.push(json!({
             "entity_type": "Ref",
             "entity_id": ref_id,
             "action": "Update",
@@ -492,17 +496,25 @@ fn build_publish_sub_writes(
                 "TargetCommitSha": params.new_hash,
                 "UpdatedAt": CREATED_AT
             }
-        }),
-        json!({
-            "entity_type": "App",
-            "entity_id": app.id,
-            "action": "Update",
-            "params": {
-                "LatestVersionHash": params.new_hash,
-                "UpdatedAt": CREATED_AT
-            }
-        }),
-    ])
+        }));
+    } else if current_ref.target_commit_sha != params.new_hash {
+        return Err(format!(
+            "Ref {ref_name} points at {}, expected current app hash {} or new hash {}",
+            current_ref.target_commit_sha, app.latest_version_hash, params.new_hash
+        ));
+    }
+
+    writes.push(json!({
+        "entity_type": "App",
+        "entity_id": app.id,
+        "action": "Update",
+        "params": {
+            "LatestVersionHash": params.new_hash,
+            "UpdatedAt": CREATED_AT
+        }
+    }));
+
+    Ok(writes)
 }
 
 fn normalize_ref_name(input: &str) -> String {
@@ -802,6 +814,9 @@ mod tests {
         let fork_params = indexed_fork_params(idx);
         let app = indexed_app_snapshot(idx);
         let publish_params = indexed_publish_params(idx);
+        let current_ref = RefSnapshot {
+            target_commit_sha: app.latest_version_hash.clone(),
+        };
 
         (
             build_register_sub_writes(
@@ -812,7 +827,7 @@ mod tests {
             )
             .expect("register sub-writes should build"),
             build_fork_sub_writes(&parent, &fork_params).expect("fork sub-writes should build"),
-            build_publish_sub_writes(&app, &publish_params)
+            build_publish_sub_writes(&app, &publish_params, &current_ref)
                 .expect("publish sub-writes should build"),
         )
     }
@@ -979,7 +994,11 @@ mod tests {
 
     #[test]
     fn publish_sub_writes_update_ref_and_app() {
-        let writes = build_publish_sub_writes(&app_snapshot(), &publish_params()).unwrap();
+        let current_ref = RefSnapshot {
+            target_commit_sha: app_snapshot().latest_version_hash,
+        };
+        let writes =
+            build_publish_sub_writes(&app_snapshot(), &publish_params(), &current_ref).unwrap();
         let pairs: Vec<_> = writes
             .iter()
             .map(|write| {
@@ -1007,12 +1026,53 @@ mod tests {
     }
 
     #[test]
+    fn publish_sub_writes_update_app_only_when_git_push_already_advanced_ref() {
+        let current_ref = RefSnapshot {
+            target_commit_sha: publish_params().new_hash,
+        };
+        let writes =
+            build_publish_sub_writes(&app_snapshot(), &publish_params(), &current_ref).unwrap();
+        let pairs: Vec<_> = writes
+            .iter()
+            .map(|write| {
+                (
+                    write["entity_type"].as_str().unwrap(),
+                    write["action"].as_str().unwrap(),
+                )
+            })
+            .collect();
+
+        assert_eq!(pairs, vec![("App", "Update")]);
+        assert_eq!(
+            writes[0]["params"]["LatestVersionHash"],
+            "3333333333333333333333333333333333333333"
+        );
+    }
+
+    #[test]
+    fn publish_rejects_divergent_ref() {
+        let err = build_publish_sub_writes(
+            &app_snapshot(),
+            &publish_params(),
+            &RefSnapshot {
+                target_commit_sha: "9999999999999999999999999999999999999999".to_string(),
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.contains("expected current app hash"));
+    }
+
+    #[test]
     fn publish_rejects_noop_hash() {
         let err = build_publish_sub_writes(
             &app_snapshot(),
             &PublishParams {
                 new_hash: "1111111111111111111111111111111111111111".to_string(),
                 ref_name: "refs/heads/main".to_string(),
+            },
+            &RefSnapshot {
+                target_commit_sha: "1111111111111111111111111111111111111111".to_string(),
             },
         )
         .unwrap_err();
