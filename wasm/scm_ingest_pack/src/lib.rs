@@ -535,6 +535,18 @@ fn build_object_row(
     raw: &[u8],
     canonical: &[u8],
 ) -> Result<Value, String> {
+    if let Err(error) = put_raw_git_object_cache(ctx, blob_endpoint, repository_id, sha, raw) {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_object_cache_write_failed",
+            &json!({
+                "repository_id": repository_id,
+                "sha": sha,
+                "error": error,
+            }),
+        );
+    }
+
     let canonical_b64 = B64.encode(canonical);
     let created_at = "1970-01-01T00:00:00Z";
     Ok(match kind {
@@ -615,6 +627,37 @@ fn build_object_row(
             row
         }
     })
+}
+
+fn put_raw_git_object_cache(
+    ctx: &Context,
+    blob_endpoint: &str,
+    repository_id: &str,
+    sha: &str,
+    raw: &[u8],
+) -> Result<(), String> {
+    let blob_key = format!("git-objects/{repository_id}/{sha}.b64");
+    let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
+    let response = ctx
+        .http_call("PUT", &url, &[], &B64.encode(raw))
+        .map_err(|e| format!("raw-object cache PUT {sha}: {e}"))?;
+    if (200..300).contains(&response.status) {
+        Ok(())
+    } else {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_object_cache_put_rejected",
+            &json!({
+                "repository_id": repository_id,
+                "sha": sha,
+                "status": response.status,
+            }),
+        );
+        Err(format!(
+            "raw-object cache PUT returned HTTP {}",
+            response.status
+        ))
+    }
 }
 
 fn maybe_stage_field_value(

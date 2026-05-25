@@ -32,6 +32,9 @@ agent fixes app files -> publish/update in Genesis -> install owner/app@hash -> 
   the default UI.
 - Pinned app installs materialize the app dependency closure from Genesis rows
   and repository objects, then recover after Railway redeploy from Postgres.
+- Git clone performance now uses a raw object-body cache populated on ingest
+  and warmed on upload-pack fallback; install performance is measured
+  separately from clone performance.
 
 ## Seeded Railway Apps
 
@@ -142,6 +145,8 @@ The current low-level/admin path is:
 
 For a full executable proof, see
 [`scripts/live-genesis-install-e2e-smoke.sh`](scripts/live-genesis-install-e2e-smoke.sh).
+For read-only clone performance proof, see
+[`scripts/live-genesis-clone-performance-smoke.sh`](scripts/live-genesis-clone-performance-smoke.sh).
 
 ## Agent Path: Install An App
 
@@ -168,7 +173,9 @@ temper.install_app({"app_ref":"owner/name@HASH","tenant":"target-tenant","regist
 
 TemperPaw calls the local Temper Genesis installer, which materializes the
 pinned closure from Genesis into that Temper instance and records durable
-installed-app provenance. Use `temper.search_apps(...)` to discover app refs.
+installed-app provenance. Runtime install fetches the pinned Genesis bundle;
+`git clone` remains the authoring/inspection path, not the normal install
+primitive. Use `temper.search_apps(...)` to discover app refs.
 
 The UI's Versions tab shows install commands for each pinned commit. Installing
 an older pinned ref records that selected version hash; it does not silently
