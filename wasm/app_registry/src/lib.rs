@@ -77,6 +77,7 @@ fn run_publish_new_version(ctx: &Context) -> Result<Value, String> {
     let params = PublishParams::from_value(&ctx.trigger_params)?;
     let app = AppSnapshot::from_entity_state(&ctx.entity_id, &ctx.entity_state)?;
     let ref_name = normalize_ref_name(&params.ref_name);
+    ensure_commit_exists(ctx, &app.repository_id, &params.new_hash)?;
     let current_ref = fetch_repository_ref(ctx, &app.repository_id, &ref_name)?;
     let sub_writes = build_publish_sub_writes(&app, &params, &current_ref)?;
 
@@ -88,6 +89,38 @@ fn run_publish_new_version(ctx: &Context) -> Result<Value, String> {
         "sub_write_count": sub_writes.len(),
         "sub_writes": sub_writes,
     }))
+}
+
+fn ensure_commit_exists(ctx: &Context, repository_id: &str, sha: &str) -> Result<(), String> {
+    let filter = format!(
+        "Id eq '{}' and RepositoryId eq '{}'",
+        sha.replace('\'', "''"),
+        repository_id.replace('\'', "''")
+    );
+    let temper_api = temper_api_base(ctx);
+    let url = format!(
+        "{temper_api}/tdata/Commits?$filter={}&$select=Id,RepositoryId&$top=1",
+        urlencode(&filter)
+    );
+    let resp = ctx
+        .http_call("GET", &url, &[], "")
+        .map_err(|e| format!("fetch Commit: {e}"))?;
+    if !(200..400).contains(&resp.status) {
+        return Err(format!("Commit {sha} status {}", resp.status));
+    }
+    let parsed: Value =
+        serde_json::from_str(&resp.body).map_err(|e| format!("Commit json: {e}"))?;
+    let found = parsed
+        .get("value")
+        .and_then(|value| value.as_array())
+        .is_some_and(|rows| !rows.is_empty());
+    if found {
+        Ok(())
+    } else {
+        Err(format!(
+            "NewHash must be an existing Git commit in repository {repository_id}; {sha} was not found"
+        ))
+    }
 }
 
 fn run_install(ctx: &Context) -> Result<Value, String> {
@@ -642,6 +675,19 @@ fn row_string(row: &Value, key: &str) -> Option<String> {
 
 fn odata_key(input: &str) -> String {
     input.replace('\'', "''")
+}
+
+fn urlencode(input: &str) -> String {
+    let mut out = String::new();
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 fn temper_api_base(ctx: &Context) -> String {

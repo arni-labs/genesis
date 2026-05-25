@@ -35,6 +35,8 @@ agent fixes app files -> publish/update in Genesis -> install owner/app@hash -> 
 - Git clone performance now uses a raw object-body cache populated on ingest
   and warmed on upload-pack fallback; install performance is measured
   separately from clone performance.
+- `PublishNewVersion` requires the new app hash to be an existing Git commit in
+  the app repository, so future app refs stay installable and clonable.
 
 ## Seeded Railway Apps
 
@@ -75,6 +77,7 @@ agent should update the app package itself and publish the next Genesis version.
 That is a normal version update: the same `App` and `Repository` advance to a
 new commit hash through `PublishNewVersion`. `Lineage` is reserved for forks,
 imports, and derivatives where a child app/repository points back to a parent.
+The hash in `owner/name@hash` is the Git commit hash for the app version.
 
 The current low-level/admin path is:
 
@@ -219,15 +222,16 @@ The current public proof is:
   `paw-patrol` from the Railway API, opened the `paw-patrol` file browser, and
   showed OData, CLI, TemperPaw tool, and clone commands pointing at the
   Railway registry URL.
-- Clone proof: `temperpaw/paw-agent`, `temperpaw/paw-patrol`,
+- Clone proof: valid production refs such as `temperpaw/paw-patrol`,
   `katagami/katagami-commons`, and `katagami/katagami-curation` clone from the
-  public Railway URL at their registered hashes.
+  public Railway URL at their registered hashes. A historical `paw-agent` row
+  currently points at a non-commit app hash and must be repaired through a
+  governed Genesis update before it is used as a clone-performance target.
 - Install proof: `temperpaw/paw-patrol@7deb98f716e5c0e709bb7871642bdb35400cd04b`
   installed by OData and the TemperPaw tool-shaped request. The installed tenant
   exposed `Files`, `Agents`, `PatrolRequests`, and `Signals`, and a real
   `Signal` row was created and read back.
-- Recovery proof: after the fresh Railway redeploy above, `paw-agent` still
-  cloned at `65fbd22270e4bf7304de2d9b6895a465c332d602` and `paw-patrol`
+- Recovery proof: after the fresh Railway redeploy above, `paw-patrol`
   installed into `genesis-final-031238`; the installed
   `Signals('sig-final-031246')` row read back successfully.
 

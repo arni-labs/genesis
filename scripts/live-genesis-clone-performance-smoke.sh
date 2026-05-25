@@ -7,10 +7,13 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-${GENESIS_URL:-https://genesis-production-164d.up.railway.app}}"
 TENANT="${TENANT:-default}"
 OWNER="${OWNER:-temperpaw}"
-REPO="${REPO:-paw-agent}"
+# paw-patrol is currently the largest production app whose ref points at a
+# valid Git commit. paw-agent is intentionally excluded until its historical
+# non-commit app hash is repaired through a governed Genesis update.
+REPO="${REPO:-paw-patrol}"
 TINY_OWNER="${TINY_OWNER:-genesis-e2e}"
 TINY_REPO="${TINY_REPO:-tiny-notes-rail140900}"
-PAW_AGENT_WARM_LIMIT_SECS="${PAW_AGENT_WARM_LIMIT_SECS:-30}"
+LARGE_WARM_LIMIT_SECS="${LARGE_WARM_LIMIT_SECS:-${PAW_AGENT_WARM_LIMIT_SECS:-30}}"
 TINY_LIMIT_SECS="${TINY_LIMIT_SECS:-5}"
 FIRST_BYTE_LIMIT_SECS="${FIRST_BYTE_LIMIT_SECS:-10}"
 CLONE_MAX_SECS="${CLONE_MAX_SECS:-120}"
@@ -98,9 +101,9 @@ measure "clone_large_warmup" \
 
 rm -rf "$tmp/large"
 measure "clone_large_warm" \
-  with_timeout "$PAW_AGENT_WARM_LIMIT_SECS" git -c http.extraHeader="X-Tenant-Id: $TENANT" \
+  with_timeout "$LARGE_WARM_LIMIT_SECS" git -c http.extraHeader="X-Tenant-Id: $TENANT" \
     clone --quiet "$BASE_URL/$OWNER/$REPO.git" "$tmp/large"
-assert_under "large warm clone" "$MEASURED_MS" "$PAW_AGENT_WARM_LIMIT_SECS"
+assert_under "large warm clone" "$MEASURED_MS" "$LARGE_WARM_LIMIT_SECS"
 
 git -C "$tmp/large" fsck --no-progress >/dev/null
 printf 'PASS Genesis clone performance smoke\n'
