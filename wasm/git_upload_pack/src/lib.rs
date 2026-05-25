@@ -15,7 +15,8 @@ use alloc::vec::Vec;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp, streaming_call};
+use std::time::Instant;
+use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp};
 use temper_wasm_sdk::prelude::*;
 use tg_wire::{ObjectKind, PackEmitter, SidebandWriter, encode_into, flush};
 
@@ -41,7 +42,10 @@ temper_module! {
         let path = raw.split('?').next().unwrap_or(raw);
 
         if http.method == "POST" && path.ends_with("/git-upload-pack") {
-            return serve_upload_pack(&ctx, &http);
+            return match serve_upload_pack(&ctx, &http) {
+                Ok(value) => Ok(value),
+                Err(error) => respond_upload_pack_error(&http, &error),
+            };
         }
         respond_text(&http, 404, "text/plain", "no upload-pack route matches")
     }
@@ -99,18 +103,49 @@ fn respond_text(
 
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const READ_CHUNK: usize = 16 * 1024;
-const OUTBOUND_READ_CHUNK: usize = 64 * 1024;
 const MAX_CACHED_OBJECT_BYTES: usize = 128 * 1024 * 1024;
+const PREFETCH_PAGE_SIZE: usize = 20;
+
+fn respond_upload_pack_error(http: &InboundHttp, error: &str) -> Result<Value, String> {
+    http.submit_response_head(
+        200,
+        &[
+            ("content-type", "application/x-git-upload-pack-result"),
+            ("cache-control", "no-cache"),
+        ],
+    )
+    .map_err(|e| format!("error response head: {e}"))?;
+
+    let clean = error.replace(['\r', '\n'], " ");
+    let mut payload = Vec::new();
+    encode_into(&mut payload, format!("ERR {clean}\n").as_bytes())
+        .map_err(|e| format!("error pkt-line: {e}"))?;
+    let mut writer = http.response_body();
+    writer
+        .write_all_chunk(&payload)
+        .map_err(|e| format!("error response body: {e}"))?;
+    writer
+        .finish()
+        .map_err(|e| format!("error response close: {e}"))?;
+
+    Ok(json!({
+        "status": 500,
+        "error": clean,
+    }))
+}
 
 fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
+    let total_started = Instant::now();
     let principal = effective_principal(ctx, &http.headers);
     let api_base = temper_api_from_headers(&http.headers);
+    let blob_endpoint = blob_endpoint(ctx, &api_base);
     // 1. Read the request body. Bounded: want/have negotiation
     //    payloads are tiny (a few KB even for huge repos), so we
     //    cap at 16 MiB and buffer.
     let mut body = Vec::new();
     let mut scratch = alloc::vec![0u8; READ_CHUNK];
     let mut reader = http.request_body();
+    let body_started = Instant::now();
     loop {
         match reader.read_next_chunk(&mut scratch) {
             Ok(None) => break,
@@ -123,12 +158,57 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             Err(e) => return Err(format!("read body: {e}")),
         }
     }
+    log_upload_pack_phase(
+        ctx,
+        "read_request_body",
+        body_started,
+        0,
+        body.len(),
+        &http.params,
+    );
 
     // 2. Parse want/have/done.
+    let parse_started = Instant::now();
     let parsed = parse_upload_request(&body)?;
+    log_upload_pack_phase(
+        ctx,
+        "parse_request",
+        parse_started,
+        parsed.wants.len() + parsed.haves.len(),
+        body.len(),
+        &http.params,
+    );
     let owner = http.params.get("owner").cloned().unwrap_or_default();
     let repo = http.params.get("repo").cloned().unwrap_or_default();
     let repository_id = format!("rp-{owner}-{repo}");
+    let prefetch_started = Instant::now();
+    let prefetched_objects =
+        match prefetch_repository_object_bodies(ctx, &principal, &api_base, &repository_id) {
+            Ok(objects) => {
+                let count = objects.len();
+                let bytes = objects.bytes();
+                log_upload_pack_phase(
+                    ctx,
+                    "prefetch_repository_objects",
+                    prefetch_started,
+                    count,
+                    bytes,
+                    &http.params,
+                );
+                Some(objects)
+            }
+            Err(error) => {
+                let _ = ctx.log_structured(
+                    "warn",
+                    "Genesis git upload-pack object prefetch failed",
+                    &json!({
+                        "repository_id": repository_id,
+                        "error": error,
+                    }),
+                );
+                None
+            }
+        };
 
     // 3. Pass 1 — walk the DAG. We need the object count for the
     //    pack header before we can stream a single byte, so this
@@ -145,14 +225,23 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
 
     let mut walk_order: Vec<(String, ObjectKind)> = Vec::new();
     let mut graph_cache: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let walk_started = Instant::now();
     while let Some((sha, kind)) = queue.pop_front() {
         if !visited.insert(sha.clone()) {
             continue;
         }
         match kind {
             ObjectKind::Commit | ObjectKind::Tree => {
-                let raw_body =
-                    fetch_object_body(ctx, &principal, kind, &sha, &repository_id, &api_base)?;
+                let raw_body = fetch_object_body(
+                    ctx,
+                    &principal,
+                    kind,
+                    &sha,
+                    &repository_id,
+                    &api_base,
+                    &blob_endpoint,
+                    prefetched_objects.as_ref(),
+                )?;
                 if matches!(kind, ObjectKind::Commit) {
                     let refs = genesis_git_object::parse_commit_refs(&raw_body)
                         .map_err(|e| format!("commit {sha}: {e}"))?;
@@ -181,6 +270,14 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
         }
         walk_order.push((sha, kind));
     }
+    log_upload_pack_phase(
+        ctx,
+        "walk_reachable_objects",
+        walk_started,
+        walk_order.len(),
+        graph_cache.values().map(|bytes| bytes.len()).sum(),
+        &http.params,
+    );
 
     // 4. Pass 2 — stream the response. Order:
     //      pkt-line "NAK\n"   (no negotiation in v0)
@@ -212,6 +309,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
 
     let sideband = parsed.capabilities.iter().any(|c| c == "side-band-64k");
     let object_count = walk_order.len() as u32;
+    let emit_started = Instant::now();
     let pack_byte_count = if sideband {
         let sb = SidebandWriter::new(&mut writer);
         let (pack_byte_count, sb) = emit_pack_streaming(
@@ -222,6 +320,8 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             &repository_id,
             &principal,
             &api_base,
+            &blob_endpoint,
+            prefetched_objects.as_ref(),
             ctx,
         )?;
         sb.finish().map_err(|e| format!("sideband finish: {e}"))?;
@@ -235,10 +335,20 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             &repository_id,
             &principal,
             &api_base,
+            &blob_endpoint,
+            prefetched_objects.as_ref(),
             ctx,
         )?;
         pack_byte_count
     };
+    log_upload_pack_phase(
+        ctx,
+        "emit_pack",
+        emit_started,
+        object_count as usize,
+        pack_byte_count,
+        &http.params,
+    );
 
     // Trailing pkt-line flush ends the response.
     let mut tail = Vec::new();
@@ -248,12 +358,42 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
         .into_inner()
         .finish()
         .map_err(|e| format!("body close: {e}"))?;
+    log_upload_pack_phase(
+        ctx,
+        "total",
+        total_started,
+        object_count as usize,
+        pack_byte_count,
+        &http.params,
+    );
 
     Ok(json!({
         "wants": parsed.wants.len(),
         "objects": object_count,
         "pack_bytes": pack_byte_count,
     }))
+}
+
+fn log_upload_pack_phase(
+    ctx: &Context,
+    phase: &str,
+    started: Instant,
+    count: usize,
+    bytes: usize,
+    params: &BTreeMap<String, String>,
+) {
+    let _ = ctx.log_structured(
+        "info",
+        "Genesis git upload-pack phase complete",
+        &json!({
+            "phase": phase,
+            "duration_ms": started.elapsed().as_millis() as u64,
+            "count": count,
+            "bytes": bytes,
+            "owner": params.get("owner").cloned().unwrap_or_default(),
+            "repo": params.get("repo").cloned().unwrap_or_default(),
+        }),
+    );
 }
 
 /// Drives the PackEmitter. Returns the number of pack bytes written
@@ -266,6 +406,8 @@ fn emit_pack_streaming<W: std::io::Write>(
     repository_id: &str,
     principal: &Principal,
     api_base: &str,
+    blob_endpoint: &str,
+    prefetched_objects: Option<&RepositoryObjectBodies>,
     ctx: &Context,
 ) -> Result<(usize, W), String> {
     // Wrap the sink in a counting writer so we can report bytes
@@ -279,9 +421,16 @@ fn emit_pack_streaming<W: std::io::Write>(
             ObjectKind::Commit | ObjectKind::Tree => graph_cache
                 .remove(&sha)
                 .ok_or_else(|| format!("walk-cache miss for {sha}"))?,
-            ObjectKind::Blob | ObjectKind::Tag => {
-                fetch_object_body(ctx, principal, kind, &sha, repository_id, api_base)?
-            }
+            ObjectKind::Blob | ObjectKind::Tag => fetch_object_body(
+                ctx,
+                principal,
+                kind,
+                &sha,
+                repository_id,
+                api_base,
+                blob_endpoint,
+                prefetched_objects,
+            )?,
         };
         emitter
             .write_object(kind, &body)
@@ -410,6 +559,109 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
     })
 }
 
+#[derive(Default)]
+struct RepositoryObjectBodies {
+    commits: BTreeMap<String, Vec<u8>>,
+    trees: BTreeMap<String, Vec<u8>>,
+    blobs: BTreeMap<String, Vec<u8>>,
+    tags: BTreeMap<String, Vec<u8>>,
+}
+
+impl RepositoryObjectBodies {
+    fn get(&self, kind: ObjectKind, sha: &str) -> Option<&Vec<u8>> {
+        match kind {
+            ObjectKind::Commit => self.commits.get(sha),
+            ObjectKind::Tree => self.trees.get(sha),
+            ObjectKind::Blob => self.blobs.get(sha),
+            ObjectKind::Tag => self.tags.get(sha),
+        }
+    }
+
+    fn insert(&mut self, kind: ObjectKind, sha: String, body: Vec<u8>) {
+        match kind {
+            ObjectKind::Commit => self.commits.insert(sha, body),
+            ObjectKind::Tree => self.trees.insert(sha, body),
+            ObjectKind::Blob => self.blobs.insert(sha, body),
+            ObjectKind::Tag => self.tags.insert(sha, body),
+        };
+    }
+
+    fn len(&self) -> usize {
+        self.commits.len() + self.trees.len() + self.blobs.len() + self.tags.len()
+    }
+
+    fn bytes(&self) -> usize {
+        self.commits.values().map(Vec::len).sum::<usize>()
+            + self.trees.values().map(Vec::len).sum::<usize>()
+            + self.blobs.values().map(Vec::len).sum::<usize>()
+            + self.tags.values().map(Vec::len).sum::<usize>()
+    }
+}
+
+fn prefetch_repository_object_bodies(
+    ctx: &Context,
+    principal: &Principal,
+    api_base: &str,
+    repo_id: &str,
+) -> Result<RepositoryObjectBodies, String> {
+    let mut bodies = RepositoryObjectBodies::default();
+    for (kind, set) in [
+        (ObjectKind::Commit, "Commits"),
+        (ObjectKind::Tree, "Trees"),
+        (ObjectKind::Blob, "Blobs"),
+        (ObjectKind::Tag, "Tags"),
+    ] {
+        let filter = format!("RepositoryId eq '{}'", repo_id.replace('\'', "''"));
+        let mut skip = 0usize;
+        loop {
+            let url = format!(
+                "{api_base}/tdata/{set}?$filter={}&$select=Id,RepositoryId,CanonicalBytes&$top={PREFETCH_PAGE_SIZE}&$skip={skip}",
+                urlencode(&filter)
+            );
+            let response = ctx
+                .http_call("GET", &url, &principal.outbound_headers(), "")
+                .map_err(|e| format!("prefetch {set}: {e}"))?;
+            if !(200..400).contains(&response.status) {
+                return Err(format!("prefetch {set} status {}", response.status));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&response.body)
+                .map_err(|e| format!("prefetch {set} json: {e}"))?;
+            let rows = parsed
+                .get("value")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let row_count = rows.len();
+            for row in rows {
+                let fields = row.get("fields").unwrap_or(&row);
+                let Some(sha) = string_field(fields, "Id") else {
+                    continue;
+                };
+                let Some(canonical_value) = fields
+                    .get("CanonicalBytes")
+                    .or_else(|| fields.get("canonical_bytes"))
+                else {
+                    continue;
+                };
+                let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
+                let canonical = B64
+                    .decode(&canonical_b64)
+                    .map_err(|e| format!("prefetch {set}({sha}) base64 decode: {e}"))?;
+                let nul = canonical
+                    .iter()
+                    .position(|&b| b == 0)
+                    .ok_or_else(|| format!("prefetch {set}({sha}): no NUL in canonical"))?;
+                bodies.insert(kind, sha, canonical[nul + 1..].to_vec());
+            }
+            if row_count < PREFETCH_PAGE_SIZE {
+                break;
+            }
+            skip += row_count;
+        }
+    }
+    Ok(bodies)
+}
+
 fn fetch_object_body(
     ctx: &Context,
     principal: &Principal,
@@ -417,8 +669,14 @@ fn fetch_object_body(
     sha: &str,
     repo_id: &str,
     api_base: &str,
+    blob_endpoint: &str,
+    prefetched_objects: Option<&RepositoryObjectBodies>,
 ) -> Result<Vec<u8>, String> {
-    if let Some(cached) = fetch_cached_object_body(api_base, repo_id, sha)? {
+    if let Some(body) = prefetched_objects.and_then(|objects| objects.get(kind, sha)) {
+        return Ok(body.clone());
+    }
+
+    if let Some(cached) = fetch_cached_object_body(ctx, blob_endpoint, repo_id, sha)? {
         return Ok(cached);
     }
 
@@ -468,58 +726,84 @@ fn fetch_object_body(
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
-    Ok(canonical[nul + 1..].to_vec())
+    let body = canonical[nul + 1..].to_vec();
+    if let Err(error) = store_cached_object_body(ctx, blob_endpoint, repo_id, sha, &body) {
+        let _ = ctx.log_structured(
+            "warn",
+            "Genesis git upload-pack object cache fill failed",
+            &json!({
+                "repo_id": repo_id,
+                "sha": sha,
+                "error": error,
+            }),
+        );
+    }
+    Ok(body)
 }
 
 fn fetch_cached_object_body(
-    api_base: &str,
+    ctx: &Context,
+    blob_endpoint: &str,
     repo_id: &str,
     sha: &str,
 ) -> Result<Option<Vec<u8>>, String> {
     let url = format!(
-        "{}/_internal/blobs/git-objects/{repo_id}/{sha}.raw",
-        api_base.trim_end_matches('/')
+        "{}/git-objects/{repo_id}/{sha}.b64",
+        blob_endpoint.trim_end_matches('/')
     );
-    let (request, mut response, head) =
-        streaming_call("GET", &url, &[]).map_err(|e| format!("object-cache GET {sha}: {e}"))?;
-    request
-        .finish()
-        .map_err(|e| format!("object-cache GET {sha} request close: {e}"))?;
-    let head = head().map_err(|e| format!("object-cache GET {sha} response head: {e}"))?;
-    if head.status == 404 {
-        let _ = response.close();
+    let response = ctx
+        .http_call("GET", &url, &[], "")
+        .map_err(|e| format!("object-cache GET {sha}: {e}"))?;
+    if response.status == 404 {
         return Ok(None);
     }
-    if !(200..300).contains(&head.status) {
-        let _ = response.close();
+    if !(200..300).contains(&response.status) {
         return Err(format!(
             "object-cache GET {sha} returned HTTP {}",
-            head.status
+            response.status
         ));
     }
-
-    let mut body = Vec::new();
-    let mut scratch = alloc::vec![0u8; OUTBOUND_READ_CHUNK];
-    loop {
-        match response.read_next_chunk(&mut scratch) {
-            Ok(None) => break,
-            Ok(Some(n)) => {
-                if body.len() + n > MAX_CACHED_OBJECT_BYTES {
-                    let _ = response.close();
-                    return Err(format!(
-                        "object-cache GET {sha} exceeds {MAX_CACHED_OBJECT_BYTES} bytes"
-                    ));
-                }
-                body.extend_from_slice(&scratch[..n]);
-            }
-            Err(e) => {
-                let _ = response.close();
-                return Err(format!("object-cache GET {sha} response body: {e}"));
-            }
-        }
+    let body = B64
+        .decode(response.body.trim())
+        .map_err(|e| format!("object-cache GET {sha} base64 decode: {e}"))?;
+    if body.len() > MAX_CACHED_OBJECT_BYTES {
+        return Err(format!(
+            "object-cache GET {sha} exceeds {MAX_CACHED_OBJECT_BYTES} bytes"
+        ));
     }
-    let _ = response.close();
     Ok(Some(body))
+}
+
+fn store_cached_object_body(
+    ctx: &Context,
+    blob_endpoint: &str,
+    repo_id: &str,
+    sha: &str,
+    body: &[u8],
+) -> Result<(), String> {
+    let url = format!(
+        "{}/git-objects/{repo_id}/{sha}.b64",
+        blob_endpoint.trim_end_matches('/')
+    );
+    let response = ctx
+        .http_call("PUT", &url, &[], &B64.encode(body))
+        .map_err(|e| format!("object-cache PUT {sha}: {e}"))?;
+    if (200..300).contains(&response.status) {
+        Ok(())
+    } else {
+        Err(format!(
+            "object-cache PUT {sha} returned HTTP {}",
+            response.status
+        ))
+    }
+}
+
+fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
+    ctx.get_secret("blob_endpoint")
+        .ok()
+        .map(|value| value.trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("{api_base}/_internal/blobs"))
 }
 
 fn resolve_field_value(
@@ -581,6 +865,15 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+fn string_field(fields: &serde_json::Value, name: &str) -> Option<String> {
+    fields.get(name).and_then(|value| match value {
+        serde_json::Value::String(value) => Some(value.clone()),
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        serde_json::Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    })
 }
 
 #[cfg(test)]
