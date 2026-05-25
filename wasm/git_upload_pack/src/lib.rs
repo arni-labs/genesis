@@ -42,7 +42,10 @@ temper_module! {
         let path = raw.split('?').next().unwrap_or(raw);
 
         if http.method == "POST" && path.ends_with("/git-upload-pack") {
-            return serve_upload_pack(&ctx, &http);
+            return match serve_upload_pack(&ctx, &http) {
+                Ok(value) => Ok(value),
+                Err(error) => respond_upload_pack_error(&http, &error),
+            };
         }
         respond_text(&http, 404, "text/plain", "no upload-pack route matches")
     }
@@ -101,6 +104,35 @@ fn respond_text(
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const READ_CHUNK: usize = 16 * 1024;
 const MAX_CACHED_OBJECT_BYTES: usize = 128 * 1024 * 1024;
+const PREFETCH_PAGE_SIZE: usize = 20;
+
+fn respond_upload_pack_error(http: &InboundHttp, error: &str) -> Result<Value, String> {
+    http.submit_response_head(
+        200,
+        &[
+            ("content-type", "application/x-git-upload-pack-result"),
+            ("cache-control", "no-cache"),
+        ],
+    )
+    .map_err(|e| format!("error response head: {e}"))?;
+
+    let clean = error.replace(['\r', '\n'], " ");
+    let mut payload = Vec::new();
+    encode_into(&mut payload, format!("ERR {clean}\n").as_bytes())
+        .map_err(|e| format!("error pkt-line: {e}"))?;
+    let mut writer = http.response_body();
+    writer
+        .write_all_chunk(&payload)
+        .map_err(|e| format!("error response body: {e}"))?;
+    writer
+        .finish()
+        .map_err(|e| format!("error response close: {e}"))?;
+
+    Ok(json!({
+        "status": 500,
+        "error": clean,
+    }))
+}
 
 fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let total_started = Instant::now();
@@ -580,45 +612,51 @@ fn prefetch_repository_object_bodies(
         (ObjectKind::Tag, "Tags"),
     ] {
         let filter = format!("RepositoryId eq '{}'", repo_id.replace('\'', "''"));
-        let url = format!(
-            "{api_base}/tdata/{set}?$filter={}&$top=50000",
-            urlencode(&filter)
-        );
-        let response = ctx
-            .http_call("GET", &url, &principal.outbound_headers(), "")
-            .map_err(|e| format!("prefetch {set}: {e}"))?;
-        if !(200..400).contains(&response.status) {
-            return Err(format!("prefetch {set} status {}", response.status));
-        }
-        let parsed: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| format!("prefetch {set} json: {e}"))?;
-        let rows = parsed
-            .get("value")
-            .and_then(|value| value.as_array())
-            .cloned()
-            .unwrap_or_default();
-        for row in rows {
-            let fields = row
-                .get("fields")
-                .ok_or_else(|| format!("prefetch {set}: row has no fields"))?;
-            let Some(sha) = string_field(fields, "Id") else {
-                continue;
-            };
-            let Some(canonical_value) = fields
-                .get("CanonicalBytes")
-                .or_else(|| fields.get("canonical_bytes"))
-            else {
-                continue;
-            };
-            let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
-            let canonical = B64
-                .decode(&canonical_b64)
-                .map_err(|e| format!("prefetch {set}({sha}) base64 decode: {e}"))?;
-            let nul = canonical
-                .iter()
-                .position(|&b| b == 0)
-                .ok_or_else(|| format!("prefetch {set}({sha}): no NUL in canonical"))?;
-            bodies.insert(kind, sha, canonical[nul + 1..].to_vec());
+        let mut skip = 0usize;
+        loop {
+            let url = format!(
+                "{api_base}/tdata/{set}?$filter={}&$select=Id,RepositoryId,CanonicalBytes&$top={PREFETCH_PAGE_SIZE}&$skip={skip}",
+                urlencode(&filter)
+            );
+            let response = ctx
+                .http_call("GET", &url, &principal.outbound_headers(), "")
+                .map_err(|e| format!("prefetch {set}: {e}"))?;
+            if !(200..400).contains(&response.status) {
+                return Err(format!("prefetch {set} status {}", response.status));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&response.body)
+                .map_err(|e| format!("prefetch {set} json: {e}"))?;
+            let rows = parsed
+                .get("value")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let row_count = rows.len();
+            for row in rows {
+                let fields = row.get("fields").unwrap_or(&row);
+                let Some(sha) = string_field(fields, "Id") else {
+                    continue;
+                };
+                let Some(canonical_value) = fields
+                    .get("CanonicalBytes")
+                    .or_else(|| fields.get("canonical_bytes"))
+                else {
+                    continue;
+                };
+                let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
+                let canonical = B64
+                    .decode(&canonical_b64)
+                    .map_err(|e| format!("prefetch {set}({sha}) base64 decode: {e}"))?;
+                let nul = canonical
+                    .iter()
+                    .position(|&b| b == 0)
+                    .ok_or_else(|| format!("prefetch {set}({sha}): no NUL in canonical"))?;
+                bodies.insert(kind, sha, canonical[nul + 1..].to_vec());
+            }
+            if row_count < PREFETCH_PAGE_SIZE {
+                break;
+            }
+            skip += row_count;
         }
     }
     Ok(bodies)
