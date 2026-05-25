@@ -149,6 +149,34 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     let owner = http.params.get("owner").cloned().unwrap_or_default();
     let repo = http.params.get("repo").cloned().unwrap_or_default();
     let repository_id = format!("rp-{owner}-{repo}");
+    let prefetch_started = Instant::now();
+    let prefetched_objects =
+        match prefetch_repository_object_bodies(ctx, &principal, &api_base, &repository_id) {
+            Ok(objects) => {
+                let count = objects.len();
+                let bytes = objects.bytes();
+                log_upload_pack_phase(
+                    ctx,
+                    "prefetch_repository_objects",
+                    prefetch_started,
+                    count,
+                    bytes,
+                    &http.params,
+                );
+                Some(objects)
+            }
+            Err(error) => {
+                let _ = ctx.log_structured(
+                    "warn",
+                    "Genesis git upload-pack object prefetch failed",
+                    &json!({
+                        "repository_id": repository_id,
+                        "error": error,
+                    }),
+                );
+                None
+            }
+        };
 
     // 3. Pass 1 — walk the DAG. We need the object count for the
     //    pack header before we can stream a single byte, so this
@@ -180,6 +208,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
                     &repository_id,
                     &api_base,
                     &blob_endpoint,
+                    prefetched_objects.as_ref(),
                 )?;
                 if matches!(kind, ObjectKind::Commit) {
                     let refs = genesis_git_object::parse_commit_refs(&raw_body)
@@ -260,6 +289,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             &principal,
             &api_base,
             &blob_endpoint,
+            prefetched_objects.as_ref(),
             ctx,
         )?;
         sb.finish().map_err(|e| format!("sideband finish: {e}"))?;
@@ -274,6 +304,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
             &principal,
             &api_base,
             &blob_endpoint,
+            prefetched_objects.as_ref(),
             ctx,
         )?;
         pack_byte_count
@@ -344,6 +375,7 @@ fn emit_pack_streaming<W: std::io::Write>(
     principal: &Principal,
     api_base: &str,
     blob_endpoint: &str,
+    prefetched_objects: Option<&RepositoryObjectBodies>,
     ctx: &Context,
 ) -> Result<(usize, W), String> {
     // Wrap the sink in a counting writer so we can report bytes
@@ -365,6 +397,7 @@ fn emit_pack_streaming<W: std::io::Write>(
                 repository_id,
                 api_base,
                 blob_endpoint,
+                prefetched_objects,
             )?,
         };
         emitter
@@ -494,6 +527,103 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
     })
 }
 
+#[derive(Default)]
+struct RepositoryObjectBodies {
+    commits: BTreeMap<String, Vec<u8>>,
+    trees: BTreeMap<String, Vec<u8>>,
+    blobs: BTreeMap<String, Vec<u8>>,
+    tags: BTreeMap<String, Vec<u8>>,
+}
+
+impl RepositoryObjectBodies {
+    fn get(&self, kind: ObjectKind, sha: &str) -> Option<&Vec<u8>> {
+        match kind {
+            ObjectKind::Commit => self.commits.get(sha),
+            ObjectKind::Tree => self.trees.get(sha),
+            ObjectKind::Blob => self.blobs.get(sha),
+            ObjectKind::Tag => self.tags.get(sha),
+        }
+    }
+
+    fn insert(&mut self, kind: ObjectKind, sha: String, body: Vec<u8>) {
+        match kind {
+            ObjectKind::Commit => self.commits.insert(sha, body),
+            ObjectKind::Tree => self.trees.insert(sha, body),
+            ObjectKind::Blob => self.blobs.insert(sha, body),
+            ObjectKind::Tag => self.tags.insert(sha, body),
+        };
+    }
+
+    fn len(&self) -> usize {
+        self.commits.len() + self.trees.len() + self.blobs.len() + self.tags.len()
+    }
+
+    fn bytes(&self) -> usize {
+        self.commits.values().map(Vec::len).sum::<usize>()
+            + self.trees.values().map(Vec::len).sum::<usize>()
+            + self.blobs.values().map(Vec::len).sum::<usize>()
+            + self.tags.values().map(Vec::len).sum::<usize>()
+    }
+}
+
+fn prefetch_repository_object_bodies(
+    ctx: &Context,
+    principal: &Principal,
+    api_base: &str,
+    repo_id: &str,
+) -> Result<RepositoryObjectBodies, String> {
+    let mut bodies = RepositoryObjectBodies::default();
+    for (kind, set) in [
+        (ObjectKind::Commit, "Commits"),
+        (ObjectKind::Tree, "Trees"),
+        (ObjectKind::Blob, "Blobs"),
+        (ObjectKind::Tag, "Tags"),
+    ] {
+        let filter = format!("RepositoryId eq '{}'", repo_id.replace('\'', "''"));
+        let url = format!(
+            "{api_base}/tdata/{set}?$filter={}&$top=50000",
+            urlencode(&filter)
+        );
+        let response = ctx
+            .http_call("GET", &url, &principal.outbound_headers(), "")
+            .map_err(|e| format!("prefetch {set}: {e}"))?;
+        if !(200..400).contains(&response.status) {
+            return Err(format!("prefetch {set} status {}", response.status));
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&response.body)
+            .map_err(|e| format!("prefetch {set} json: {e}"))?;
+        let rows = parsed
+            .get("value")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for row in rows {
+            let fields = row
+                .get("fields")
+                .ok_or_else(|| format!("prefetch {set}: row has no fields"))?;
+            let Some(sha) = string_field(fields, "Id") else {
+                continue;
+            };
+            let Some(canonical_value) = fields
+                .get("CanonicalBytes")
+                .or_else(|| fields.get("canonical_bytes"))
+            else {
+                continue;
+            };
+            let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
+            let canonical = B64
+                .decode(&canonical_b64)
+                .map_err(|e| format!("prefetch {set}({sha}) base64 decode: {e}"))?;
+            let nul = canonical
+                .iter()
+                .position(|&b| b == 0)
+                .ok_or_else(|| format!("prefetch {set}({sha}): no NUL in canonical"))?;
+            bodies.insert(kind, sha, canonical[nul + 1..].to_vec());
+        }
+    }
+    Ok(bodies)
+}
+
 fn fetch_object_body(
     ctx: &Context,
     principal: &Principal,
@@ -502,7 +632,12 @@ fn fetch_object_body(
     repo_id: &str,
     api_base: &str,
     blob_endpoint: &str,
+    prefetched_objects: Option<&RepositoryObjectBodies>,
 ) -> Result<Vec<u8>, String> {
+    if let Some(body) = prefetched_objects.and_then(|objects| objects.get(kind, sha)) {
+        return Ok(body.clone());
+    }
+
     if let Some(cached) = fetch_cached_object_body(ctx, blob_endpoint, repo_id, sha)? {
         return Ok(cached);
     }
@@ -692,6 +827,15 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+fn string_field(fields: &serde_json::Value, name: &str) -> Option<String> {
+    fields.get(name).and_then(|value| match value {
+        serde_json::Value::String(value) => Some(value.clone()),
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        serde_json::Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    })
 }
 
 #[cfg(test)]
