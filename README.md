@@ -79,9 +79,12 @@ scripts/local-directed-evolution-lineage-smoke.sh
 ```
 
 In Codex mode, each mutation is restricted to the subject app bundle and must
-pass `temper verify` before its immutable Genesis ref can be selected. Both
-modes write refs suitable for the TemperPaw campaign runner into the printed
-`proof.env` file.
+pass `temper verify` before its immutable Genesis ref can be selected. The
+proof then installs each selected candidate with the frozen evaluator, executes
+the native acceptance scenario, and emits an `EVOLUTION_VALIDATOR_EVIDENCE_PATH`
+manifest. Live TemperPaw campaigns reject releases without matching executed
+evidence. Both modes write the required inputs into the printed `proof.env`
+file.
 
 ## Seeded Railway Apps
 

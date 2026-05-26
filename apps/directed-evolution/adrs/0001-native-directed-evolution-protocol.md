@@ -26,6 +26,12 @@ per-candidate `ValidatorRun` results. The protocol's `Measurement` rows point
 to that evidence, simulated usage or Datadog telemetry instead of inventing a
 single global fitness number.
 
+Automatic release is contingent on executed evidence: in the local demo the
+separate evaluator is installed with each pinned selected candidate and runs
+its frozen native usage scenario. The controller may persist a passing
+`ValidatorRun` only when the evidence manifest names that exact candidate and
+evaluator ref.
+
 ## Consequences
 
 Codex or a future TemperPaw-native brain can drive the same entity actions.
