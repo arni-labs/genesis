@@ -102,6 +102,7 @@ run_codex_mutation() {
     EVOLUTION_GENERATION_ORDINAL="$ordinal" \
     EVOLUTION_PARENT_REF="$parent_ref" \
     EVOLUTION_DIRECTION="$direction" \
+    EVOLUTION_VALIDATOR_CONTRACT="Preserve Question.Configure, Answer.Submit with evidence, Question.RecordAnswer, Answer.Accept, and Question.Accept actions so the frozen Agent Answers evaluator can execute its acceptance scenario; additive behavior is allowed." \
     cargo run -q --manifest-path "$TEMPERPAW_CARGO_MANIFEST" -p paw-codex-worker -- directed-evolution-mutate
 }
 
@@ -167,8 +168,11 @@ process.stdout.write(JSON.stringify({
   status: 'Passed',
   evidence_locator: runEvidence,
   result_summary: `Frozen native acceptance trial passed for generation ${ordinal}; accepted answer retained inspectable evidence.`,
-  resolved_questions: '1.0',
-  answer_evidence: 'observed'
+  measurements: [
+    { suffix: 'sim', traffic_source_id: '{campaign_id}-simulated', metric_key: 'resolved_questions', metric_value: '1.0', source_kind: 'simulated', evidence_locator: runEvidence },
+    { suffix: 'real', traffic_source_id: '{campaign_id}-real', metric_key: 'answer_evidence', metric_value: 'observed', source_kind: 'real', evidence_locator: runEvidence },
+    { suffix: 'trace', traffic_source_id: '{campaign_id}-simulated', metric_key: 'interaction_latency', metric_value: 'pending', source_kind: 'datadog_observation', evidence_locator: 'datadog://pending-local-ingestion' }
+  ]
 }));
 NODE
   post_json "$trial_tenant" "/tdata/ValidatorRuns('${run_id}')/Genesis.AgentAnswersEvaluation.Pass" "{\"evidence_locator\":$(json_escape "$answer_evidence"),\"result_summary\":\"Frozen native acceptance trial passed for generation ${ordinal}; accepted answer retained inspectable evidence.\"}" "$TMP_DIR/validator-run-pass-${ordinal}.json"
@@ -284,6 +288,56 @@ const evaluatorRef = process.argv[2];
 const records = process.argv.slice(3).map((path) => JSON.parse(fs.readFileSync(path, 'utf8')));
 process.stdout.write(JSON.stringify({ evaluator_ref: evaluatorRef, records }, null, 2));
 NODE
+node - "$RUN_ID" "$SEED_REF" "$GEN_ONE_REF" "$GEN_TWO_REF" "$EVALUATOR_REF" > "$TMP_DIR/campaign-plan.json" <<'NODE'
+const [runId, seedRef, generationOneRef, generationTwoRef, evaluatorRef] = process.argv.slice(2);
+const campaignId = `campaign-${runId}-manifest`;
+process.stdout.write(JSON.stringify({
+  campaign_id: campaignId,
+  name: 'Agent Answers live evolution proof',
+  director_brief: 'Evolve toward useful, evidence-grounded agent answers while preserving rollback and understandable behavior.',
+  target_app_ref: seedRef,
+  evaluator_app_ref: evaluatorRef,
+  brain_provider: 'codex',
+  automation_mode: 'automatic_release',
+  traffic_sources: [
+    { id: `${campaignId}-simulated`, name: 'simulated', kind: 'simulated', description: 'Codex actors using controlled questions and validation.' },
+    { id: `${campaignId}-real`, name: 'real', kind: 'real', description: 'Interactions from an installed subject app.' }
+  ],
+  selection_design: {
+    id: `${campaignId}-selection-v1`,
+    version_label: 'v1',
+    evaluator_namespace: 'Genesis.AgentAnswersEvaluation',
+    trial_suites_entity_set: 'TrialSuites',
+    metric_definitions_entity_set: 'MetricDefinitions',
+    validator_runs_entity_set: 'ValidatorRuns',
+    trial_suite: {
+      id: `${campaignId}-trial-suite-v1`,
+      name: 'Agent Answers bootstrap behavior',
+      description: 'Frozen native trial suite covering question resolution and evidence visibility.',
+      scenario_manifest_json: [{ id: 'accept-evidenced-answer', traffic: 'simulated' }],
+      hidden_fixture_locator: `temper://campaigns/${campaignId}/fixtures/bootstrap`,
+      authored_by: 'codex-with-human-approval'
+    },
+    fitness_model_json: { comparison: 'evidence_weighted_preference', signals: ['resolved_questions', 'answer_evidence', 'interaction_latency'], release: 'automatic' },
+    constraint_definitions_json: [{ key: 'native_verified', kind: 'required' }, { key: 'rollback_available', kind: 'required' }],
+    traffic_sources_json: ['simulated', 'real'],
+    rationale: 'Prefer candidates with executed native evidence while preserving reversible releases.',
+    proposed_by: 'codex',
+    approved_by: 'local-proof-human',
+    metrics: [
+      { id: `${campaignId}-metric-resolved`, key: 'resolved_questions', description: 'Controlled questions resolve after accepted answers.', instrument_kind: 'native_validator', instrument_locator: 'temper://validators/question-resolution', interpretation: 'Evidence contributes to candidate comparison under the approved design.', hard_constraint: true },
+      { id: `${campaignId}-metric-evidence`, key: 'answer_evidence', description: 'Usage exposes an evidence locator on accepted answers.', instrument_kind: 'native_validator', instrument_locator: 'temper://validators/answer-evidence', interpretation: 'Evidence contributes to candidate comparison under the approved design.', hard_constraint: false },
+      { id: `${campaignId}-metric-latency`, key: 'interaction_latency', description: 'Observed interaction latency remains inspectable in Datadog.', instrument_kind: 'datadog', instrument_locator: 'datadog://pending-local-ingestion', interpretation: 'Evidence contributes to candidate comparison under the approved design.', hard_constraint: false }
+    ]
+  },
+  generations: [
+    { ordinal: '1', parent_release_ref: seedRef, selected_app_ref: generationOneRef, selected_mutation_summary: 'Codex candidate adds inspectable answer evidence.' },
+    { ordinal: '2', parent_release_ref: generationOneRef, selected_app_ref: generationTwoRef, selected_mutation_summary: 'Codex candidate supports reuse of validated answers.' }
+  ],
+  capabilities: [{ id: `${campaignId}-capability-evidence`, generation_ordinal: '2', title: 'Reusable evidence surfaced in answers', observation: 'Observed benefit remained visible through executed evaluator evidence.', evidence_locator: 'datadog://pending-local-ingestion', keep: true }],
+  release_control: { pause_reason: 'Proof pause before rollback', rollback_current_ref: generationOneRef, rollback_previous_ref: generationTwoRef, rollback_reason: 'Rollback exercised during local proof' }
+}, null, 2));
+NODE
 
 if [[ "$CANDIDATE_GENERATOR" == "deterministic" ]]; then
   post_json "$TARGET_TENANT" "/tdata/Answers('validator-answer-${RUN_ID}-2')/Genesis.AgentAnswers.RecordReuse" '{}' "$TMP_DIR/answer-reuse.json"
@@ -304,6 +358,7 @@ EVOLUTION_GENERATION_TWO_REF=${GEN_TWO_REF}
 EVOLUTION_INSTALLED_TENANT=${TARGET_TENANT}
 EVOLUTION_CANDIDATE_GENERATOR=${CANDIDATE_GENERATOR}
 EVOLUTION_VALIDATOR_EVIDENCE_PATH=${TMP_DIR}/validator-evidence.json
+EVOLUTION_CAMPAIGN_PLAN_PATH=${TMP_DIR}/campaign-plan.json
 EOF
 printf 'PASS directed evolution native lineage proof\n'
 printf '  proof_env: %s\n' "$TMP_DIR/proof.env"

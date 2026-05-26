@@ -26,6 +26,15 @@ per-candidate `ValidatorRun` results. The protocol's `Measurement` rows point
 to that evidence, simulated usage or Datadog telemetry instead of inventing a
 single global fitness number.
 
+Operational execution consumes a campaign plan whose traffic sources, trial
+suite, measurements, capabilities, generations and release controls are data,
+not Agent Answers code in the runner. The Agent Answers bundle is the first
+example plan and can be replaced by another Temper-native subject and its own
+evaluator bundle.
+The plan names its evaluator action namespace and entity sets; the control
+runner therefore depends on the declared native evaluator contract rather than
+on this demo evaluator's namespace.
+
 Automatic release is contingent on executed evidence: in the local demo the
 separate evaluator is installed with each pinned selected candidate and runs
 its frozen native usage scenario. The controller may persist a passing

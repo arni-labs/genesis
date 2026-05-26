@@ -33,8 +33,12 @@ async function mockEvolution(page: Page) {
       return route.fulfill({ json: { value: collections[name] } });
     });
   }
+  await page.route('**/tdata/Interventions(*)/Genesis.Evolution.Configure', async (route) => {
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    Object.assign(collections.Interventions[0].fields, payload);
+    return route.fulfill({ json: collections.Interventions[0] });
+  });
   await page.route('**/tdata/Interventions*', async (route) => {
-    if (route.request().url().includes('Genesis.Evolution.Configure')) { const payload = route.request().postDataJSON() as Record<string, unknown>; collections.Interventions[0].fields.CampaignId = payload.campaign_id; return route.fulfill({ json: collections.Interventions[0] }); }
     if (route.request().method() === 'POST') { const payload = route.request().postDataJSON() as { Id: string }; collections.Interventions.push(row(payload.Id, 'Requested', { CampaignId: 'campaign-proof' })); return route.fulfill({ status: 201, json: collections.Interventions[0] }); }
     return route.fulfill({ json: { value: collections.Interventions } });
   });
@@ -54,6 +58,7 @@ test('shows a transparent two-generation campaign and records human intervention
   await page.getByLabel('New direction').fill('Preserve evidence citations in future survivors.');
   await page.getByRole('button', { name: 'Record direction' }).click();
   await expect(page.getByText('1 recorded / 1 candidate artifacts')).toBeVisible();
+  await expect(page.getByText('Preserve evidence citations in future survivors.')).toBeVisible();
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible();
 });
