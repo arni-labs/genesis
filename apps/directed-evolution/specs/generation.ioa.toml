@@ -1,0 +1,63 @@
+[automaton]
+name = "Generation"
+states = ["Planned", "Running", "Released", "Failed"]
+initial = "Planned"
+allow_indefinite_states = ["Planned", "Running"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "ordinal"
+type = "string"
+initial = "0"
+[[state]]
+name = "parent_release_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "selection_design_id"
+type = "string"
+initial = ""
+[[state]]
+name = "evaluator_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "selected_candidate_id"
+type = "string"
+initial = ""
+[[state]]
+name = "released_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "selection_reason"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Planned"]
+to = "Planned"
+params = ["campaign_id", "ordinal", "parent_release_ref", "selection_design_id", "evaluator_app_ref"]
+[[action]]
+name = "Begin"
+kind = "input"
+from = ["Planned"]
+to = "Running"
+params = []
+[[action]]
+name = "SelectAndRelease"
+kind = "input"
+from = ["Running"]
+to = "Released"
+params = ["selected_candidate_id", "released_app_ref", "selection_reason"]
+[[action]]
+name = "Fail"
+kind = "input"
+from = ["Planned", "Running"]
+to = "Failed"
+params = ["selection_reason"]

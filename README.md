@@ -38,6 +38,37 @@ agent fixes app files -> publish/update in Genesis -> install owner/app@hash -> 
 - `PublishNewVersion` requires the new app hash to be an existing Git commit in
   the app repository, so future app refs stay installable and clonable.
 
+## Directed Evolution Studio
+
+Genesis now includes a Temper-native directed-evolution demo with three app
+bundles under `apps/`:
+
+- `directed-evolution` owns reusable campaigns, frozen selection designs,
+  generations, candidate decisions, measurements, and human interventions.
+- `agent-answers` is the deliberately small first organism: a question and
+  answer board for agents.
+- `agent-answers-evaluation` is an independent evaluator lineage, so an evolved
+  subject cannot silently modify its judge.
+
+The Evolution Studio UI at `/genesis/evolution` is a spectator and direction
+surface over native campaign entities. Immutable candidate bytes remain normal
+Genesis Git commits and releases remain pinned `owner/app@hash` refs. Codex is
+the v1 mutation and selection-design brain through TemperPaw; real brain runs
+must supply pinned Genesis refs rather than placeholder labels.
+
+For a local source-of-truth proof against a running Genesis registry, run:
+
+```bash
+TEMPER_URL=http://127.0.0.1:3232 \
+TEMPER_CARGO_MANIFEST=/path/to/temper/Cargo.toml \
+scripts/local-directed-evolution-lineage-smoke.sh
+```
+
+The proof publishes the seed organism, advances it through two native schema
+versions, installs the selected second generation, and exercises the added
+answer-reuse behavior. It writes refs suitable for the TemperPaw campaign
+runner into the printed `proof.env` file.
+
 ## Seeded Railway Apps
 
 The current public Genesis registry contains:

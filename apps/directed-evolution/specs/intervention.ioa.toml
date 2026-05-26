@@ -1,0 +1,39 @@
+[automaton]
+name = "Intervention"
+states = ["Requested", "Applied"]
+initial = "Requested"
+allow_indefinite_states = ["Requested", "Applied"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "kind"
+type = "string"
+initial = "direction"
+[[state]]
+name = "instruction"
+type = "string"
+initial = ""
+[[state]]
+name = "requested_by"
+type = "string"
+initial = "human"
+[[state]]
+name = "applied_at"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Requested"]
+to = "Requested"
+params = ["campaign_id", "kind", "instruction", "requested_by"]
+[[action]]
+name = "Apply"
+kind = "input"
+from = ["Requested"]
+to = "Applied"
+params = ["applied_at"]

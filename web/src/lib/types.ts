@@ -126,3 +126,64 @@ export type ClaimOwnerInput = {
   verificationProvider: string;
   verificationSubject: string;
 };
+
+export type EvolutionCampaign = {
+  id: string;
+  status: string;
+  name: string;
+  directorBrief: string;
+  targetAppRef: string;
+  activeSelectionDesignId: string;
+  activeEvaluatorRef: string;
+  currentReleaseRef: string;
+  previousReleaseRef: string;
+  generationCount: number;
+  automationMode: string;
+  brainProvider: string;
+  pauseReason: string;
+  lastReleaseReason: string;
+};
+
+export type EvolutionItem = {
+  id: string;
+  status: string;
+  fields: Record<string, unknown>;
+};
+
+export type EvolutionSnapshot = {
+  campaigns: EvolutionCampaign[];
+  selectionDesigns: EvolutionItem[];
+  generations: EvolutionItem[];
+  candidates: EvolutionItem[];
+  measurements: EvolutionItem[];
+  trafficSources: EvolutionItem[];
+  capabilities: EvolutionItem[];
+  interventions: EvolutionItem[];
+  warnings: LoadWarning[];
+};
+
+export type CreateCampaignInput = {
+  id: string;
+  name: string;
+  directorBrief: string;
+  targetAppRef: string;
+};
+
+export type AgentQuestion = {
+  id: string;
+  status: string;
+  title: string;
+  body: string;
+  askedBy: string;
+  answerCount: number;
+  acceptedAnswerId: string;
+};
+
+export type AgentAnswer = {
+  id: string;
+  status: string;
+  questionId: string;
+  body: string;
+  answeredBy: string;
+  evidence: string;
+};

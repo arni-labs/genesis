@@ -1,0 +1,78 @@
+[automaton]
+name = "SelectionDesign"
+states = ["Proposed", "Approved", "Frozen", "Retired"]
+initial = "Proposed"
+allow_indefinite_states = ["Proposed", "Approved", "Frozen"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "version_label"
+type = "string"
+initial = ""
+[[state]]
+name = "evaluator_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "trial_suite_id"
+type = "string"
+initial = ""
+[[state]]
+name = "fitness_model_json"
+type = "string"
+initial = "{}"
+[[state]]
+name = "constraint_definitions_json"
+type = "string"
+initial = "[]"
+[[state]]
+name = "traffic_sources_json"
+type = "string"
+initial = "[]"
+[[state]]
+name = "rationale"
+type = "string"
+initial = ""
+[[state]]
+name = "proposed_by"
+type = "string"
+initial = "codex"
+[[state]]
+name = "approved_by"
+type = "string"
+initial = ""
+[[state]]
+name = "frozen_at"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Proposed"]
+to = "Proposed"
+params = ["campaign_id", "version_label", "evaluator_app_ref", "trial_suite_id", "fitness_model_json", "constraint_definitions_json", "traffic_sources_json", "rationale", "proposed_by"]
+
+[[action]]
+name = "Approve"
+kind = "input"
+from = ["Proposed"]
+to = "Approved"
+params = ["approved_by"]
+
+[[action]]
+name = "Freeze"
+kind = "input"
+from = ["Approved"]
+to = "Frozen"
+params = ["frozen_at"]
+
+[[action]]
+name = "Retire"
+kind = "input"
+from = ["Frozen"]
+to = "Retired"
+params = []
