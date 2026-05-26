@@ -256,7 +256,18 @@
       {/if}
       <div class="mt-6 border-t border-[var(--color-border)] pt-4"><p class="v-eyebrow mb-3">Traffic sources</p>{#each traffic as item}<div class="mb-2 flex items-center justify-between border border-[var(--color-border)] p-2 text-[12px]"><span>{field(item, 'Name')}</span><span class="font-mono text-[10px] uppercase">{field(item, 'Kind')}</span></div>{/each}{#if !traffic.length}<p class="text-[12px] text-[var(--color-muted)]">None active.</p>{/if}</div>
       <div class="mt-6 border-t border-[var(--color-border)] pt-4"><div class="mb-3 flex items-center gap-2"><Sparkles size={14}/><p class="v-eyebrow">Emergent capabilities</p></div>{#each capabilities as item}<div class="mb-2 border border-[var(--color-border)] p-3"><p class="text-[12px] font-semibold">{field(item, 'Title')}</p><p class="mt-1 text-[11px] leading-4 text-[var(--color-muted)]">{field(item, 'Observation')}</p></div>{/each}{#if !capabilities.length}<p class="text-[12px] text-[var(--color-muted)]">Codex has not surfaced a capability yet.</p>{/if}</div>
-      <div class="mt-6 border-t border-[var(--color-border)] pt-4"><p class="v-eyebrow mb-3">Interventions</p><p class="text-[12px] text-[var(--color-muted)]">{interventions.length} recorded / {candidates.length} candidate artifacts</p></div>
+      <div class="mt-6 border-t border-[var(--color-border)] pt-4">
+        <p class="v-eyebrow mb-3">Interventions</p>
+        <p class="mb-3 text-[12px] text-[var(--color-muted)]">{interventions.length} recorded / {candidates.length} candidate artifacts</p>
+        <div class="space-y-2">
+          {#each interventions.slice().reverse().slice(0, 4) as item}
+            <div class="border-l-2 border-[var(--color-secondary)] pl-3">
+              <p class="text-[12px] leading-5 text-[var(--color-ink-soft)]">{field(item, 'Instruction')}</p>
+              <p class="mt-1 font-mono text-[10px] uppercase text-[var(--color-muted)]">{field(item, 'Kind')} / {field(item, 'RequestedBy')}</p>
+            </div>
+          {/each}
+        </div>
+      </div>
     </aside>
   </section>
 </main>

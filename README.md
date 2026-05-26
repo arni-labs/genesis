@@ -82,9 +82,11 @@ In Codex mode, each mutation is restricted to the subject app bundle and must
 pass `temper verify` before its immutable Genesis ref can be selected. The
 proof then installs each selected candidate with the frozen evaluator, executes
 the native acceptance scenario, and emits an `EVOLUTION_VALIDATOR_EVIDENCE_PATH`
-manifest. Live TemperPaw campaigns reject releases without matching executed
-evidence. Both modes write the required inputs into the printed `proof.env`
-file.
+manifest and an `EVOLUTION_CAMPAIGN_PLAN_PATH` manifest. TemperPaw executes
+arbitrary plans through `directed-evolution-run`; Agent Answers is only this
+first plan's subject and evaluator. Live campaigns reject releases without
+matching executed evidence. Both modes write the required inputs into the
+printed `proof.env` file.
 
 ## Seeded Railway Apps
 
