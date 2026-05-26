@@ -5,8 +5,9 @@ set -Eeuo pipefail
 #
 # Requires a running Temper server with the Genesis (temper-git) app installed.
 # This publishes the Agent Answers seed as a normal Genesis app, advances it
-# through two Temper-native schema mutations, installs the selected pinned
-# release, and proves the new behavior through OData actions.
+# through two Temper-native schema mutations, installs each selected pinned
+# release, executes the frozen evaluator scenario through OData actions, and
+# emits evidence that the campaign controller must consume before release.
 
 BASE_URL="${TEMPER_URL:-http://127.0.0.1:3232}"
 BASE_URL="${BASE_URL%/}"
@@ -28,6 +29,11 @@ EVALUATOR_APP_ID="app-${OWNER}-${EVALUATOR_REPO}"
 EVALUATOR_REMOTE="${BASE_URL}/${OWNER}/${EVALUATOR_REPO}.git"
 TARGET_TENANT="${TARGET_TENANT:-evolution-subject-${RUN_ID}}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/directed-evolution-lineage.XXXXXX")"
+
+if [[ "$CANDIDATE_GENERATOR" != "deterministic" && "$CANDIDATE_GENERATOR" != "codex" ]]; then
+  printf 'EVOLUTION_CANDIDATE_GENERATOR must be deterministic or codex, got %s\n' "$CANDIDATE_GENERATOR" >&2
+  exit 1
+fi
 
 headers=(
   -H 'Content-Type: application/json'
@@ -113,6 +119,59 @@ generate_generation_two() {
   else
     add_generation_two_mutation "$APP_DIR"
   fi
+}
+
+validate_selected_candidate() {
+  local ordinal="$1" candidate_ref="$2" trial_tenant="$3"
+  local question_id="validator-question-${RUN_ID}-${ordinal}"
+  local answer_id="validator-answer-${RUN_ID}-${ordinal}"
+  local suite_id="validator-suite-${RUN_ID}-${ordinal}"
+  local run_id="validator-run-${RUN_ID}-${ordinal}"
+  local answer_evidence="temper://trial/${trial_tenant}/Answers('${answer_id}')"
+  local run_evidence="temper://trial/${trial_tenant}/ValidatorRuns('${run_id}')"
+  printf 'Executing frozen evaluator scenario for generation %s (%s)\n' "$ordinal" "$candidate_ref"
+  post_json "$TENANT" "/tdata/Apps('${APP_ID}')/App.Install?await_integration=true" "{\"TargetTenant\":$(json_escape "$trial_tenant"),\"AppRef\":$(json_escape "$candidate_ref"),\"Installer\":\"directed-evolution-validator\"}" "$TMP_DIR/install-${ordinal}.json"
+  post_json "$TENANT" "/tdata/Apps('${EVALUATOR_APP_ID}')/App.Install?await_integration=true" "{\"TargetTenant\":$(json_escape "$trial_tenant"),\"AppRef\":$(json_escape "$EVALUATOR_REF"),\"Installer\":\"directed-evolution-validator\"}" "$TMP_DIR/evaluator-install-${ordinal}.json"
+  post_json "$trial_tenant" /tdata/TrialSuites "{\"Id\":$(json_escape "$suite_id")}" "$TMP_DIR/trial-suite-create-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/TrialSuites('${suite_id}')/Genesis.AgentAnswersEvaluation.Configure" "{\"name\":\"Frozen acceptance scenario\",\"description\":\"Question resolves after an accepted evidence-bearing answer.\",\"subject_app_ref\":$(json_escape "$candidate_ref"),\"scenario_manifest_json\":\"[{\\\"id\\\":\\\"accept-evidenced-answer\\\",\\\"traffic\\\":\\\"simulated\\\"}]\",\"hidden_fixture_locator\":\"temper://trial/${trial_tenant}/fixture\",\"authored_by\":\"directed-evolution-validator\"}" "$TMP_DIR/trial-suite-configure-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/TrialSuites('${suite_id}')/Genesis.AgentAnswersEvaluation.Freeze" '{"frozen_at":"proof"}' "$TMP_DIR/trial-suite-freeze-${ordinal}.json"
+  post_json "$trial_tenant" /tdata/ValidatorRuns "{\"Id\":$(json_escape "$run_id")}" "$TMP_DIR/validator-run-create-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/ValidatorRuns('${run_id}')/Genesis.AgentAnswersEvaluation.Configure" "{\"trial_suite_id\":$(json_escape "$suite_id"),\"candidate_id\":$(json_escape "$candidate_ref"),\"scenario_id\":\"accept-evidenced-answer\",\"validator_kind\":\"native_trial\"}" "$TMP_DIR/validator-run-configure-${ordinal}.json"
+  post_json "$trial_tenant" /tdata/Questions "{\"Id\":$(json_escape "$question_id")}" "$TMP_DIR/question-create-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/Questions('${question_id}')/Genesis.AgentAnswers.Configure" '{"title":"How can an agent cite its evidence?","body":"Need an inspectable answer.","asked_by":"validator","created_at":"proof"}' "$TMP_DIR/question-configure-${ordinal}.json"
+  post_json "$trial_tenant" /tdata/Answers "{\"Id\":$(json_escape "$answer_id")}" "$TMP_DIR/answer-create-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/Answers('${answer_id}')/Genesis.AgentAnswers.Submit" "{\"question_id\":$(json_escape "$question_id"),\"body\":\"Include an evidence locator.\",\"answered_by\":\"validator\",\"evidence\":$(json_escape "$answer_evidence"),\"created_at\":\"proof\"}" "$TMP_DIR/answer-submit-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/Questions('${question_id}')/Genesis.AgentAnswers.RecordAnswer" '{}' "$TMP_DIR/question-answer-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/Answers('${answer_id}')/Genesis.AgentAnswers.Accept" '{}' "$TMP_DIR/answer-accept-${ordinal}.json"
+  post_json "$trial_tenant" "/tdata/Questions('${question_id}')/Genesis.AgentAnswers.Accept" "{\"accepted_answer_id\":$(json_escape "$answer_id")}" "$TMP_DIR/question-accept-${ordinal}.json"
+  get_json "$trial_tenant" "/tdata/Questions('${question_id}')" "$TMP_DIR/question-${ordinal}.json"
+  get_json "$trial_tenant" "/tdata/Answers('${answer_id}')" "$TMP_DIR/answer-${ordinal}.json"
+  node - "$TMP_DIR/question-${ordinal}.json" "$TMP_DIR/answer-${ordinal}.json" "$ordinal" "$candidate_ref" "$answer_evidence" "$run_evidence" > "$TMP_DIR/validator-evidence-${ordinal}.json" <<'NODE'
+const fs = require('fs');
+const question = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const answer = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const ordinal = process.argv[4];
+const candidateRef = process.argv[5];
+const expectedEvidence = process.argv[6];
+const runEvidence = process.argv[7];
+const field = (record, lower, title) => record.fields?.[lower] ?? record.fields?.[title] ?? record[title];
+const questionStatus = question.status ?? field(question, 'status', 'Status');
+const answerStatus = answer.status ?? field(answer, 'status', 'Status');
+const answerEvidence = field(answer, 'evidence', 'Evidence');
+if (questionStatus !== 'Resolved') throw new Error(`generation ${ordinal}: expected resolved question, got ${questionStatus}`);
+if (answerStatus !== 'Accepted') throw new Error(`generation ${ordinal}: expected accepted answer, got ${answerStatus}`);
+if (answerEvidence !== expectedEvidence) throw new Error(`generation ${ordinal}: evidence was not preserved`);
+process.stdout.write(JSON.stringify({
+  generation: ordinal,
+  candidate_ref: candidateRef,
+  status: 'Passed',
+  evidence_locator: runEvidence,
+  result_summary: `Frozen native acceptance trial passed for generation ${ordinal}; accepted answer retained inspectable evidence.`,
+  resolved_questions: '1.0',
+  answer_evidence: 'observed'
+}));
+NODE
+  post_json "$trial_tenant" "/tdata/ValidatorRuns('${run_id}')/Genesis.AgentAnswersEvaluation.Pass" "{\"evidence_locator\":$(json_escape "$answer_evidence"),\"result_summary\":\"Frozen native acceptance trial passed for generation ${ordinal}; accepted answer retained inspectable evidence.\"}" "$TMP_DIR/validator-run-pass-${ordinal}.json"
 }
 
 add_generation_one_mutation() {
@@ -217,31 +276,24 @@ git -C "$EVALUATOR_DIR" push "$EVALUATOR_REMOTE" main >/dev/null
 post_json "$TENANT" "/tdata/Apps('${EVALUATOR_APP_ID}')/Temper.Git.RegisterNewApp?await_integration=true" "{\"Name\":$(json_escape "$EVALUATOR_REPO"),\"RepositoryId\":$(json_escape "$EVALUATOR_REPO_ID"),\"Description\":\"Frozen Agent Answers evaluator\",\"Exports\":\"{}\",\"Visibility\":\"public\"}" "$TMP_DIR/evaluator-register.json"
 EVALUATOR_REF="${OWNER}/${EVALUATOR_REPO}@${EVALUATOR_SHA}"
 
-printf 'Installing selected pinned release %s\n' "$GEN_TWO_REF"
-post_json "$TENANT" "/tdata/Apps('${APP_ID}')/App.Install?await_integration=true" "{\"TargetTenant\":$(json_escape "$TARGET_TENANT"),\"AppRef\":$(json_escape "$GEN_TWO_REF"),\"Installer\":\"directed-evolution-proof\"}" "$TMP_DIR/install.json"
-post_json "$TENANT" "/tdata/Apps('${EVALUATOR_APP_ID}')/App.Install?await_integration=true" "{\"TargetTenant\":$(json_escape "$TARGET_TENANT"),\"AppRef\":$(json_escape "$EVALUATOR_REF"),\"Installer\":\"directed-evolution-proof\"}" "$TMP_DIR/evaluator-install.json"
+validate_selected_candidate "1" "$GEN_ONE_REF" "${TARGET_TENANT}-generation-1"
+validate_selected_candidate "2" "$GEN_TWO_REF" "$TARGET_TENANT"
+node - "$EVALUATOR_REF" "$TMP_DIR/validator-evidence-1.json" "$TMP_DIR/validator-evidence-2.json" > "$TMP_DIR/validator-evidence.json" <<'NODE'
+const fs = require('fs');
+const evaluatorRef = process.argv[2];
+const records = process.argv.slice(3).map((path) => JSON.parse(fs.readFileSync(path, 'utf8')));
+process.stdout.write(JSON.stringify({ evaluator_ref: evaluatorRef, records }, null, 2));
+NODE
 
-QUESTION_ID="question-${RUN_ID}"
-ANSWER_ID="answer-${RUN_ID}"
-post_json "$TARGET_TENANT" /tdata/Questions "{\"Id\":$(json_escape "$QUESTION_ID")}" "$TMP_DIR/question-create.json"
-post_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')/Genesis.AgentAnswers.Configure" '{"title":"How can an agent cite its evidence?","body":"Need an inspectable answer.","asked_by":"successor","created_at":"proof"}' "$TMP_DIR/question-configure.json"
-post_json "$TARGET_TENANT" /tdata/Answers "{\"Id\":$(json_escape "$ANSWER_ID")}" "$TMP_DIR/answer-create.json"
 if [[ "$CANDIDATE_GENERATOR" == "deterministic" ]]; then
-  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Submit" "{\"question_id\":$(json_escape "$QUESTION_ID"),\"body\":\"Include an evidence locator.\",\"answered_by\":\"pioneer\",\"evidence\":\"temper://proof\",\"citation_requirement\":\"required\",\"created_at\":\"proof\"}" "$TMP_DIR/answer-submit.json"
-  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.RecordReuse" '{}' "$TMP_DIR/answer-reuse.json"
-  get_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')" "$TMP_DIR/answer.json"
-  node - "$TMP_DIR/answer.json" <<'NODE'
+  post_json "$TARGET_TENANT" "/tdata/Answers('validator-answer-${RUN_ID}-2')/Genesis.AgentAnswers.RecordReuse" '{}' "$TMP_DIR/answer-reuse.json"
+  get_json "$TARGET_TENANT" "/tdata/Answers('validator-answer-${RUN_ID}-2')" "$TMP_DIR/answer-reuse-result.json"
+  node - "$TMP_DIR/answer-reuse-result.json" <<'NODE'
 const fs = require('fs');
 const row = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const count = row.fields?.reuse_count ?? row.fields?.ReuseCount ?? row.ReuseCount;
 if (Number(count) !== 1) throw new Error(`expected reuse_count=1, got ${count}`);
 NODE
-else
-  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Submit" "{\"question_id\":$(json_escape "$QUESTION_ID"),\"body\":\"Include an evidence locator.\",\"answered_by\":\"pioneer\",\"evidence\":\"temper://proof\",\"created_at\":\"proof\"}" "$TMP_DIR/answer-submit.json"
-  post_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')/Genesis.AgentAnswers.RecordAnswer" '{}' "$TMP_DIR/question-answer.json"
-  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Accept" '{}' "$TMP_DIR/answer-accept.json"
-  post_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')/Genesis.AgentAnswers.Accept" "{\"accepted_answer_id\":$(json_escape "$ANSWER_ID")}" "$TMP_DIR/question-accept.json"
-  get_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')" "$TMP_DIR/question.json"
 fi
 
 cat > "$TMP_DIR/proof.env" <<EOF
@@ -251,6 +303,7 @@ EVOLUTION_GENERATION_ONE_REF=${GEN_ONE_REF}
 EVOLUTION_GENERATION_TWO_REF=${GEN_TWO_REF}
 EVOLUTION_INSTALLED_TENANT=${TARGET_TENANT}
 EVOLUTION_CANDIDATE_GENERATOR=${CANDIDATE_GENERATOR}
+EVOLUTION_VALIDATOR_EVIDENCE_PATH=${TMP_DIR}/validator-evidence.json
 EOF
 printf 'PASS directed evolution native lineage proof\n'
 printf '  proof_env: %s\n' "$TMP_DIR/proof.env"
