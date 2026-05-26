@@ -13,6 +13,8 @@ BASE_URL="${BASE_URL%/}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEMPER_CARGO_MANIFEST="${TEMPER_CARGO_MANIFEST:-${REPO_ROOT}/../temper-codex-directed-evolution/Cargo.toml}"
+TEMPERPAW_CARGO_MANIFEST="${TEMPERPAW_CARGO_MANIFEST:-${REPO_ROOT}/../temperpaw-codex-directed-evolution/Cargo.toml}"
+CANDIDATE_GENERATOR="${EVOLUTION_CANDIDATE_GENERATOR:-deterministic}"
 TENANT="${TEMPER_TENANT:-default}"
 RUN_ID="${RUN_ID:-$(date +%H%M%S)}"
 OWNER="${OWNER:-directed-evolution-proof}"
@@ -84,6 +86,35 @@ verify_specs() {
   cargo run -q --manifest-path "$TEMPER_CARGO_MANIFEST" -p temper-cli -- verify --specs-dir "$1/specs" >/dev/null
 }
 
+run_codex_mutation() {
+  local app_dir="$1" ordinal="$2" parent_ref="$3" direction="$4"
+  TEMPER_URL="$BASE_URL" \
+    WORKER_ID="directed-evolution-mutation-${RUN_ID}-${ordinal}" \
+    REPO_ROOT="$app_dir" \
+    WORKSPACE_ROOT="$TMP_DIR/worktrees" \
+    EVOLUTION_CANDIDATE_DIR="$app_dir" \
+    EVOLUTION_GENERATION_ORDINAL="$ordinal" \
+    EVOLUTION_PARENT_REF="$parent_ref" \
+    EVOLUTION_DIRECTION="$direction" \
+    cargo run -q --manifest-path "$TEMPERPAW_CARGO_MANIFEST" -p paw-codex-worker -- directed-evolution-mutate
+}
+
+generate_generation_one() {
+  if [[ "$CANDIDATE_GENERATOR" == "codex" ]]; then
+    run_codex_mutation "$APP_DIR" 1 "$SEED_SHA" "Improve answer quality transparency after a user asked for inspectable evidence. Keep the change minimal and understandable."
+  else
+    add_generation_one_mutation "$APP_DIR"
+  fi
+}
+
+generate_generation_two() {
+  if [[ "$CANDIDATE_GENERATOR" == "codex" ]]; then
+    run_codex_mutation "$APP_DIR" 2 "$GEN_ONE_SHA" "Improve the app after successor traffic wants to reuse previously validated answers without losing evidence. Keep the change minimal and understandable."
+  else
+    add_generation_two_mutation "$APP_DIR"
+  fi
+}
+
 add_generation_one_mutation() {
   local app_dir="$1"
   node - "$app_dir" <<'NODE'
@@ -148,7 +179,7 @@ git -C "$APP_DIR" push "$REMOTE" main >/dev/null
 post_json "$TENANT" "/tdata/Apps('${APP_ID}')/Temper.Git.RegisterNewApp?await_integration=true" "{\"Name\":$(json_escape "$REPO"),\"RepositoryId\":$(json_escape "$REPO_ID"),\"Description\":\"Agent Answers evolution organism\",\"Exports\":\"{}\",\"Visibility\":\"public\"}" "$TMP_DIR/register.json"
 
 printf 'Publishing generation one: explicit evidence requirement\n'
-add_generation_one_mutation "$APP_DIR"
+generate_generation_one
 verify_specs "$APP_DIR"
 git -C "$APP_DIR" add .
 git -C "$APP_DIR" commit -m 'Generation 1: expose citation requirement' >/dev/null
@@ -157,7 +188,7 @@ git -C "$APP_DIR" push "$REMOTE" main >/dev/null
 post_json "$TENANT" "/tdata/Apps('${APP_ID}')/Temper.Git.PublishNewVersion?await_integration=true" "{\"NewHash\":$(json_escape "$GEN_ONE_SHA"),\"RefName\":\"main\"}" "$TMP_DIR/gen-one.json"
 
 printf 'Publishing generation two: measure observed reuse\n'
-add_generation_two_mutation "$APP_DIR"
+generate_generation_two
 verify_specs "$APP_DIR"
 git -C "$APP_DIR" add .
 git -C "$APP_DIR" commit -m 'Generation 2: record validated answer reuse' >/dev/null
@@ -195,15 +226,23 @@ ANSWER_ID="answer-${RUN_ID}"
 post_json "$TARGET_TENANT" /tdata/Questions "{\"Id\":$(json_escape "$QUESTION_ID")}" "$TMP_DIR/question-create.json"
 post_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')/Genesis.AgentAnswers.Configure" '{"title":"How can an agent cite its evidence?","body":"Need an inspectable answer.","asked_by":"successor","created_at":"proof"}' "$TMP_DIR/question-configure.json"
 post_json "$TARGET_TENANT" /tdata/Answers "{\"Id\":$(json_escape "$ANSWER_ID")}" "$TMP_DIR/answer-create.json"
-post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Submit" "{\"question_id\":$(json_escape "$QUESTION_ID"),\"body\":\"Include an evidence locator.\",\"answered_by\":\"pioneer\",\"evidence\":\"temper://proof\",\"citation_requirement\":\"required\",\"created_at\":\"proof\"}" "$TMP_DIR/answer-submit.json"
-post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.RecordReuse" '{}' "$TMP_DIR/answer-reuse.json"
-get_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')" "$TMP_DIR/answer.json"
-node - "$TMP_DIR/answer.json" <<'NODE'
+if [[ "$CANDIDATE_GENERATOR" == "deterministic" ]]; then
+  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Submit" "{\"question_id\":$(json_escape "$QUESTION_ID"),\"body\":\"Include an evidence locator.\",\"answered_by\":\"pioneer\",\"evidence\":\"temper://proof\",\"citation_requirement\":\"required\",\"created_at\":\"proof\"}" "$TMP_DIR/answer-submit.json"
+  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.RecordReuse" '{}' "$TMP_DIR/answer-reuse.json"
+  get_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')" "$TMP_DIR/answer.json"
+  node - "$TMP_DIR/answer.json" <<'NODE'
 const fs = require('fs');
 const row = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const count = row.fields?.reuse_count ?? row.fields?.ReuseCount ?? row.ReuseCount;
 if (Number(count) !== 1) throw new Error(`expected reuse_count=1, got ${count}`);
 NODE
+else
+  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Submit" "{\"question_id\":$(json_escape "$QUESTION_ID"),\"body\":\"Include an evidence locator.\",\"answered_by\":\"pioneer\",\"evidence\":\"temper://proof\",\"created_at\":\"proof\"}" "$TMP_DIR/answer-submit.json"
+  post_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')/Genesis.AgentAnswers.RecordAnswer" '{}' "$TMP_DIR/question-answer.json"
+  post_json "$TARGET_TENANT" "/tdata/Answers('${ANSWER_ID}')/Genesis.AgentAnswers.Accept" '{}' "$TMP_DIR/answer-accept.json"
+  post_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')/Genesis.AgentAnswers.Accept" "{\"accepted_answer_id\":$(json_escape "$ANSWER_ID")}" "$TMP_DIR/question-accept.json"
+  get_json "$TARGET_TENANT" "/tdata/Questions('${QUESTION_ID}')" "$TMP_DIR/question.json"
+fi
 
 cat > "$TMP_DIR/proof.env" <<EOF
 EVOLUTION_SUBJECT_SEED_REF=${SEED_REF}
@@ -211,6 +250,7 @@ EVOLUTION_EVALUATOR_REF=${EVALUATOR_REF}
 EVOLUTION_GENERATION_ONE_REF=${GEN_ONE_REF}
 EVOLUTION_GENERATION_TWO_REF=${GEN_TWO_REF}
 EVOLUTION_INSTALLED_TENANT=${TARGET_TENANT}
+EVOLUTION_CANDIDATE_GENERATOR=${CANDIDATE_GENERATOR}
 EOF
 printf 'PASS directed evolution native lineage proof\n'
 printf '  proof_env: %s\n' "$TMP_DIR/proof.env"

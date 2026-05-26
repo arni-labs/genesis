@@ -34,6 +34,9 @@
   let capabilities = $derived(filterForCampaign(snapshot?.capabilities ?? [], campaign?.id));
   let interventions = $derived(filterForCampaign(snapshot?.interventions ?? [], campaign?.id));
   let traffic = $derived(filterForCampaign(snapshot?.trafficSources ?? [], campaign?.id));
+  let trialSuites = $derived(filterForRecordPrefix(snapshot?.trialSuites ?? [], campaign?.id));
+  let metricDefinitions = $derived(filterForRecordPrefix(snapshot?.metricDefinitions ?? [], campaign?.id));
+  let validatorRuns = $derived(filterForRecordPrefix(snapshot?.validatorRuns ?? [], campaign?.id));
   let selection = $derived((snapshot?.selectionDesigns ?? []).find((item) => item.id === campaign?.activeSelectionDesignId));
   let proposedSelections = $derived((snapshot?.selectionDesigns ?? []).filter((item) => field(item, 'CampaignId') === campaign?.id && item.status === 'Proposed'));
 
@@ -52,6 +55,10 @@
 
   function filterForCampaign(items: EvolutionItem[], id: string | undefined): EvolutionItem[] {
     return id ? items.filter((item) => field(item, 'CampaignId') === id) : [];
+  }
+
+  function filterForRecordPrefix(items: EvolutionItem[], id: string | undefined): EvolutionItem[] {
+    return id ? items.filter((item) => item.id.startsWith(`${id}-`)) : [];
   }
 
   function tone(status: string): string {
@@ -202,6 +209,17 @@
               <div class="mb-4 flex items-center gap-2"><ShieldCheck size={15}/><h2 class="text-[14px] font-semibold">Frozen judge</h2></div>
               <p class="font-mono text-[11px] text-[var(--color-primary)]">{campaign.activeEvaluatorRef || 'Awaiting approved selection design'}</p>
               {#if selection}<p class="mt-3 text-[12px] leading-5 text-[var(--color-ink-soft)]">{field(selection, 'Rationale')}</p><p class="mt-3 font-mono text-[10px] uppercase text-[var(--color-muted)]">Selection {selection.status} / {selection.id}</p>{/if}
+              {#if trialSuites.length}
+                <div class="mt-4 border-t border-[var(--color-border)] pt-3">
+                  <p class="v-eyebrow">Native validation</p>
+                  <p class="mt-2 text-[12px] font-semibold">{validatorRuns.length} native trial runs / {metricDefinitions.length} frozen measures</p>
+                  <div class="mt-3 space-y-2">
+                    {#each validatorRuns as run}
+                      <div class="flex items-center justify-between gap-3 text-[11px]"><span class="truncate font-mono">{field(run, 'CandidateAppRef') || run.id}</span><span class="border px-1.5 font-mono text-[9px] uppercase {tone(run.status)}">{run.status}</span></div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             </div>
           </div>
 

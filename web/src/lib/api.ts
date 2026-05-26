@@ -39,6 +39,9 @@ type CollectionName =
   | 'TrafficSources'
   | 'EmergentCapabilities'
   | 'Interventions'
+  | 'TrialSuites'
+  | 'MetricDefinitions'
+  | 'ValidatorRuns'
   | 'Questions'
   | 'Answers';
 
@@ -153,7 +156,7 @@ export async function loadRegistrySnapshot(): Promise<RegistrySnapshot> {
 }
 
 export async function loadEvolutionSnapshot(): Promise<EvolutionSnapshot> {
-  const [campaigns, selectionDesigns, generations, candidates, measurements, trafficSources, capabilities, interventions] =
+  const [campaigns, selectionDesigns, generations, candidates, measurements, trafficSources, capabilities, interventions, trialSuites, metricDefinitions, validatorRuns] =
     await Promise.all([
       loadCollection('Campaigns', normalizeCampaign),
       loadCollection('SelectionDesigns', normalizeEvolutionItem),
@@ -162,9 +165,12 @@ export async function loadEvolutionSnapshot(): Promise<EvolutionSnapshot> {
       loadCollection('Measurements', normalizeEvolutionItem),
       loadCollection('TrafficSources', normalizeEvolutionItem),
       loadCollection('EmergentCapabilities', normalizeEvolutionItem),
-      loadCollection('Interventions', normalizeEvolutionItem)
+      loadCollection('Interventions', normalizeEvolutionItem),
+      loadCollection('TrialSuites', normalizeEvolutionItem),
+      loadCollection('MetricDefinitions', normalizeEvolutionItem),
+      loadCollection('ValidatorRuns', normalizeEvolutionItem)
     ]);
-  const results = [campaigns, selectionDesigns, generations, candidates, measurements, trafficSources, capabilities, interventions];
+  const results = [campaigns, selectionDesigns, generations, candidates, measurements, trafficSources, capabilities, interventions, trialSuites, metricDefinitions, validatorRuns];
   return {
     campaigns: campaigns.value,
     selectionDesigns: selectionDesigns.value,
@@ -174,6 +180,9 @@ export async function loadEvolutionSnapshot(): Promise<EvolutionSnapshot> {
     trafficSources: trafficSources.value,
     capabilities: capabilities.value,
     interventions: interventions.value,
+    trialSuites: trialSuites.value,
+    metricDefinitions: metricDefinitions.value,
+    validatorRuns: validatorRuns.value,
     warnings: results.flatMap((result) => result.warning ? [result.warning] : [])
   };
 }
