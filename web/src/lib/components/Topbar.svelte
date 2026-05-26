@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Loader2, RefreshCw } from '@lucide/svelte';
+  import { base } from '$app/paths';
   import { Badge, IconButton } from '$lib/components/ui';
   import BrandMark from './BrandMark.svelte';
 
@@ -17,11 +18,15 @@
 <header
   class="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-white/86 px-4 py-2.5 backdrop-blur"
 >
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-4">
     <BrandMark size={20} />
     <h1 class="text-[20px] font-semibold leading-none tracking-[0.04em] text-[var(--color-ink)] [font-family:var(--font-mono)]">
       Genesis<span class="text-[var(--color-accent)]">.</span>
     </h1>
+    <a
+      href={`${base}/evolution`}
+      class="hidden border-l border-[var(--color-border)] pl-4 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-soft)] transition hover:text-[var(--color-primary)] sm:block"
+    >Evolution Studio</a>
   </div>
 
   <div class="flex items-center gap-3 font-mono text-[10px] tracking-[0.10em] uppercase text-[var(--color-muted)]">

@@ -1,0 +1,4 @@
+name = "directed-evolution"
+description = "Reusable Temper-native directed evolution campaigns, evidence, selection, and release control."
+version = "0.1.0"
+dependencies = []

@@ -1,0 +1,57 @@
+[automaton]
+name = "Measurement"
+states = ["Created", "Recorded"]
+initial = "Created"
+allow_indefinite_states = ["Created", "Recorded"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "generation_id"
+type = "string"
+initial = ""
+[[state]]
+name = "candidate_id"
+type = "string"
+initial = ""
+[[state]]
+name = "traffic_source_id"
+type = "string"
+initial = ""
+[[state]]
+name = "metric_key"
+type = "string"
+initial = ""
+[[state]]
+name = "metric_value"
+type = "string"
+initial = ""
+[[state]]
+name = "source_kind"
+type = "string"
+initial = ""
+[[state]]
+name = "evidence_locator"
+type = "string"
+initial = ""
+[[state]]
+name = "evaluator_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "recorded_at"
+type = "string"
+initial = ""
+[[state]]
+name = "notes"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Record"
+kind = "input"
+from = ["Created"]
+to = "Recorded"
+params = ["campaign_id", "generation_id", "candidate_id", "traffic_source_id", "metric_key", "metric_value", "source_kind", "evidence_locator", "evaluator_app_ref", "recorded_at", "notes"]

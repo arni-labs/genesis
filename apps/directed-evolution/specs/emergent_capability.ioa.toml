@@ -1,0 +1,49 @@
+[automaton]
+name = "EmergentCapability"
+states = ["Proposed", "Kept", "Rejected"]
+initial = "Proposed"
+allow_indefinite_states = ["Proposed", "Kept"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "generation_id"
+type = "string"
+initial = ""
+[[state]]
+name = "candidate_id"
+type = "string"
+initial = ""
+[[state]]
+name = "title"
+type = "string"
+initial = ""
+[[state]]
+name = "observation"
+type = "string"
+initial = ""
+[[state]]
+name = "evidence_locator"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Proposed"]
+to = "Proposed"
+params = ["campaign_id", "generation_id", "candidate_id", "title", "observation", "evidence_locator"]
+[[action]]
+name = "Keep"
+kind = "input"
+from = ["Proposed"]
+to = "Kept"
+params = []
+[[action]]
+name = "Reject"
+kind = "input"
+from = ["Proposed"]
+to = "Rejected"
+params = []

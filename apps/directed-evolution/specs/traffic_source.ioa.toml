@@ -1,0 +1,51 @@
+[automaton]
+name = "TrafficSource"
+states = ["Created", "Active", "Paused", "Retired"]
+initial = "Created"
+allow_indefinite_states = ["Created", "Active", "Paused"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "name"
+type = "string"
+initial = ""
+[[state]]
+name = "kind"
+type = "string"
+initial = "simulated"
+[[state]]
+name = "description"
+type = "string"
+initial = ""
+[[state]]
+name = "sample_count"
+type = "counter"
+initial = 0
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Created"]
+to = "Created"
+params = ["campaign_id", "name", "kind", "description"]
+[[action]]
+name = "Activate"
+kind = "input"
+from = ["Created", "Paused"]
+to = "Active"
+params = []
+[[action]]
+name = "Pause"
+kind = "input"
+from = ["Active"]
+to = "Paused"
+params = []
+[[action]]
+name = "Retire"
+kind = "input"
+from = ["Created", "Active", "Paused"]
+to = "Retired"
+params = []
