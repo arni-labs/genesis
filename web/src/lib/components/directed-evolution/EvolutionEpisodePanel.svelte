@@ -1,0 +1,300 @@
+<script lang="ts">
+  import { Eye, GitCompareArrows, Pause, Play, ShieldCheck, Square } from '@lucide/svelte';
+  import { Badge, Button } from '$lib/components/ui';
+  import type {
+    EvolutionAdaptationGoal,
+    EvolutionDirection,
+    EvolutionEpisode,
+    EvolutionEvaluationStage,
+    EvolutionSelectionPressure,
+    EvolutionStageResult,
+    EvolutionVariant,
+    EvolutionViabilityConstraint
+  } from '$lib/directedEvolution';
+  import ConstraintCard from './ConstraintCard.svelte';
+  import MetricTile from './MetricTile.svelte';
+  import PanelTitle from './PanelTitle.svelte';
+
+  type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
+
+  type Props = {
+    selectedEpisode: EvolutionEpisode | null;
+    selectedDirection: EvolutionDirection | null;
+    currentGoal: EvolutionAdaptationGoal | null;
+    currentSelectionPressure: EvolutionSelectionPressure | null;
+    stages: EvolutionEvaluationStage[];
+    stageResults: EvolutionStageResult[];
+    episodeVariants: EvolutionVariant[];
+    constraints: EvolutionViabilityConstraint[];
+    comparedVariantIds: string[];
+    actionBusy: string;
+    shortId: (value: string, length?: number) => string;
+    statusTone: (status: string) => StatusTone;
+    onPauseEpisode: (episode: EvolutionEpisode) => void;
+    onResumeEpisode: (episode: EvolutionEpisode) => void;
+    onStopEpisode: (episode: EvolutionEpisode) => void;
+    onPinConstraint: (constraint: EvolutionViabilityConstraint) => void;
+    onInspectVariant: (variantId: string) => void;
+    onToggleCompare: (variant: EvolutionVariant) => void;
+  };
+
+  let {
+    selectedEpisode,
+    selectedDirection,
+    currentGoal,
+    currentSelectionPressure,
+    stages,
+    stageResults,
+    episodeVariants,
+    constraints,
+    comparedVariantIds,
+    actionBusy,
+    shortId,
+    statusTone,
+    onPauseEpisode,
+    onResumeEpisode,
+    onStopEpisode,
+    onPinConstraint,
+    onInspectVariant,
+    onToggleCompare
+  }: Props = $props();
+
+  const terminalEpisodeStatuses = new Set(['Completed', 'Stopped', 'Failed']);
+
+  function canPause(episode: EvolutionEpisode): boolean {
+    return episode.status === 'Running' || episode.status === 'Selecting';
+  }
+
+  function canResume(episode: EvolutionEpisode): boolean {
+    return episode.status === 'Paused';
+  }
+
+  function canStop(episode: EvolutionEpisode): boolean {
+    return !terminalEpisodeStatuses.has(episode.status);
+  }
+
+  function variantStageResult(variant: EvolutionVariant, stage: EvolutionEvaluationStage) {
+    return stageResults.find(
+      (result) => result.variantId === variant.id && result.evaluationStageId === stage.id
+    );
+  }
+
+  function stageResultLabel(result: EvolutionStageResult | undefined): string {
+    if (!result) return 'Waiting';
+    if (result.summary) return result.summary;
+    if (result.failureReason) return result.failureReason;
+    if (result.reason) return result.reason;
+    return result.status;
+  }
+
+  function resultColor(status: string): string {
+    if (status === 'Passed') return 'bg-[var(--color-success)]';
+    if (status === 'Failed' || status === 'Eliminated') return 'bg-[var(--color-error)]';
+    if (status === 'Running') return 'bg-[var(--color-secondary)]';
+    return 'bg-[var(--color-faint)]';
+  }
+</script>
+
+<div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
+  <div class="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border)] bg-white px-3 py-2">
+    <div class="min-w-0">
+      <p class="v-eyebrow">Current Episode</p>
+      <h3 class="mt-1 truncate font-sans text-[14px] font-semibold tracking-tight text-[var(--color-ink)]">
+        {selectedDirection?.title || selectedEpisode?.id || 'No episode selected'}
+      </h3>
+    </div>
+    {#if selectedEpisode}
+      <div class="flex flex-wrap items-center gap-1.5">
+        <Badge tone={statusTone(selectedEpisode.status)}>{selectedEpisode.status}</Badge>
+        {#if canPause(selectedEpisode)}
+          <Button
+            size="xs"
+            onclick={() => onPauseEpisode(selectedEpisode)}
+            disabled={actionBusy === `pause-${selectedEpisode.id}`}
+          >
+            <Pause size={11} />
+            Pause
+          </Button>
+        {/if}
+        {#if canResume(selectedEpisode)}
+          <Button
+            size="xs"
+            onclick={() => onResumeEpisode(selectedEpisode)}
+            disabled={actionBusy === `resume-${selectedEpisode.id}`}
+          >
+            <Play size={11} />
+            Resume
+          </Button>
+        {/if}
+        {#if canStop(selectedEpisode)}
+          <Button
+            size="xs"
+            onclick={() => onStopEpisode(selectedEpisode)}
+            disabled={actionBusy === `stop-${selectedEpisode.id}`}
+          >
+            <Square size={10} />
+            Stop
+          </Button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  {#if selectedEpisode}
+    <div class="grid gap-3 p-3">
+      <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.42fr)]">
+        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+          <p class="v-eyebrow">Adaptation Goal</p>
+          <p class="mt-1 text-[13px] leading-relaxed text-[var(--color-ink)]">
+            {currentGoal?.goalStatement ||
+              selectedDirection?.proposedAdaptationGoal ||
+              'No goal recorded yet.'}
+          </p>
+          {#if currentSelectionPressure}
+            <p class="mt-2 text-[12px] leading-relaxed text-[var(--color-muted)]">
+              <span class="font-semibold text-[var(--color-ink-soft)]">Selection Pressure:</span>
+              {currentSelectionPressure.selectionStatement}
+            </p>
+          {/if}
+        </div>
+
+        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+          <p class="v-eyebrow">Generation State</p>
+          <div class="mt-2 grid grid-cols-3 gap-2">
+            <MetricTile label="Stage Results" value={stageResults.length} />
+            <MetricTile
+              label="Survivors"
+              value={episodeVariants.filter((variant) => variant.status !== 'Eliminated' && variant.status !== 'Failed').length}
+            />
+            <MetricTile label="Winner" value={selectedEpisode.winningVariantId ? 1 : 0} />
+          </div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto v-scrollbar">
+        <div class="min-w-[760px] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
+          <div
+            class="grid border-b border-[var(--color-border)] bg-[var(--color-surface-soft)]"
+            style={`grid-template-columns: minmax(240px, 0.9fr) repeat(${Math.max(stages.length, 1)}, minmax(220px, 1fr));`}
+          >
+            <div class="px-3 py-2 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+              Variant
+            </div>
+            {#if stages.length}
+              {#each stages as stage (stage.id)}
+                <div class="border-l border-[var(--color-border)] px-3 py-2">
+                  <p class="truncate font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+                    {stage.stageName || stage.stageKind || shortId(stage.id)}
+                  </p>
+                  <p class="mt-0.5 truncate text-[11px] text-[var(--color-faint)]">
+                    {stage.executorKind || 'executor pending'}
+                  </p>
+                </div>
+              {/each}
+            {:else}
+              <div class="border-l border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
+                No evaluation stages recorded.
+              </div>
+            {/if}
+          </div>
+
+          {#if episodeVariants.length}
+            {#each episodeVariants as variant (variant.id)}
+              <div
+                class="grid border-b border-[var(--color-border-soft)] last:border-b-0"
+                style={`grid-template-columns: minmax(240px, 0.9fr) repeat(${Math.max(stages.length, 1)}, minmax(220px, 1fr));`}
+              >
+                <div class="flex min-w-0 flex-col justify-center gap-1 px-3 py-2">
+                  <div class="flex items-center gap-1.5">
+                    <Badge tone={statusTone(variant.status)}>{variant.status}</Badge>
+                    <button
+                      type="button"
+                      class="truncate text-left font-sans text-[12px] font-semibold tracking-tight text-[var(--color-ink)] hover:text-[var(--color-primary)]"
+                      onclick={() => onInspectVariant(variant.id)}
+                    >
+                      {variant.summary || shortId(variant.id)}
+                    </button>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)]"
+                      onclick={() => onInspectVariant(variant.id)}
+                    >
+                      <Eye size={10} />
+                      Inspect
+                    </button>
+                    <button
+                      type="button"
+                      class={`inline-flex items-center gap-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] ${
+                        comparedVariantIds.includes(variant.id)
+                          ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
+                          : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]'
+                      }`}
+                      onclick={() => onToggleCompare(variant)}
+                    >
+                      <GitCompareArrows size={10} />
+                      Compare
+                    </button>
+                  </div>
+                </div>
+                {#if stages.length}
+                  {#each stages as stage (stage.id)}
+                    {@const result = variantStageResult(variant, stage)}
+                    <button
+                      type="button"
+                      class="min-w-0 border-l border-[var(--color-border-soft)] px-3 py-2 text-left transition-colors duration-[var(--duration-soft)] hover:bg-[var(--color-surface-soft)]"
+                      onclick={() => onInspectVariant(variant.id)}
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <span class={`h-2 w-2 rounded-[2px] ${resultColor(result?.status ?? 'Waiting')}`}></span>
+                        <span class="truncate font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-ink-soft)]">
+                          {result?.status ?? 'Waiting'}
+                        </span>
+                      </div>
+                      <p class="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--color-muted)]">
+                        {stageResultLabel(result)}
+                      </p>
+                    </button>
+                  {/each}
+                {:else}
+                  <div class="border-l border-[var(--color-border-soft)] px-3 py-2 text-[11px] text-[var(--color-muted)]">
+                    Stage ladder pending.
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          {:else}
+            <div class="px-3 py-8 text-center text-[12px] text-[var(--color-muted)]">
+              No variants have been generated for this episode yet.
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <aside class="grid content-start gap-3">
+        <PanelTitle icon={ShieldCheck} title="Viability Constraints" />
+        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {#if constraints.length}
+            {#each constraints as constraint (constraint.id)}
+              <ConstraintCard
+                constraint={constraint}
+                busy={actionBusy === `pin-${constraint.id}`}
+                tone={statusTone(constraint.status)}
+                onPin={() => onPinConstraint(constraint)}
+              />
+            {/each}
+          {:else}
+            <p class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-muted)]">
+              No constraints recorded for this episode.
+            </p>
+          {/if}
+        </div>
+      </aside>
+    </div>
+  {:else}
+    <div class="px-3 py-12 text-center text-[12px] text-[var(--color-muted)]">
+      No Directed Evolution episodes are present in the live API response.
+    </div>
+  {/if}
+</div>

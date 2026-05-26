@@ -1,0 +1,51 @@
+[automaton]
+name = "TrialSuite"
+states = ["Draft", "Frozen", "Retired"]
+initial = "Draft"
+allow_indefinite_states = ["Draft", "Frozen"]
+[[state]]
+name = "name"
+type = "string"
+initial = ""
+[[state]]
+name = "description"
+type = "string"
+initial = ""
+[[state]]
+name = "subject_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "scenario_manifest_json"
+type = "string"
+initial = "[]"
+[[state]]
+name = "hidden_fixture_locator"
+type = "string"
+initial = ""
+[[state]]
+name = "authored_by"
+type = "string"
+initial = "codex"
+[[state]]
+name = "frozen_at"
+type = "string"
+initial = ""
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Draft"]
+to = "Draft"
+params = ["name", "description", "subject_app_ref", "scenario_manifest_json", "hidden_fixture_locator", "authored_by"]
+[[action]]
+name = "Freeze"
+kind = "input"
+from = ["Draft"]
+to = "Frozen"
+params = ["frozen_at"]
+[[action]]
+name = "Retire"
+kind = "input"
+from = ["Frozen"]
+to = "Retired"
+params = []

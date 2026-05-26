@@ -178,6 +178,230 @@ const blobs = [
   })
 ];
 
+const directedCollections: Record<string, EntityRow[]> = {
+  Organisms: [
+    row('Organism', 'org-agent-answers', 'Active', {
+      Name: 'Agent Answers',
+      AppRef: `arni-labs/agent-answers@${childHash}`,
+      ParentVersionId: 'ov-agent-answers-parent',
+      BaselineEvaluationJson: JSON.stringify(['compile', 'simulated-user'])
+    })
+  ],
+  OrganismVersions: [
+    row('OrganismVersion', 'ov-agent-answers-parent', 'Parent', {
+      OrganismId: 'org-agent-answers',
+      AppRef: `arni-labs/agent-answers@${childHash}`,
+      CommitRef: childHash,
+      Summary: 'Current production parent'
+    })
+  ],
+  Signals: [
+    row('Signal', 'sig-unmet-citation', 'Linked', {
+      Source: 'simulated-user-agent',
+      SignalKind: 'unmet_intent',
+      OrganismId: 'org-agent-answers',
+      Summary: 'User agent could not preserve source context after a follow-up question.',
+      PressureId: 'pressure-citation'
+    })
+  ],
+  Pressures: [
+    row('Pressure', 'pressure-citation', 'Framed', {
+      OrganismId: 'org-agent-answers',
+      PressureClass: 'growth',
+      Summary: 'Follow-up answers need durable citation memory.',
+      SignalIdsJson: JSON.stringify(['sig-unmet-citation']),
+      DirectionId: 'direction-citation-memory',
+      BrainRunId: 'brain-observer'
+    })
+  ],
+  Directions: [
+    row('Direction', 'direction-citation-memory', 'Proposed', {
+      OrganismId: 'org-agent-answers',
+      PressureIdsJson: JSON.stringify(['pressure-citation']),
+      PressureClass: 'growth',
+      Title: 'Answer citations that survive follow-up',
+      Summary: 'Add citation memory so generated answers retain source context across follow-up turns.',
+      ProvenanceJson: JSON.stringify({
+        signal: 'sig-unmet-citation',
+        observer: 'brain-observer',
+        basis: 'simulated users repeatedly asked where the answer came from'
+      }),
+      AutonomyLane: 'growth-human-gated',
+      ProposedAdaptationGoal: 'Follow-up answers keep a visible source trail.',
+      ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness'])
+    })
+  ],
+  Episodes: [
+    row('Episode', 'episode-citation-memory', 'Running', {
+      DirectionId: 'direction-citation-memory',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'growth-human-gated',
+      AdaptationGoalId: 'goal-citation-memory',
+      SelectionPressureId: 'selection-citation-memory',
+      ViabilityConstraintIdsJson: JSON.stringify(['constraint-correctness']),
+      EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user'])
+    })
+  ],
+  Generations: [
+    row('Generation', 'generation-citation-memory-1', 'Evaluating', {
+      EpisodeId: 'episode-citation-memory',
+      ParentVersionId: 'ov-agent-answers-parent',
+      GenerationIndex: 1,
+      VariantTargetCount: 2
+    })
+  ],
+  Variants: [
+    row('Variant', 'variant-memory-panel', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      AppRef: 'arni-labs/agent-answers@variant-a',
+      RuntimeRef: 'agent-answers-a.local',
+      Summary: 'Adds a source memory panel',
+      BrainRunId: 'brain-variant-a'
+    }),
+    row('Variant', 'variant-hidden-citations', 'Eliminated', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      AppRef: 'arni-labs/agent-answers@variant-b',
+      RuntimeRef: 'agent-answers-b.local',
+      Summary: 'Stores citations invisibly',
+      EliminationRuleId: 'rule-visible-source-trail',
+      StageResultId: 'stage-result-b-user',
+      EvidenceArtifactId: 'evidence-b-user',
+      Reason: 'Simulated users still could not find the source trail.'
+    })
+  ],
+  AdaptationGoals: [
+    row('AdaptationGoal', 'goal-citation-memory', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      GoalStatement: 'Follow-up answers keep a visible source trail.',
+      CreatedByBrainRunId: 'brain-direction'
+    })
+  ],
+  ViabilityConstraints: [
+    row('ViabilityConstraint', 'constraint-correctness', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      ConstraintStatement: 'Do not reduce answer correctness or source fidelity.',
+      ConstraintKind: 'quality'
+    })
+  ],
+  SelectionPressures: [
+    row('SelectionPressure', 'selection-citation-memory', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      SelectionStatement: 'Prefer variants that improve follow-up source recall without correctness regressions.',
+      MetricIdsJson: JSON.stringify(['metric-source-recall']),
+      EliminationRuleIdsJson: JSON.stringify(['rule-visible-source-trail']),
+      ScoringRuleIdsJson: JSON.stringify(['score-source-recall'])
+    })
+  ],
+  EvaluationStages: [
+    row('EvaluationStage', 'stage-compile', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      StageName: 'Compile',
+      StageKind: 'static',
+      SequenceIndex: 1,
+      ExecutorKind: 'codex'
+    }),
+    row('EvaluationStage', 'stage-simulated-user', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      StageName: 'AI User Trial',
+      StageKind: 'simulated_user',
+      SequenceIndex: 2,
+      ExecutorKind: 'codex'
+    })
+  ],
+  StageResults: [
+    row('StageResult', 'stage-result-a-compile', 'Passed', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      VariantId: 'variant-memory-panel',
+      EvaluationStageId: 'stage-compile',
+      MetricsJson: JSON.stringify({ build: 'ok' }),
+      EvidenceArtifactId: 'evidence-a-compile',
+      Summary: 'Build and checks passed'
+    }),
+    row('StageResult', 'stage-result-a-user', 'Running', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      VariantId: 'variant-memory-panel',
+      EvaluationStageId: 'stage-simulated-user',
+      Summary: 'Simulated users are testing follow-up recall'
+    }),
+    row('StageResult', 'stage-result-b-user', 'Eliminated', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      VariantId: 'variant-hidden-citations',
+      EvaluationStageId: 'stage-simulated-user',
+      EvidenceArtifactId: 'evidence-b-user',
+      Reason: 'Source trail remained hidden from simulated users.'
+    })
+  ],
+  MetricDefinitions: [
+    row('MetricDefinition', 'metric-source-recall', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      MetricName: 'Source recall',
+      Unit: 'score',
+      DesiredDirection: 'higher'
+    })
+  ],
+  Measurements: [
+    row('Measurement', 'measurement-a-source-recall', 'Recorded', {
+      MetricDefinitionId: 'metric-source-recall',
+      StageResultId: 'stage-result-a-user',
+      VariantId: 'variant-memory-panel',
+      Value: '0.82',
+      Unit: 'score'
+    })
+  ],
+  EvidenceArtifacts: [
+    row('EvidenceArtifact', 'evidence-b-user', 'Linked', {
+      ArtifactKind: 'simulated_user_trace',
+      Uri: 'datadog://trace/variant-b',
+      Summary: 'AI user could not locate citations after the follow-up.',
+      TargetEntityType: 'Variant',
+      TargetEntityId: 'variant-hidden-citations'
+    })
+  ],
+  Trials: [
+    row('Trial', 'trial-a-user-1', 'Running', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      VariantId: 'variant-memory-panel',
+      SimulatedUserBrainRunId: 'brain-sim-user-a',
+      RuntimeRef: 'agent-answers-a.local',
+      GoalJson: JSON.stringify({ goal: 'ask follow-up source question' })
+    })
+  ],
+  AutonomyPolicies: [
+    row('AutonomyPolicy', 'policy-agent-answers', 'Active', {
+      OrganismId: 'org-agent-answers',
+      PolicyJson: JSON.stringify({
+        repair_lane: 'auto-promote bounded fixes after evaluation',
+        growth_lane: 'human approval required before episode start',
+        policy_lane: 'human approval required'
+      }),
+      Summary: 'Repair can move automatically; growth remains human-gated.'
+    })
+  ],
+  WorkItems: [
+    row('WorkItem', 'work-variant-a', 'Running', {
+      Role: 'variant_generator',
+      TargetEntityType: 'Generation',
+      TargetEntityId: 'generation-citation-memory-1'
+    })
+  ],
+  BrainRuns: [
+    row('BrainRun', 'brain-observer', 'Succeeded', {
+      Role: 'observer',
+      WorkItemId: 'work-observer',
+      AgentKind: 'codex',
+      Model: 'codex-cli',
+      Summary: 'Observed unmet follow-up citation intent.'
+    })
+  ]
+};
+
 async function mockOData(page: Page) {
   await page.route('**/tdata/Apps', async (route) => {
     await route.fulfill({ json: { value: apps } });
@@ -223,6 +447,30 @@ async function mockOData(page: Page) {
   await page.route('**/tdata/Blobs*', async (route) => {
     await route.fulfill({ json: { value: blobs } });
   });
+
+  for (const collection of Object.keys(directedCollections)) {
+    await page.route(`**/tdata/${collection}**`, async (route) => {
+      const request = route.request();
+      if (request.method() === 'POST') {
+        const url = request.url();
+        if (collection === 'Episodes' && url.includes('PauseEpisode')) {
+          directedCollections.Episodes[0].status = 'Paused';
+          directedCollections.Episodes[0].fields.Status = 'Paused';
+        }
+        if (collection === 'Directions' && url.includes('DismissDirection')) {
+          directedCollections.Directions[0].status = 'Dismissed';
+          directedCollections.Directions[0].fields.Status = 'Dismissed';
+        }
+        if (collection === 'ViabilityConstraints' && url.includes('PinViabilityConstraint')) {
+          directedCollections.ViabilityConstraints[0].status = 'Pinned';
+          directedCollections.ViabilityConstraints[0].fields.Status = 'Pinned';
+        }
+        await route.fulfill({ status: 200, json: directedCollections[collection][0] });
+        return;
+      }
+      await route.fulfill({ json: { value: directedCollections[collection] } });
+    });
+  }
 }
 
 test.beforeEach(async ({ page }) => {
@@ -300,4 +548,53 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   });
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
   expect(browserErrors).toEqual([]);
+});
+
+test('renders live Directed Evolution mission control and dispatches real controls', async ({
+  page
+}) => {
+  const actionUrls: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('Temper.DirectedEvolution')) {
+      actionUrls.push(request.url());
+    }
+  });
+
+  await page.goto('/genesis/evolution');
+
+  await expect(page.getByRole('heading', { name: 'Agent Answers' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Answer citations that survive follow-up' }).first()
+  ).toBeVisible();
+  await expect(
+    page.getByText('Follow-up answers keep a visible source trail.', { exact: true }).first()
+  ).toBeVisible();
+  await expect(page.getByText('AI User Trial')).toBeVisible();
+  await expect(page.getByText('Simulated users still could not find the source trail.')).toBeVisible();
+  await expect(page.getByText('repair_lane')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await expect(page.getByText('Paused')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pin' }).click();
+  await expect(page.getByText('Pinned')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Compare' }).first().click();
+  await expect(page.getByText('Variant Compare')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Adds a source memory panel' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(page.getByText('Dismissed')).toBeVisible();
+
+  expect(actionUrls.some((url) => url.includes('/Episodes') && url.includes('PauseEpisode'))).toBe(
+    true
+  );
+  expect(
+    actionUrls.some(
+      (url) => url.includes('/ViabilityConstraints') && url.includes('PinViabilityConstraint')
+    )
+  ).toBe(true);
+  expect(
+    actionUrls.some((url) => url.includes('/Directions') && url.includes('DismissDirection'))
+  ).toBe(true);
 });
