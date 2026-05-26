@@ -1,0 +1,118 @@
+[automaton]
+name = "Campaign"
+states = ["Draft", "Running", "Paused", "Completed", "Failed"]
+initial = "Draft"
+allow_indefinite_states = ["Draft", "Running", "Paused"]
+
+[[state]]
+name = "name"
+type = "string"
+initial = ""
+[[state]]
+name = "director_brief"
+type = "string"
+initial = ""
+[[state]]
+name = "target_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "active_selection_design_id"
+type = "string"
+initial = ""
+[[state]]
+name = "active_evaluator_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "current_release_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "previous_release_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "generation_count"
+type = "counter"
+initial = 0
+[[state]]
+name = "automation_mode"
+type = "string"
+initial = "automatic_release"
+[[state]]
+name = "brain_provider"
+type = "string"
+initial = "codex"
+[[state]]
+name = "pause_reason"
+type = "string"
+initial = ""
+[[state]]
+name = "last_release_reason"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Draft"]
+to = "Draft"
+params = ["name", "director_brief", "target_app_ref", "brain_provider", "automation_mode"]
+
+[[action]]
+name = "ApproveSelection"
+kind = "input"
+from = ["Draft", "Paused"]
+to = "Draft"
+params = ["active_selection_design_id", "active_evaluator_ref"]
+
+[[action]]
+name = "Start"
+kind = "input"
+from = ["Draft"]
+to = "Running"
+params = []
+
+[[action]]
+name = "RecordRelease"
+kind = "input"
+from = ["Running"]
+to = "Running"
+params = ["current_release_ref", "previous_release_ref", "last_release_reason"]
+effect = [{ type = "increment", var = "generation_count" }]
+
+[[action]]
+name = "Pause"
+kind = "input"
+from = ["Running"]
+to = "Paused"
+params = ["pause_reason"]
+
+[[action]]
+name = "Resume"
+kind = "input"
+from = ["Paused"]
+to = "Running"
+params = []
+
+[[action]]
+name = "Rollback"
+kind = "input"
+from = ["Paused", "Running"]
+to = "Paused"
+params = ["current_release_ref", "previous_release_ref", "last_release_reason"]
+
+[[action]]
+name = "Complete"
+kind = "input"
+from = ["Running", "Paused"]
+to = "Completed"
+params = []
+
+[[action]]
+name = "Fail"
+kind = "input"
+from = ["Draft", "Running", "Paused"]
+to = "Failed"
+params = ["pause_reason"]

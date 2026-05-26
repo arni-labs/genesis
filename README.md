@@ -38,6 +38,56 @@ agent fixes app files -> publish/update in Genesis -> install owner/app@hash -> 
 - `PublishNewVersion` requires the new app hash to be an existing Git commit in
   the app repository, so future app refs stay installable and clonable.
 
+## Directed Evolution Studio
+
+Genesis now includes a Temper-native directed-evolution demo with three app
+bundles under `apps/`:
+
+- `directed-evolution` owns reusable campaigns, frozen selection designs,
+  generations, candidate decisions, measurements, and human interventions.
+- `agent-answers` is the deliberately small first organism: a question and
+  answer board for agents.
+- `agent-answers-evaluation` is an independent evaluator lineage, so an evolved
+  subject cannot silently modify its judge.
+
+The Evolution Studio UI at `/genesis/evolution` is a spectator and direction
+surface over native campaign entities. Immutable candidate bytes remain normal
+Genesis Git commits and releases remain pinned `owner/app@hash` refs. Codex is
+the v1 mutation and selection-design brain through TemperPaw; real brain runs
+must supply pinned Genesis refs rather than placeholder labels.
+
+For a deterministic protocol regression against a running Genesis registry,
+run:
+
+```bash
+TEMPER_URL=http://127.0.0.1:3232 \
+TEMPER_CARGO_MANIFEST=/path/to/temper/Cargo.toml \
+scripts/local-directed-evolution-lineage-smoke.sh
+```
+
+That fixture publishes the seed organism, advances it through two predefined
+native schema versions, installs the second generation, and exercises its
+answer-reuse behavior. For the evolution proof, let Codex generate each
+constrained Temper-native candidate instead:
+
+```bash
+TEMPER_URL=http://127.0.0.1:3232 \
+TEMPER_CARGO_MANIFEST=/path/to/temper/Cargo.toml \
+TEMPERPAW_CARGO_MANIFEST=/path/to/temperpaw/Cargo.toml \
+EVOLUTION_CANDIDATE_GENERATOR=codex \
+scripts/local-directed-evolution-lineage-smoke.sh
+```
+
+In Codex mode, each mutation is restricted to the subject app bundle and must
+pass `temper verify` before its immutable Genesis ref can be selected. The
+proof then installs each selected candidate with the frozen evaluator, executes
+the native acceptance scenario, and emits an `EVOLUTION_VALIDATOR_EVIDENCE_PATH`
+manifest and an `EVOLUTION_CAMPAIGN_PLAN_PATH` manifest. TemperPaw executes
+arbitrary plans through `directed-evolution-run`; Agent Answers is only this
+first plan's subject and evaluator. Live campaigns reject releases without
+matching executed evidence. Both modes write the required inputs into the
+printed `proof.env` file.
+
 ## Seeded Railway Apps
 
 The current public Genesis registry contains:

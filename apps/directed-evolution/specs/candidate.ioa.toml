@@ -1,0 +1,81 @@
+[automaton]
+name = "Candidate"
+states = ["Proposed", "Trialing", "Assessed", "Selected", "Eliminated", "Released", "RolledBack"]
+initial = "Proposed"
+allow_indefinite_states = ["Proposed", "Trialing", "Assessed", "Selected", "Released"]
+
+[[state]]
+name = "campaign_id"
+type = "string"
+initial = ""
+[[state]]
+name = "generation_id"
+type = "string"
+initial = ""
+[[state]]
+name = "app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "parent_app_ref"
+type = "string"
+initial = ""
+[[state]]
+name = "mutation_summary"
+type = "string"
+initial = ""
+[[state]]
+name = "brain_run_id"
+type = "string"
+initial = ""
+[[state]]
+name = "assessment_json"
+type = "string"
+initial = "{}"
+[[state]]
+name = "selection_reason"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Proposed"]
+to = "Proposed"
+params = ["campaign_id", "generation_id", "app_ref", "parent_app_ref", "mutation_summary", "brain_run_id"]
+[[action]]
+name = "StartTrials"
+kind = "input"
+from = ["Proposed"]
+to = "Trialing"
+params = []
+[[action]]
+name = "Assess"
+kind = "input"
+from = ["Trialing"]
+to = "Assessed"
+params = ["assessment_json"]
+[[action]]
+name = "Select"
+kind = "input"
+from = ["Assessed"]
+to = "Selected"
+params = ["selection_reason"]
+[[action]]
+name = "Eliminate"
+kind = "input"
+from = ["Assessed"]
+to = "Eliminated"
+params = ["selection_reason"]
+[[action]]
+name = "Release"
+kind = "input"
+from = ["Selected"]
+to = "Released"
+params = []
+[[action]]
+name = "RollBack"
+kind = "input"
+from = ["Released"]
+to = "RolledBack"
+params = ["selection_reason"]

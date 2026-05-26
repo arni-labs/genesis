@@ -1,8 +1,14 @@
 import type {
   AppFilesSnapshot,
+  AgentAnswer,
+  AgentQuestion,
   ClaimOwnerInput,
   Closure,
+  CreateCampaignInput,
   EntityRow,
+  EvolutionCampaign,
+  EvolutionItem,
+  EvolutionSnapshot,
   GitBlob,
   GitCommit,
   GitTree,
@@ -24,7 +30,20 @@ type CollectionName =
   | 'Closures'
   | 'Commits'
   | 'Trees'
-  | 'Blobs';
+  | 'Blobs'
+  | 'Campaigns'
+  | 'SelectionDesigns'
+  | 'Generations'
+  | 'Candidates'
+  | 'Measurements'
+  | 'TrafficSources'
+  | 'EmergentCapabilities'
+  | 'Interventions'
+  | 'TrialSuites'
+  | 'MetricDefinitions'
+  | 'ValidatorRuns'
+  | 'Questions'
+  | 'Answers';
 
 type Principal = {
   id?: string;
@@ -33,6 +52,10 @@ type Principal = {
 
 function apiPath(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+function snakeKey(key: string): string {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 }
 
 function baseHeaders(principal: Principal = {}, withBody = false): HeadersInit {
@@ -132,6 +155,139 @@ export async function loadRegistrySnapshot(): Promise<RegistrySnapshot> {
   };
 }
 
+export async function loadEvolutionSnapshot(): Promise<EvolutionSnapshot> {
+  const [campaigns, selectionDesigns, generations, candidates, measurements, trafficSources, capabilities, interventions, trialSuites, metricDefinitions, validatorRuns] =
+    await Promise.all([
+      loadCollection('Campaigns', normalizeCampaign),
+      loadCollection('SelectionDesigns', normalizeEvolutionItem),
+      loadCollection('Generations', normalizeEvolutionItem),
+      loadCollection('Candidates', normalizeEvolutionItem),
+      loadCollection('Measurements', normalizeEvolutionItem),
+      loadCollection('TrafficSources', normalizeEvolutionItem),
+      loadCollection('EmergentCapabilities', normalizeEvolutionItem),
+      loadCollection('Interventions', normalizeEvolutionItem),
+      loadCollection('TrialSuites', normalizeEvolutionItem),
+      loadCollection('MetricDefinitions', normalizeEvolutionItem),
+      loadCollection('ValidatorRuns', normalizeEvolutionItem)
+    ]);
+  const results = [campaigns, selectionDesigns, generations, candidates, measurements, trafficSources, capabilities, interventions, trialSuites, metricDefinitions, validatorRuns];
+  return {
+    campaigns: campaigns.value,
+    selectionDesigns: selectionDesigns.value,
+    generations: generations.value,
+    candidates: candidates.value,
+    measurements: measurements.value,
+    trafficSources: trafficSources.value,
+    capabilities: capabilities.value,
+    interventions: interventions.value,
+    trialSuites: trialSuites.value,
+    metricDefinitions: metricDefinitions.value,
+    validatorRuns: validatorRuns.value,
+    warnings: results.flatMap((result) => result.warning ? [result.warning] : [])
+  };
+}
+
+export async function createCampaign(input: CreateCampaignInput): Promise<void> {
+  await requestJson(`/tdata/Campaigns`, { method: 'POST', body: JSON.stringify({ Id: input.id }) });
+  await evolutionAction('Campaigns', input.id, 'Configure', {
+    name: input.name,
+    director_brief: input.directorBrief,
+    target_app_ref: input.targetAppRef,
+    brain_provider: 'codex',
+    automation_mode: 'automatic_release'
+  });
+}
+
+export async function evolutionAction(
+  collection: string,
+  id: string,
+  action: string,
+  params: Record<string, unknown> = {}
+): Promise<void> {
+  await nativeAction('Genesis.Evolution', collection, id, action, params);
+}
+
+async function nativeAction(
+  namespace: string,
+  collection: string,
+  id: string,
+  action: string,
+  params: Record<string, unknown> = {}
+): Promise<void> {
+  await requestJson(`/tdata/${collection}('${encodeURIComponent(id)}')/${namespace}.${action}`, {
+    method: 'POST',
+    body: JSON.stringify(params)
+  });
+}
+
+export async function recordIntervention(campaignId: string, instruction: string): Promise<void> {
+  const id = `intervention-${Date.now()}`;
+  await requestJson('/tdata/Interventions', { method: 'POST', body: JSON.stringify({ Id: id }) });
+  await evolutionAction('Interventions', id, 'Configure', {
+    campaign_id: campaignId,
+    kind: 'direction',
+    instruction,
+    requested_by: 'human'
+  });
+}
+
+export async function loadAgentAnswers(): Promise<{ questions: AgentQuestion[]; answers: AgentAnswer[] }> {
+  const [questions, answers] = await Promise.all([listCollection('Questions' as CollectionName), listCollection('Answers' as CollectionName)]);
+  return {
+    questions: questions.map((row) => ({
+      id: stateStringField(row, 'Id'), status: stateStringField(row, 'Status'), title: stateStringField(row, 'Title'), body: stateStringField(row, 'Body'), askedBy: stateStringField(row, 'AskedBy'), answerCount: numberField(row, 'AnswerCount'), acceptedAnswerId: stateStringField(row, 'AcceptedAnswerId')
+    })),
+    answers: answers.map((row) => ({
+      id: stateStringField(row, 'Id'), status: stateStringField(row, 'Status'), questionId: stateStringField(row, 'QuestionId'), body: stateStringField(row, 'Body'), answeredBy: stateStringField(row, 'AnsweredBy'), evidence: stateStringField(row, 'Evidence')
+    }))
+  };
+}
+
+export async function askQuestion(title: string, body: string, askedBy: string): Promise<void> {
+  const id = `question-${Date.now()}`;
+  await requestJson('/tdata/Questions', { method: 'POST', body: JSON.stringify({ Id: id }) });
+  await nativeAction('Genesis.AgentAnswers', 'Questions', id, 'Configure', { title, body, asked_by: askedBy, created_at: new Date().toISOString() });
+}
+
+export async function submitAnswer(questionId: string, body: string, answeredBy: string, evidence: string): Promise<void> {
+  const id = `answer-${Date.now()}`;
+  await requestJson('/tdata/Answers', { method: 'POST', body: JSON.stringify({ Id: id }) });
+  await nativeAction('Genesis.AgentAnswers', 'Answers', id, 'Submit', { question_id: questionId, body, answered_by: answeredBy, evidence, created_at: new Date().toISOString() });
+  await nativeAction('Genesis.AgentAnswers', 'Questions', questionId, 'RecordAnswer');
+}
+
+export async function acceptAnswer(questionId: string, answerId: string): Promise<void> {
+  await nativeAction('Genesis.AgentAnswers', 'Answers', answerId, 'Accept');
+  await nativeAction('Genesis.AgentAnswers', 'Questions', questionId, 'Accept', { accepted_answer_id: answerId });
+}
+
+function normalizeCampaign(row: EntityRow): EvolutionCampaign {
+  return {
+    id: stateStringField(row, 'Id'),
+    status: stateStringField(row, 'Status') || 'Draft',
+    name: stateStringField(row, 'Name'),
+    directorBrief: stateStringField(row, 'DirectorBrief'),
+    targetAppRef: stateStringField(row, 'TargetAppRef'),
+    activeSelectionDesignId: stateStringField(row, 'ActiveSelectionDesignId'),
+    activeEvaluatorRef: stateStringField(row, 'ActiveEvaluatorRef'),
+    currentReleaseRef: stateStringField(row, 'CurrentReleaseRef'),
+    previousReleaseRef: stateStringField(row, 'PreviousReleaseRef'),
+    generationCount: numberField(row, 'GenerationCount'),
+    automationMode: stateStringField(row, 'AutomationMode'),
+    brainProvider: stateStringField(row, 'BrainProvider'),
+    pauseReason: stateStringField(row, 'PauseReason'),
+    lastReleaseReason: stateStringField(row, 'LastReleaseReason')
+  };
+}
+
+function normalizeEvolutionItem(row: EntityRow): EvolutionItem {
+  return {
+    id: stateStringField(row, 'Id'),
+    status: stateStringField(row, 'Status'),
+    fields: (row.fields ?? row) as Record<string, unknown>
+  };
+}
+
 export async function createOwner(input: ClaimOwnerInput): Promise<Owner> {
   const accountId = input.accountId.trim();
   const verificationProvider = input.verificationProvider.trim() || 'email_magic_link';
@@ -226,6 +382,10 @@ export function field(row: EntityRow | undefined, ...keys: string[]): unknown {
       if (Object.prototype.hasOwnProperty.call(source, lowerKey)) {
         return source[lowerKey];
       }
+      const snake = snakeKey(key);
+      if (Object.prototype.hasOwnProperty.call(source, snake)) {
+        return source[snake];
+      }
     }
   }
 
@@ -266,6 +426,10 @@ function stateStringField(row: EntityRow | undefined, ...keys: string[]): string
       const lowerKey = key.charAt(0).toLowerCase() + key.slice(1);
       if (Object.prototype.hasOwnProperty.call(source, lowerKey)) {
         return stringValue(source[lowerKey]) ?? '';
+      }
+      const snake = snakeKey(key);
+      if (Object.prototype.hasOwnProperty.call(source, snake)) {
+        return stringValue(source[snake]) ?? '';
       }
     }
   }

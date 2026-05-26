@@ -1,0 +1,47 @@
+[automaton]
+name = "ValidatorRun"
+states = ["Created", "Running", "Passed", "Failed"]
+initial = "Created"
+allow_indefinite_states = ["Created", "Running", "Passed", "Failed"]
+[[state]]
+name = "trial_suite_id"
+type = "string"
+initial = ""
+[[state]]
+name = "candidate_id"
+type = "string"
+initial = ""
+[[state]]
+name = "scenario_id"
+type = "string"
+initial = ""
+[[state]]
+name = "validator_kind"
+type = "string"
+initial = "native"
+[[state]]
+name = "evidence_locator"
+type = "string"
+initial = ""
+[[state]]
+name = "result_summary"
+type = "string"
+initial = ""
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Created"]
+to = "Running"
+params = ["trial_suite_id", "candidate_id", "scenario_id", "validator_kind"]
+[[action]]
+name = "Pass"
+kind = "input"
+from = ["Running"]
+to = "Passed"
+params = ["evidence_locator", "result_summary"]
+[[action]]
+name = "Fail"
+kind = "input"
+from = ["Running"]
+to = "Failed"
+params = ["evidence_locator", "result_summary"]
