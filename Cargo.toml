@@ -22,6 +22,10 @@ members = [
     "wasm/scm_ingest_pack",
     "wasm/git_upload_pack",
     "wasm/git_receive_pack",
+    "wasm/gen_variant",
+    "wasm/run_stage_caller",
+    "wasm/select_winner",
+    "wasm/merge_variant",
 ]
 
 [workspace.package]

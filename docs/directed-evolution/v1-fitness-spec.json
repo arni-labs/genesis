@@ -1,0 +1,11 @@
+{
+  "name": "v1-downvote",
+  "stages": [
+    { "stage_id": "parse",  "evaluator": "parse",  "kind": "gate",       "on_fail": "kill" },
+    { "stage_id": "l0",     "evaluator": "l0",     "kind": "gate",       "on_fail": "kill" },
+    { "stage_id": "l1",     "evaluator": "l1",     "kind": "gate+score", "score_objectives": [ { "name": "state_space", "direction": "min", "weight": 1.0 } ], "on_fail": "kill" },
+    { "stage_id": "budget", "evaluator": "budget", "kind": "gate",       "on_fail": "kill" }
+  ],
+  "selection_policy": "lexicographic",
+  "tie_break": "state_space"
+}

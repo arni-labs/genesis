@@ -56,3 +56,32 @@ name = "app_registry"
 target = "wasm32-wasip1"
 criticality = "app-required"
 startup_loading = "eager"
+
+# Directed-evolution engine modules (see ADR-0011 + plan P1.3). Each module
+# returns a `sub_writes` envelope; the kernel applies the writes (Composite
+# contract). Modules are lazy by default — they're orchestrators, not on the
+# hot path, so first-dispatch JIT is acceptable.
+
+[[wasm_modules]]
+name = "gen_variant"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "lazy"
+
+[[wasm_modules]]
+name = "run_stage_caller"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "lazy"
+
+[[wasm_modules]]
+name = "select_winner"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "lazy"
+
+[[wasm_modules]]
+name = "merge_variant"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "lazy"

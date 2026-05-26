@@ -502,7 +502,243 @@
         <EntitySet Name="Lineages"       EntityType="Temper.Git.Lineage"/>
         <EntitySet Name="Closures"       EntityType="Temper.Git.Closure"/>
         <EntitySet Name="RateLimits"     EntityType="Temper.Git.RateLimit"/>
+        <!-- Directed-evolution engine (see ADR-0011) -->
+        <EntitySet Name="Evolutions"     EntityType="Evo.DE.Evolution">
+          <NavigationPropertyBinding Path="Variants" Target="Variants"/>
+        </EntitySet>
+        <EntitySet Name="Variants"       EntityType="Evo.DE.Variant">
+          <NavigationPropertyBinding Path="Evolution" Target="Evolutions"/>
+          <NavigationPropertyBinding Path="StageResults" Target="StageResults"/>
+        </EntitySet>
+        <EntitySet Name="FitnessSpecs"   EntityType="Evo.DE.FitnessSpec"/>
+        <EntitySet Name="StageResults"   EntityType="Evo.DE.StageResult">
+          <NavigationPropertyBinding Path="Variant" Target="Variants"/>
+        </EntitySet>
       </EntityContainer>
+    </Schema>
+
+    <!-- =================================================================== -->
+    <!-- Directed-evolution engine (see ADR-0011). Reuses Temper.Vocab.       -->
+    <!-- =================================================================== -->
+    <Schema Namespace="Evo.DE" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+
+      <EnumType Name="EvolutionStatus">
+        <Member Name="IntentObserved" Value="0"/>
+        <Member Name="Framed" Value="1"/>
+        <Member Name="Generating" Value="2"/>
+        <Member Name="Evaluating" Value="3"/>
+        <Member Name="Selecting" Value="4"/>
+        <Member Name="AwaitingApproval" Value="5"/>
+        <Member Name="Merged" Value="6"/>
+        <Member Name="Live" Value="7"/>
+        <Member Name="Reverted" Value="8"/>
+      </EnumType>
+
+      <EnumType Name="VariantStatus">
+        <Member Name="Proposed" Value="0"/>
+        <Member Name="Evaluating" Value="1"/>
+        <Member Name="Survived" Value="2"/>
+        <Member Name="Killed" Value="3"/>
+      </EnumType>
+
+      <EnumType Name="FitnessSpecStatus">
+        <Member Name="Draft" Value="0"/>
+        <Member Name="Active" Value="1"/>
+      </EnumType>
+
+      <EntityType Name="Evolution">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="TargetApp" Type="Edm.String" Nullable="false"/>
+        <Property Name="TargetTenant" Type="Edm.String" Nullable="false"/>
+        <Property Name="FitnessSpecId" Type="Edm.Guid"/>
+        <Property Name="Intent" Type="Edm.String" Nullable="false"/>
+        <Property Name="ProblemStatement" Type="Edm.String"/>
+        <Property Name="Autonomy" Type="Edm.Int32" DefaultValue="0"/>
+        <Property Name="VariantCount" Type="Edm.Int32" DefaultValue="0"/>
+        <Property Name="WinnerVariantId" Type="Edm.Guid"/>
+        <Property Name="MergedRef" Type="Edm.String"/>
+        <Property Name="Status" Type="Evo.DE.EvolutionStatus" Nullable="false"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Nullable="false"/>
+        <NavigationProperty Name="Variants" Type="Collection(Evo.DE.Variant)"/>
+        <Annotation Term="Temper.Vocab.StateMachine.States">
+          <Collection>
+            <String>IntentObserved</String><String>Framed</String><String>Generating</String>
+            <String>Evaluating</String><String>Selecting</String><String>AwaitingApproval</String>
+            <String>Merged</String><String>Live</String><String>Reverted</String>
+          </Collection>
+        </Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.InitialState" String="IntentObserved"/>
+        <Annotation Term="Temper.Vocab.ShardKey" String="Id"/>
+        <Annotation Term="Temper.Vocab.AuthZ.CedarPolicy" String="policies/evolution.cedar"/>
+        <Annotation Term="Temper.Vocab.Agent.Hint" String="A directed-evolution episode: intent to variants to selection to merge to live."/>
+      </EntityType>
+
+      <EntityType Name="Variant">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="EvolutionId" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="BranchRef" Type="Edm.String"/>
+        <Property Name="CommitSha" Type="Edm.String"/>
+        <Property Name="CurrentStage" Type="Edm.Int32" DefaultValue="0"/>
+        <Property Name="KilledAtStage" Type="Edm.String"/>
+        <Property Name="ObjectiveTotal" Type="Edm.String"/>
+        <Property Name="CandidateEntityType" Type="Edm.String"/>
+        <Property Name="CandidateSource" Type="Edm.String"/>
+        <Property Name="Status" Type="Evo.DE.VariantStatus" Nullable="false"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Nullable="false"/>
+        <NavigationProperty Name="Evolution" Type="Evo.DE.Evolution" Nullable="false">
+          <ReferentialConstraint Property="EvolutionId" ReferencedProperty="Id"/>
+        </NavigationProperty>
+        <NavigationProperty Name="StageResults" Type="Collection(Evo.DE.StageResult)"/>
+        <Annotation Term="Temper.Vocab.StateMachine.States">
+          <Collection><String>Proposed</String><String>Evaluating</String><String>Survived</String><String>Killed</String></Collection>
+        </Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.InitialState" String="Proposed"/>
+        <Annotation Term="Temper.Vocab.ShardKey" String="EvolutionId"/>
+        <Annotation Term="Temper.Vocab.AuthZ.CedarPolicy" String="policies/evolution.cedar"/>
+        <Annotation Term="Temper.Vocab.Agent.Hint" String="One candidate spec mutation walking the fitness stages."/>
+      </EntityType>
+
+      <EntityType Name="FitnessSpec">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <Property Name="Stages" Type="Edm.String"/>
+        <Property Name="SelectionPolicy" Type="Edm.String"/>
+        <Property Name="TieBreak" Type="Edm.String"/>
+        <Property Name="Status" Type="Evo.DE.FitnessSpecStatus" Nullable="false"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Nullable="false"/>
+        <Annotation Term="Temper.Vocab.StateMachine.States">
+          <Collection><String>Draft</String><String>Active</String></Collection>
+        </Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.InitialState" String="Draft"/>
+        <Annotation Term="Temper.Vocab.ShardKey" String="Id"/>
+        <Annotation Term="Temper.Vocab.AuthZ.CedarPolicy" String="policies/evolution.cedar"/>
+      </EntityType>
+
+      <EntityType Name="StageResult">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="VariantId" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="StageId" Type="Edm.String" Nullable="false"/>
+        <Property Name="Evaluator" Type="Edm.String" Nullable="false"/>
+        <Property Name="Verdict" Type="Edm.String" Nullable="false"/>
+        <Property Name="ObjectiveScores" Type="Edm.String"/>
+        <Property Name="Evidence" Type="Edm.String"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Nullable="false"/>
+        <NavigationProperty Name="Variant" Type="Evo.DE.Variant" Nullable="false">
+          <ReferentialConstraint Property="VariantId" ReferencedProperty="Id"/>
+        </NavigationProperty>
+        <Annotation Term="Temper.Vocab.StateMachine.States">
+          <Collection><String>Recorded</String></Collection>
+        </Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.InitialState" String="Recorded"/>
+        <Annotation Term="Temper.Vocab.ShardKey" String="VariantId"/>
+        <Annotation Term="Temper.Vocab.AuthZ.CedarPolicy" String="policies/evolution.cedar"/>
+      </EntityType>
+
+      <!-- Evolution Actions -->
+      <Action Name="Frame" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <Parameter Name="problem_statement" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>IntentObserved</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Framed"/>
+      </Action>
+      <Action Name="StartGenerating" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Framed</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Generating"/>
+      </Action>
+      <Action Name="VariantProposed" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Generating</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Evaluating"/>
+      </Action>
+      <Action Name="BeginSelection" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Evaluating</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Selecting"/>
+      </Action>
+      <Action Name="Select" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <Parameter Name="WinnerVariantId" Type="Edm.Guid" Nullable="false"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Selecting</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="AwaitingApproval"/>
+      </Action>
+      <Action Name="Approve" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>AwaitingApproval</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Merged"/>
+      </Action>
+      <Action Name="GoLive" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Merged</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Live"/>
+      </Action>
+      <Action Name="Revert" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Evolution"/>
+        <Parameter Name="reason" Type="Edm.String"/>
+        <ReturnType Type="Evo.DE.Evolution"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Live</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Reverted"/>
+      </Action>
+
+      <!-- Variant Actions -->
+      <Action Name="StartEval" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Variant"/>
+        <ReturnType Type="Evo.DE.Variant"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Proposed</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Evaluating"/>
+      </Action>
+      <Action Name="RecordStageResult" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Variant"/>
+        <Parameter Name="stage_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="verdict" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="objective_scores" Type="Edm.String"/>
+        <Parameter Name="evidence" Type="Edm.String"/>
+        <ReturnType Type="Evo.DE.Variant"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Evaluating</String></Collection></Annotation>
+      </Action>
+      <Action Name="Survive" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Variant"/>
+        <ReturnType Type="Evo.DE.Variant"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Evaluating</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Survived"/>
+      </Action>
+      <Action Name="Kill" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.Variant"/>
+        <Parameter Name="stage_id" Type="Edm.String"/>
+        <Parameter Name="counterexample" Type="Edm.String"/>
+        <ReturnType Type="Evo.DE.Variant"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Proposed</String><String>Evaluating</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Killed"/>
+      </Action>
+
+      <!-- FitnessSpec Actions -->
+      <Action Name="SetStages" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.FitnessSpec"/>
+        <Parameter Name="stages" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Evo.DE.FitnessSpec"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Draft</String><String>Active</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Active"/>
+      </Action>
+      <Action Name="SetPolicy" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Evo.DE.FitnessSpec"/>
+        <Parameter Name="selection_policy" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="tie_break" Type="Edm.String"/>
+        <ReturnType Type="Evo.DE.FitnessSpec"/>
+        <Annotation Term="Temper.Vocab.StateMachine.ValidFromStates"><Collection><String>Draft</String><String>Active</String></Collection></Annotation>
+        <Annotation Term="Temper.Vocab.StateMachine.TargetState" String="Active"/>
+      </Action>
+
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>

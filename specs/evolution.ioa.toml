@@ -1,0 +1,167 @@
+# Evolution Entity — I/O Automaton Specification
+#
+# One directed-evolution episode: an observed unmet intent is framed into a
+# problem, candidate variants are generated and evaluated, a winner is
+# selected, approved, merged, and deployed (or reverted). See genesis
+# ADR-0011. The engine is organism-agnostic — it operates on a target app
+# by id (data fields live in the CSDL).
+
+[automaton]
+name = "Evolution"
+states = ["IntentObserved", "Framed", "Generating", "Evaluating", "Selecting", "AwaitingApproval", "Merged", "Live", "Reverted"]
+initial = "IntentObserved"
+allow_indefinite_states = ["IntentObserved", "Framed", "Generating", "Evaluating", "Selecting", "AwaitingApproval", "Merged", "Live", "Reverted"]
+
+# --- State Variables (verification-relevant; data fields are in the CSDL) ---
+
+[[state]]
+name = "winner_chosen"
+type = "bool"
+initial = "false"
+
+# --- Actions ---
+
+[[action]]
+name = "Frame"
+kind = "input"
+from = ["IntentObserved"]
+to = "Framed"
+params = ["problem_statement"]
+hint = "Formalize the raw unmet intent into a problem statement."
+
+[[action]]
+name = "StartGenerating"
+kind = "Composite"
+from = ["Framed"]
+to = "Generating"
+hint = "Begin generating candidate variants. Composite: the gen_variant WASM module returns sub_writes that materialize the candidate Variant rows and their backing branches, then emit Evolution.VariantProposed."
+record_parent_event = true
+
+[[action.triggers]]
+name = "gen_variant"
+kind = "wasm"
+module = "gen_variant"
+
+[action.triggers.config]
+max_response_bytes = "16777216"
+
+[[action.sub_writes]]
+target_entity = "Repository"
+action = "BatchWriteFiles"
+generated_from = "variant_branch"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "Create"
+generated_from = "variant_metadata"
+
+[[action.sub_writes]]
+target_entity = "Evolution"
+action = "VariantProposed"
+generated_from = "evolution_proposal"
+
+[[action]]
+name = "VariantProposed"
+kind = "internal"
+from = ["Generating"]
+to = "Evaluating"
+hint = "A candidate variant was proposed; evaluation begins."
+
+[[action]]
+name = "BeginSelection"
+kind = "Composite"
+from = ["Evaluating"]
+to = "Selecting"
+hint = "All variants reached a terminal state; rank the survivors. Composite: select_winner returns an Evolution.Select sub_write with the winning variant id."
+record_parent_event = true
+
+[[action.triggers]]
+name = "select_winner"
+kind = "wasm"
+module = "select_winner"
+
+[action.triggers.config]
+max_response_bytes = "16777216"
+
+[[action.sub_writes]]
+target_entity = "Evolution"
+action = "Select"
+generated_from = "selection_outcome"
+
+[[action]]
+name = "Select"
+kind = "input"
+from = ["Selecting"]
+to = "AwaitingApproval"
+effect = "set winner_chosen true"
+params = ["WinnerVariantId"]
+hint = "Choose the winning variant (selection policy, or the human)."
+
+[[action]]
+name = "Approve"
+kind = "Composite"
+from = ["AwaitingApproval"]
+to = "Merged"
+hint = "Approve the winner for merge + deploy (autonomy-gated in Phase 2). Composite: merge_variant returns PullRequest.Create/Open/Merge + Lineage.Create + Evolution.GoLive sub_writes."
+record_parent_event = true
+
+[[action.triggers]]
+name = "merge_variant"
+kind = "wasm"
+module = "merge_variant"
+
+[action.triggers.config]
+max_response_bytes = "16777216"
+
+[[action.sub_writes]]
+target_entity = "PullRequest"
+action = "Create"
+generated_from = "merge_pr"
+
+[[action.sub_writes]]
+target_entity = "PullRequest"
+action = "Open"
+generated_from = "merge_pr"
+
+[[action.sub_writes]]
+target_entity = "PullRequest"
+action = "Merge"
+generated_from = "merge_pr"
+
+[[action.sub_writes]]
+target_entity = "Lineage"
+action = "Create"
+generated_from = "merge_lineage"
+
+[[action.sub_writes]]
+target_entity = "Evolution"
+action = "GoLive"
+generated_from = "merge_outcome"
+
+[[action]]
+name = "GoLive"
+kind = "internal"
+from = ["Merged"]
+to = "Live"
+hint = "Winner merged to main and hot-deployed into the target tenant."
+
+[[action]]
+name = "Revert"
+kind = "input"
+from = ["Live"]
+to = "Reverted"
+params = ["reason"]
+hint = "Roll back a deployed variant (e.g. field-metric regression)."
+
+# --- Safety Invariants ---
+
+# The engine cannot merge/deploy without having selected a winner.
+[[invariant]]
+name = "MergeRequiresWinner"
+when = ["AwaitingApproval", "Merged", "Live"]
+assert = "winner_chosen"
+
+[[invariant]]
+name = "RevertedIsFinal"
+when = ["Reverted"]
+assert = "no_further_transitions"
