@@ -13,7 +13,10 @@ function evolutionFixture() {
     Measurements: [row('measure-1', 'Recorded', { CampaignId: 'campaign-proof', MetricKey: 'answer_evidence', MetricValue: 'observed', SourceKind: 'real', EvidenceLocator: 'trace:proof', Notes: 'Browser use confirmed.' })],
     TrafficSources: [row('traffic-real', 'Active', { CampaignId: 'campaign-proof', Name: 'Browser usage', Kind: 'real' }), row('traffic-sim', 'Active', { CampaignId: 'campaign-proof', Name: 'Codex actors', Kind: 'simulated' })],
     EmergentCapabilities: [row('capability-1', 'Kept', { CampaignId: 'campaign-proof', Title: 'Evidence citations', Observation: 'Answers include proof locators.' })],
-    Interventions: []
+    Interventions: [],
+    TrialSuites: [row('campaign-proof-trial-suite-v1', 'Frozen', { SubjectAppRef: 'demo/agent-answers@seed' })],
+    MetricDefinitions: [row('campaign-proof-resolved_questions', 'Frozen', { MetricKey: 'resolved_questions' }), row('campaign-proof-answer_evidence', 'Frozen', { MetricKey: 'answer_evidence' })],
+    ValidatorRuns: [row('campaign-proof-validator-1', 'Passed', { CandidateAppRef: 'demo/agent-answers@gen1' }), row('campaign-proof-validator-2', 'Passed', { CandidateAppRef: 'demo/agent-answers@gen2' })]
   };
   return collections;
 }
@@ -45,6 +48,7 @@ test('shows a transparent two-generation campaign and records human intervention
   await expect(page.getByRole('heading', { name: 'Agent Answers live evolution proof' })).toBeVisible();
   await expect(page.getByText('Subject lineage')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Frozen judge' })).toBeVisible();
+  await expect(page.getByText('2 native trial runs / 2 frozen measures')).toBeVisible();
   await expect(page.getByText('answer_evidence')).toBeVisible();
   await expect(page.getByText('Evidence citations')).toBeVisible();
   await page.getByLabel('New direction').fill('Preserve evidence citations in future survivors.');

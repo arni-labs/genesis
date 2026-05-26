@@ -159,6 +159,9 @@ export type EvolutionSnapshot = {
   trafficSources: EvolutionItem[];
   capabilities: EvolutionItem[];
   interventions: EvolutionItem[];
+  trialSuites: EvolutionItem[];
+  metricDefinitions: EvolutionItem[];
+  validatorRuns: EvolutionItem[];
   warnings: LoadWarning[];
 };
 

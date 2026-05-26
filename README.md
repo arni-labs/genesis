@@ -56,7 +56,8 @@ Genesis Git commits and releases remain pinned `owner/app@hash` refs. Codex is
 the v1 mutation and selection-design brain through TemperPaw; real brain runs
 must supply pinned Genesis refs rather than placeholder labels.
 
-For a local source-of-truth proof against a running Genesis registry, run:
+For a deterministic protocol regression against a running Genesis registry,
+run:
 
 ```bash
 TEMPER_URL=http://127.0.0.1:3232 \
@@ -64,10 +65,23 @@ TEMPER_CARGO_MANIFEST=/path/to/temper/Cargo.toml \
 scripts/local-directed-evolution-lineage-smoke.sh
 ```
 
-The proof publishes the seed organism, advances it through two native schema
-versions, installs the selected second generation, and exercises the added
-answer-reuse behavior. It writes refs suitable for the TemperPaw campaign
-runner into the printed `proof.env` file.
+That fixture publishes the seed organism, advances it through two predefined
+native schema versions, installs the second generation, and exercises its
+answer-reuse behavior. For the evolution proof, let Codex generate each
+constrained Temper-native candidate instead:
+
+```bash
+TEMPER_URL=http://127.0.0.1:3232 \
+TEMPER_CARGO_MANIFEST=/path/to/temper/Cargo.toml \
+TEMPERPAW_CARGO_MANIFEST=/path/to/temperpaw/Cargo.toml \
+EVOLUTION_CANDIDATE_GENERATOR=codex \
+scripts/local-directed-evolution-lineage-smoke.sh
+```
+
+In Codex mode, each mutation is restricted to the subject app bundle and must
+pass `temper verify` before its immutable Genesis ref can be selected. Both
+modes write refs suitable for the TemperPaw campaign runner into the printed
+`proof.env` file.
 
 ## Seeded Railway Apps
 
