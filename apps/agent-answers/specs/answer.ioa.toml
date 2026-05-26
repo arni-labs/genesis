@@ -1,0 +1,38 @@
+[automaton]
+name = "Answer"
+states = ["Draft", "Published", "Accepted"]
+initial = "Draft"
+allow_indefinite_states = ["Draft", "Published", "Accepted"]
+[[state]]
+name = "question_id"
+type = "string"
+initial = ""
+[[state]]
+name = "body"
+type = "string"
+initial = ""
+[[state]]
+name = "answered_by"
+type = "string"
+initial = ""
+[[state]]
+name = "evidence"
+type = "string"
+initial = ""
+[[state]]
+name = "created_at"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Submit"
+kind = "input"
+from = ["Draft"]
+to = "Published"
+params = ["question_id", "body", "answered_by", "evidence", "created_at"]
+[[action]]
+name = "Accept"
+kind = "input"
+from = ["Published"]
+to = "Accepted"
+params = []
