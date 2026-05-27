@@ -26,8 +26,12 @@
     stopEpisode,
     type DirectedEvolutionSnapshot,
     type EvolutionDirection,
+    type EvolutionEliminationRule,
     type EvolutionEpisode,
+    type EvolutionEpisodeStartRequest,
     type EvolutionEvidenceArtifact,
+    type EvolutionMetricDefinition,
+    type EvolutionScoringRule,
     type EvolutionVariant
   } from '$lib/directedEvolution';
 
@@ -55,9 +59,9 @@
   $: lineageEdges = snapshot?.lineageEdges ?? [];
   $: promotions = snapshot?.promotions ?? [];
   $: pendingMaterializations = promotions.filter(
-    (promotion) => !promotion.materialized && !promotion.materializationFailed
+    (promotion) => !promotionHotLoaded(promotion) && !promotionFailed(promotion)
   );
-  $: failedMaterializations = promotions.filter((promotion) => promotion.materializationFailed);
+  $: failedMaterializations = promotions.filter((promotion) => promotionFailed(promotion));
   $: currentParentVersion = organism
     ? organismVersions.find((version) => version.id === (organism.organismVersionId || organism.parentVersionId)) ??
       null
@@ -78,6 +82,7 @@
       promotions.find((promotion) => promotion.winningVariantId === selectedEpisode.winningVariantId) ??
       null
     : null;
+  $: selectedStartRequest = selectedEpisode ? episodeStartRequest(selectedEpisode) : null;
   $: currentGoal = selectedEpisode
     ? snapshot?.adaptationGoals.find((goal) => goal.id === selectedEpisode.adaptationGoalId) ?? null
     : null;
@@ -114,6 +119,15 @@
             selectedEpisode.evaluationStageIds.includes(stage.id)
         )
         .sort((a, b) => a.sequenceIndex - b.sequenceIndex)
+    : [];
+  $: metrics = selectedEpisode
+    ? episodeMetrics(selectedEpisode, currentSelectionPressure)
+    : [];
+  $: eliminationRules = selectedEpisode
+    ? episodeEliminationRules(selectedEpisode, currentSelectionPressure)
+    : [];
+  $: scoringRules = selectedEpisode
+    ? episodeScoringRules(selectedEpisode, currentSelectionPressure)
     : [];
   $: stageResults = selectedEpisode
     ? (snapshot?.stageResults ?? []).filter((result) => result.episodeId === selectedEpisode.id)
@@ -217,18 +231,68 @@
     );
   }
 
+  function promotionHotLoaded(promotion: { materialized: boolean; runtimeRef: string }): boolean {
+    return promotion.materialized || Boolean(promotion.runtimeRef);
+  }
+
+  function promotionFailed(promotion: { materializationFailed: boolean; status: string }): boolean {
+    return promotion.materializationFailed || promotion.status === 'Failed';
+  }
+
+  function episodeStartRequest(episode: EvolutionEpisode): EvolutionEpisodeStartRequest | null {
+    return (
+      (snapshot?.episodeStartRequests ?? []).find((request) => request.episodeId === episode.id) ??
+      (snapshot?.episodeStartRequests ?? []).find(
+        (request) => request.directionId === episode.directionId && request.organismId === episode.organismId
+      ) ??
+      null
+    );
+  }
+
+  function episodeMetrics(
+    episode: EvolutionEpisode,
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+  ): EvolutionMetricDefinition[] {
+    const ids = new Set([...(pressure?.metricIds ?? [])]);
+    const directMatches = (snapshot?.metricDefinitions ?? []).filter(
+      (metric) => metric.episodeId === episode.id || ids.has(metric.id)
+    );
+    if (directMatches.length) return directMatches;
+    return (snapshot?.metricDefinitions ?? []).filter((metric) => metric.status !== 'Archived');
+  }
+
+  function episodeEliminationRules(
+    episode: EvolutionEpisode,
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+  ): EvolutionEliminationRule[] {
+    const ids = new Set([...episode.eliminationRuleIds, ...(pressure?.eliminationRuleIds ?? [])]);
+    return (snapshot?.eliminationRules ?? []).filter(
+      (rule) => rule.episodeId === episode.id || ids.has(rule.id)
+    );
+  }
+
+  function episodeScoringRules(
+    episode: EvolutionEpisode,
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+  ): EvolutionScoringRule[] {
+    const ids = new Set([...episode.scoringRuleIds, ...(pressure?.scoringRuleIds ?? [])]);
+    return (snapshot?.scoringRules ?? []).filter(
+      (rule) => rule.episodeId === episode.id || ids.has(rule.id)
+    );
+  }
+
   function episodeMaterializationTone(episode: EvolutionEpisode): StatusTone {
     const promotion = episodePromotion(episode);
-    if (promotion?.materializationFailed) return 'danger';
-    if (promotion?.materialized) return 'success';
+    if (promotion && promotionFailed(promotion)) return 'danger';
+    if (promotion && promotionHotLoaded(promotion)) return 'success';
     if (episode.status === 'Promoting' || promotion) return 'warning';
     return 'neutral';
   }
 
   function episodeMaterializationLabel(episode: EvolutionEpisode): string {
     const promotion = episodePromotion(episode);
-    if (promotion?.materializationFailed) return 'install failed';
-    if (promotion?.materialized) return 'hot-loaded';
+    if (promotion && promotionFailed(promotion)) return 'install failed';
+    if (promotion && promotionHotLoaded(promotion)) return 'hot-loaded';
     if (episode.status === 'Promoting' || promotion) return 'install pending';
     return 'no promotion';
   }
@@ -404,6 +468,7 @@
             <div class="min-w-0">
               <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-8">
                 <MetricTile label="Directions" value={activeDirections.length} />
+                <MetricTile label="Start Requests" value={snapshot?.episodeStartRequests.length ?? 0} />
                 <MetricTile label="Episodes" value={activeEpisodes.length} />
                 <MetricTile label="Variants" value={episodeVariants.length} />
                 <MetricTile label="Promotions" value={promotions.length} />
@@ -463,6 +528,10 @@
                 {stageResults}
                 {episodeVariants}
                 {constraints}
+                startRequest={selectedStartRequest}
+                metricDefinitions={metrics}
+                {eliminationRules}
+                {scoringRules}
                 {comparedVariantIds}
                 {actionBusy}
                 {shortId}

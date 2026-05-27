@@ -171,15 +171,14 @@
   function promotionTone(promotion: EvolutionPromotion | null): StatusTone {
     if (!promotion) return 'neutral';
     if (promotion.materializationFailed || promotion.status === 'Failed') return 'danger';
-    if (promotion.materialized || promotion.status === 'Promoted') return 'success';
+    if (promotion.materialized || promotion.runtimeRef) return 'success';
     return 'warning';
   }
 
   function promotionLabel(promotion: EvolutionPromotion | null): string {
     if (!promotion) return 'no promotion record';
     if (promotion.materializationFailed || promotion.status === 'Failed') return 'hot-load failed';
-    if (promotion.materialized) return 'hot-loaded';
-    if (promotion.status === 'Promoted') return 'promoted';
+    if (promotion.materialized || promotion.runtimeRef) return 'hot-loaded';
     return 'promotion pending';
   }
 

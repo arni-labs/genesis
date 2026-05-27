@@ -178,7 +178,7 @@ const blobs = [
   })
 ];
 
-const directedCollections: Record<string, EntityRow[]> = {
+const directedCollectionFixtures: Record<string, EntityRow[]> = {
   Organisms: [
     row('Organism', 'org-agent-answers', 'Active', {
       Name: 'Agent Answers',
@@ -271,6 +271,33 @@ const directedCollections: Record<string, EntityRow[]> = {
       AutonomyLane: 'repair-auto'
     })
   ],
+  EpisodeStartRequests: [
+    row('EpisodeStartRequest', 'request-citation-memory', 'Started', {
+      DirectionId: 'direction-citation-memory',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'growth-human-gated',
+      RequestedBy: 'brain-start',
+      AdaptationGoal: 'Follow-up answers keep a visible source trail.',
+      HumanNotes: 'Human approved this growth direction through chat.',
+      MetricsJson: JSON.stringify([
+        {
+          name: 'Source recall',
+          kind: 'simulated-user',
+          unit: 'score',
+          higher_is_better: true
+        }
+      ]),
+      EvaluationStagesJson: JSON.stringify(['Compile', 'AI User Trial']),
+      EliminationRulesJson: JSON.stringify(['Eliminate hidden citations']),
+      ScoringRulesJson: JSON.stringify(['Prefer source recall']),
+      SelectionStatement: 'Prefer variants that improve follow-up source recall without regressions.',
+      StartedBy: 'codex',
+      EpisodeId: 'episode-citation-memory',
+      Summary: 'Contract materialized into a running episode.',
+      HasContract: true
+    })
+  ],
   Episodes: [
     row('Episode', 'episode-citation-memory', 'Running', {
       DirectionId: 'direction-citation-memory',
@@ -281,6 +308,8 @@ const directedCollections: Record<string, EntityRow[]> = {
       SelectionPressureId: 'selection-citation-memory',
       ViabilityConstraintIdsJson: JSON.stringify(['constraint-correctness']),
       EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user']),
+      EliminationRuleIdsJson: JSON.stringify(['rule-visible-source-trail']),
+      ScoringRuleIdsJson: JSON.stringify(['score-source-recall']),
       PromotionId: 'promotion-citation-memory'
     }),
     row('Episode', 'episode-comparison-preview', 'Promoting', {
@@ -418,6 +447,22 @@ const directedCollections: Record<string, EntityRow[]> = {
       ScoringRuleIdsJson: JSON.stringify(['score-source-recall'])
     })
   ],
+  EliminationRules: [
+    row('EliminationRule', 'rule-visible-source-trail', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      RuleStatement: 'Eliminate hidden citations',
+      MetricIdsJson: JSON.stringify(['metric-source-recall']),
+      ThresholdJson: JSON.stringify({ min: 0.8 })
+    })
+  ],
+  ScoringRules: [
+    row('ScoringRule', 'score-source-recall', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      RuleStatement: 'Prefer source recall',
+      MetricIdsJson: JSON.stringify(['metric-source-recall']),
+      Weight: '0.7'
+    })
+  ],
   EvaluationStages: [
     row('EvaluationStage', 'stage-compile', 'Active', {
       EpisodeId: 'episode-citation-memory',
@@ -465,7 +510,9 @@ const directedCollections: Record<string, EntityRow[]> = {
       EpisodeId: 'episode-citation-memory',
       MetricName: 'Source recall',
       Unit: 'score',
-      DesiredDirection: 'higher'
+      DesiredDirection: 'higher',
+      HigherIsBetter: 'true',
+      Description: 'Simulated users can recover the answer source trail.'
     })
   ],
   Measurements: [
@@ -545,7 +592,18 @@ const directedCollections: Record<string, EntityRow[]> = {
   ]
 };
 
+function cloneDirectedCollections(): Record<string, EntityRow[]> {
+  return Object.fromEntries(
+    Object.entries(directedCollectionFixtures).map(([collection, rows]) => [
+      collection,
+      rows.map((item) => JSON.parse(JSON.stringify(item)) as EntityRow)
+    ])
+  );
+}
+
 async function mockOData(page: Page) {
+  const directedCollections = cloneDirectedCollections();
+
   await page.route('**/tdata/Apps', async (route) => {
     await route.fulfill({ json: { value: apps } });
   });
@@ -713,6 +771,12 @@ test('renders live Directed Evolution mission control and dispatches real contro
     page.getByText('Follow-up answers keep a visible source trail.', { exact: true }).first()
   ).toBeVisible();
   await expect(page.getByText('AI User Trial')).toBeVisible();
+  await expect(page.getByText('Start Request', { exact: true })).toBeVisible();
+  await expect(page.getByText('brain-start')).toBeVisible();
+  await expect(page.getByText('Metrics & Rules')).toBeVisible();
+  await expect(page.getByText('Source recall', { exact: true })).toBeVisible();
+  await expect(page.getByText('Eliminate hidden citations')).toBeVisible();
+  await expect(page.getByText('Weight 0.7')).toBeVisible();
   await expect(page.getByText('Generation Topology')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Generation 1' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Generation 2' })).toBeVisible();

@@ -15,10 +15,14 @@
   import type {
     EvolutionAdaptationGoal,
     EvolutionDirection,
+    EvolutionEliminationRule,
     EvolutionEpisode,
+    EvolutionEpisodeStartRequest,
     EvolutionEvaluationStage,
     EvolutionGeneration,
+    EvolutionMetricDefinition,
     EvolutionPromotion,
+    EvolutionScoringRule,
     EvolutionSelectionPressure,
     EvolutionStageResult,
     EvolutionVariant,
@@ -27,7 +31,9 @@
   import ConstraintCard from './ConstraintCard.svelte';
   import GenerationTopology from './GenerationTopology.svelte';
   import MetricTile from './MetricTile.svelte';
+  import MetricsRulesCard from './MetricsRulesCard.svelte';
   import PanelTitle from './PanelTitle.svelte';
+  import StartRequestCard from './StartRequestCard.svelte';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
@@ -42,6 +48,10 @@
     stageResults: EvolutionStageResult[];
     episodeVariants: EvolutionVariant[];
     constraints: EvolutionViabilityConstraint[];
+    startRequest: EvolutionEpisodeStartRequest | null;
+    metricDefinitions: EvolutionMetricDefinition[];
+    eliminationRules: EvolutionEliminationRule[];
+    scoringRules: EvolutionScoringRule[];
     comparedVariantIds: string[];
     actionBusy: string;
     shortId: (value: string, length?: number) => string;
@@ -65,6 +75,10 @@
     stageResults,
     episodeVariants,
     constraints,
+    startRequest,
+    metricDefinitions,
+    eliminationRules,
+    scoringRules,
     comparedVariantIds,
     actionBusy,
     shortId,
@@ -113,25 +127,25 @@
   }
 
   function promotionMaterializationTone(promotion: EvolutionPromotion): StatusTone {
-    if (promotion.materializationFailed) return 'danger';
-    if (promotion.materialized) return 'success';
+    if (promotion.materializationFailed || promotion.status === 'Failed') return 'danger';
+    if (promotion.materialized || promotion.runtimeRef) return 'success';
     return 'warning';
   }
 
   function promotionMaterializationLabel(promotion: EvolutionPromotion): string {
-    if (promotion.materializationFailed) return 'Materialization failed';
-    if (promotion.materialized) return 'Hot-loaded';
+    if (promotion.materializationFailed || promotion.status === 'Failed') return 'Materialization failed';
+    if (promotion.materialized || promotion.runtimeRef) return 'Hot-loaded';
     return 'Hot-load pending';
   }
 
   function promotionMaterializationNote(promotion: EvolutionPromotion): string {
-    if (promotion.materializationFailed) {
+    if (promotion.materializationFailed || promotion.status === 'Failed') {
       return (
         promotion.failureReason ||
         'The winner was selected, but the canonical app publish or production install failed.'
       );
     }
-    if (promotion.materialized) {
+    if (promotion.materialized || promotion.runtimeRef) {
       return 'The canonical app ref has been published and installed; the episode can be considered complete.';
     }
     return 'Winner selected. Promoter is publishing the canonical app ref and hot-loading it before episode completion.';
@@ -142,6 +156,7 @@
     if (isComplete) return 'border-[var(--color-border)] bg-white text-[var(--color-ink)]';
     return 'border-[var(--color-warning)]/30 bg-[rgba(214,166,0,0.10)] text-[#735900]';
   }
+
 </script>
 
 <div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
@@ -252,11 +267,11 @@
                   </span>
                 </div>
                 <div
-                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(selectedPromotion.materialized, selectedPromotion.materializationFailed)}`}
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(Boolean(selectedPromotion.materialized || selectedPromotion.runtimeRef), selectedPromotion.materializationFailed || selectedPromotion.status === 'Failed')}`}
                 >
-                  {#if selectedPromotion.materializationFailed}
+                  {#if selectedPromotion.materializationFailed || selectedPromotion.status === 'Failed'}
                     <AlertTriangle size={13} class="shrink-0" />
-                  {:else if selectedPromotion.materialized}
+                  {:else if selectedPromotion.materialized || selectedPromotion.runtimeRef}
                     <PackageCheck size={13} class="shrink-0" />
                   {:else}
                     <LoaderCircle size={13} class="shrink-0 animate-spin" />
@@ -285,6 +300,11 @@
             </div>
           {/if}
         </div>
+      </div>
+
+      <div class="grid gap-3 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)]">
+        <StartRequestCard {selectedEpisode} {startRequest} {shortId} {statusTone} />
+        <MetricsRulesCard {metricDefinitions} {eliminationRules} {scoringRules} {shortId} />
       </div>
 
       <GenerationTopology

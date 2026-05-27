@@ -11,7 +11,9 @@ import type {
   EvolutionAutonomyPolicy,
   EvolutionBrainRun,
   EvolutionDirection,
+  EvolutionEliminationRule,
   EvolutionEpisode,
+  EvolutionEpisodeStartRequest,
   EvolutionEvaluationStage,
   EvolutionEvidenceArtifact,
   EvolutionGeneration,
@@ -22,6 +24,7 @@ import type {
   EvolutionOrganismVersion,
   EvolutionPressure,
   EvolutionPromotion,
+  EvolutionScoringRule,
   EvolutionSelectionPressure,
   EvolutionSignal,
   EvolutionStageResult,
@@ -71,6 +74,7 @@ export async function loadDirectedEvolutionSnapshot(
     signals,
     pressures,
     directions,
+    episodeStartRequests,
     episodes,
     generations,
     variants,
@@ -78,6 +82,8 @@ export async function loadDirectedEvolutionSnapshot(
     adaptationGoals,
     viabilityConstraints,
     selectionPressures,
+    eliminationRules,
+    scoringRules,
     evaluationStages,
     stageResults,
     metricDefinitions,
@@ -94,6 +100,7 @@ export async function loadDirectedEvolutionSnapshot(
     loadDirectedCollection('Signals', normalizeSignal, tenantId),
     loadDirectedCollection('Pressures', normalizePressure, tenantId),
     loadDirectedCollection('Directions', normalizeDirection, tenantId),
+    loadDirectedCollection('EpisodeStartRequests', normalizeEpisodeStartRequest, tenantId),
     loadDirectedCollection('Episodes', normalizeEpisode, tenantId),
     loadDirectedCollection('Generations', normalizeGeneration, tenantId),
     loadDirectedCollection('Variants', normalizeVariant, tenantId),
@@ -101,6 +108,8 @@ export async function loadDirectedEvolutionSnapshot(
     loadDirectedCollection('AdaptationGoals', normalizeAdaptationGoal, tenantId),
     loadDirectedCollection('ViabilityConstraints', normalizeViabilityConstraint, tenantId),
     loadDirectedCollection('SelectionPressures', normalizeSelectionPressure, tenantId),
+    loadDirectedCollection('EliminationRules', normalizeEliminationRule, tenantId),
+    loadDirectedCollection('ScoringRules', normalizeScoringRule, tenantId),
     loadDirectedCollection('EvaluationStages', normalizeEvaluationStage, tenantId),
     loadDirectedCollection('StageResults', normalizeStageResult, tenantId),
     loadDirectedCollection('MetricDefinitions', normalizeMetricDefinition, tenantId),
@@ -119,6 +128,7 @@ export async function loadDirectedEvolutionSnapshot(
     signals: signals.value,
     pressures: pressures.value,
     directions: directions.value,
+    episodeStartRequests: episodeStartRequests.value,
     episodes: episodes.value,
     generations: generations.value,
     variants: variants.value,
@@ -126,6 +136,8 @@ export async function loadDirectedEvolutionSnapshot(
     adaptationGoals: adaptationGoals.value,
     viabilityConstraints: viabilityConstraints.value,
     selectionPressures: selectionPressures.value,
+    eliminationRules: eliminationRules.value,
+    scoringRules: scoringRules.value,
     evaluationStages: evaluationStages.value,
     stageResults: stageResults.value,
     metricDefinitions: metricDefinitions.value,
@@ -142,6 +154,7 @@ export async function loadDirectedEvolutionSnapshot(
       signals.warning,
       pressures.warning,
       directions.warning,
+      episodeStartRequests.warning,
       episodes.warning,
       generations.warning,
       variants.warning,
@@ -149,6 +162,8 @@ export async function loadDirectedEvolutionSnapshot(
       adaptationGoals.warning,
       viabilityConstraints.warning,
       selectionPressures.warning,
+      eliminationRules.warning,
+      scoringRules.warning,
       evaluationStages.warning,
       stageResults.warning,
       metricDefinitions.warning,
@@ -333,12 +348,50 @@ function normalizeEpisode(row: EntityRow): EvolutionEpisode {
     selectionPressureId: stringField(row, 'SelectionPressureId'),
     viabilityConstraintIds: parseJsonList(stringField(row, 'ViabilityConstraintIdsJson')),
     evaluationStageIds: parseJsonList(stringField(row, 'EvaluationStageIdsJson')),
+    eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
+    scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
     generationCount: numberField(row, 'generation_count', 'GenerationCount'),
+    startedBy: stringField(row, 'StartedBy'),
+    reason: stringField(row, 'Reason'),
     winningVariantId: stringField(row, 'WinningVariantId'),
     promotionId: stringField(row, 'PromotionId'),
     organismVersionId: stringField(row, 'OrganismVersionId'),
     selectionExplanation: stringField(row, 'SelectionExplanation'),
-    summary: stringField(row, 'Summary')
+    evidenceArtifactId: stringField(row, 'EvidenceArtifactId'),
+    summary: stringField(row, 'Summary'),
+    failureReason: stringField(row, 'FailureReason')
+  };
+}
+
+function normalizeEpisodeStartRequest(row: EntityRow): EvolutionEpisodeStartRequest {
+  const contractJson = stringField(row, 'ContractJson');
+  const status = stringField(row, 'Status') || 'Recorded';
+  return {
+    ...base(row),
+    status,
+    hasContract:
+      booleanField(row, 'has_contract', 'HasContract') ||
+      Boolean(contractJson) ||
+      status === 'Started',
+    directionId: stringField(row, 'DirectionId'),
+    organismId: stringField(row, 'OrganismId'),
+    parentVersionId: stringField(row, 'ParentVersionId'),
+    autonomyLane: stringField(row, 'AutonomyLane'),
+    requestedBy: stringField(row, 'RequestedBy'),
+    adaptationGoal: stringField(row, 'AdaptationGoal'),
+    humanNotes: stringField(row, 'HumanNotes'),
+    viabilityConstraints: parseJsonList(stringField(row, 'ViabilityConstraintsJson')),
+    metrics: parseJsonList(stringField(row, 'MetricsJson')),
+    evaluationStages: parseJsonList(stringField(row, 'EvaluationStagesJson')),
+    eliminationRules: parseJsonList(stringField(row, 'EliminationRulesJson')),
+    scoringRules: parseJsonList(stringField(row, 'ScoringRulesJson')),
+    selectionStatement: stringField(row, 'SelectionStatement'),
+    contractJson,
+    startedBy: stringField(row, 'StartedBy'),
+    reason: stringField(row, 'Reason'),
+    episodeId: stringField(row, 'EpisodeId'),
+    summary: stringField(row, 'Summary'),
+    evidenceArtifactId: stringField(row, 'EvidenceArtifactId')
   };
 }
 
@@ -430,6 +483,30 @@ function normalizeSelectionPressure(row: EntityRow): EvolutionSelectionPressure 
   };
 }
 
+function normalizeEliminationRule(row: EntityRow): EvolutionEliminationRule {
+  return {
+    ...base(row),
+    episodeId: stringField(row, 'EpisodeId'),
+    ruleStatement: stringField(row, 'RuleStatement'),
+    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    thresholdJson: stringField(row, 'ThresholdJson'),
+    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    reason: stringField(row, 'Reason')
+  };
+}
+
+function normalizeScoringRule(row: EntityRow): EvolutionScoringRule {
+  return {
+    ...base(row),
+    episodeId: stringField(row, 'EpisodeId'),
+    ruleStatement: stringField(row, 'RuleStatement'),
+    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    weight: stringField(row, 'Weight'),
+    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    reason: stringField(row, 'Reason')
+  };
+}
+
 function normalizeEvaluationStage(row: EntityRow): EvolutionEvaluationStage {
   return {
     ...base(row),
@@ -467,7 +544,9 @@ function normalizeMetricDefinition(row: EntityRow): EvolutionMetricDefinition {
     unit: stringField(row, 'Unit'),
     metricKind: stringField(row, 'MetricKind'),
     source: stringField(row, 'Source'),
-    desiredDirection: stringField(row, 'DesiredDirection')
+    desiredDirection: stringField(row, 'DesiredDirection'),
+    higherIsBetter: stringField(row, 'HigherIsBetter'),
+    description: stringField(row, 'Description')
   };
 }
 
