@@ -1,5 +1,16 @@
 <script lang="ts">
-  import { Eye, GitCompareArrows, Pause, Play, ShieldCheck, Square } from '@lucide/svelte';
+  import {
+    AlertTriangle,
+    CheckCircle2,
+    Eye,
+    GitCompareArrows,
+    LoaderCircle,
+    PackageCheck,
+    Pause,
+    Play,
+    ShieldCheck,
+    Square
+  } from '@lucide/svelte';
   import { Badge, Button } from '$lib/components/ui';
   import type {
     EvolutionAdaptationGoal,
@@ -96,6 +107,37 @@
     if (status === 'Running') return 'bg-[var(--color-secondary)]';
     return 'bg-[var(--color-faint)]';
   }
+
+  function promotionMaterializationTone(promotion: EvolutionPromotion): StatusTone {
+    if (promotion.materializationFailed) return 'danger';
+    if (promotion.materialized) return 'success';
+    return 'warning';
+  }
+
+  function promotionMaterializationLabel(promotion: EvolutionPromotion): string {
+    if (promotion.materializationFailed) return 'Materialization failed';
+    if (promotion.materialized) return 'Hot-loaded';
+    return 'Hot-load pending';
+  }
+
+  function promotionMaterializationNote(promotion: EvolutionPromotion): string {
+    if (promotion.materializationFailed) {
+      return (
+        promotion.failureReason ||
+        'The winner was selected, but the canonical app publish or production install failed.'
+      );
+    }
+    if (promotion.materialized) {
+      return 'The canonical app ref has been published and installed; the episode can be considered complete.';
+    }
+    return 'Winner selected. Promoter is publishing the canonical app ref and hot-loading it before episode completion.';
+  }
+
+  function materializationStepClass(isComplete: boolean, isFailed = false): string {
+    if (isFailed) return 'border-[var(--color-error)]/30 bg-[rgba(217,45,75,0.08)] text-[#7a1830]';
+    if (isComplete) return 'border-[var(--color-border)] bg-white text-[var(--color-ink)]';
+    return 'border-[var(--color-warning)]/30 bg-[rgba(214,166,0,0.10)] text-[#735900]';
+  }
 </script>
 
 <div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
@@ -177,15 +219,64 @@
                 <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
                   Promotion
                 </p>
-                <Badge tone={selectedPromotion.materialized ? 'success' : statusTone(selectedPromotion.status)}>
-                  {selectedPromotion.materialized ? 'Materialized' : selectedPromotion.status}
+                <Badge tone={promotionMaterializationTone(selectedPromotion)}>
+                  {promotionMaterializationLabel(selectedPromotion)}
                 </Badge>
               </div>
-              <p class="mt-1 truncate text-[11px] text-[var(--color-ink-soft)]">
+              <p class="mt-1 text-[11px] leading-snug text-[var(--color-ink-soft)]">
+                {promotionMaterializationNote(selectedPromotion)}
+              </p>
+              <div class="mt-2 grid gap-1.5">
+                <div
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(Boolean(selectedPromotion.winningVariantId || selectedEpisode.winningVariantId))}`}
+                >
+                  <CheckCircle2 size={13} class="shrink-0" />
+                  <span class="min-w-0 truncate">Winner selected: {shortId(selectedPromotion.winningVariantId || selectedEpisode.winningVariantId, 18)}</span>
+                </div>
+                <div
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(Boolean(selectedPromotion.canonicalAppRef), selectedPromotion.materializationFailed && !selectedPromotion.canonicalAppRef)}`}
+                >
+                  {#if selectedPromotion.materializationFailed && !selectedPromotion.canonicalAppRef}
+                    <AlertTriangle size={13} class="shrink-0" />
+                  {:else if selectedPromotion.canonicalAppRef}
+                    <PackageCheck size={13} class="shrink-0" />
+                  {:else}
+                    <LoaderCircle size={13} class="shrink-0 animate-spin" />
+                  {/if}
+                  <span class="min-w-0 truncate">
+                    Canonical ref: {selectedPromotion.canonicalAppRef || 'publish pending'}
+                  </span>
+                </div>
+                <div
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(selectedPromotion.materialized, selectedPromotion.materializationFailed)}`}
+                >
+                  {#if selectedPromotion.materializationFailed}
+                    <AlertTriangle size={13} class="shrink-0" />
+                  {:else if selectedPromotion.materialized}
+                    <PackageCheck size={13} class="shrink-0" />
+                  {:else}
+                    <LoaderCircle size={13} class="shrink-0 animate-spin" />
+                  {/if}
+                  <span class="min-w-0 truncate">
+                    Runtime: {selectedPromotion.runtimeRef || selectedPromotion.productionTenant || 'install pending'}
+                  </span>
+                </div>
+              </div>
+              <p class="mt-2 truncate text-[11px] text-[var(--color-ink-soft)]">
                 {selectedPromotion.canonicalAppRef || selectedPromotion.appRef || 'canonical app pending'}
               </p>
               <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]">
                 {selectedPromotion.runtimeRef || selectedPromotion.productionTenant || 'runtime pending'}
+              </p>
+            </div>
+          {:else if selectedEpisode.status === 'Promoting'}
+            <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-warning)]/30 bg-[rgba(214,166,0,0.10)] p-2 text-[#735900]">
+              <div class="flex items-center justify-between gap-2">
+                <p class="font-mono text-[10px] uppercase tracking-[0.10em]">Promotion</p>
+                <Badge tone="warning">Promoter pending</Badge>
+              </div>
+              <p class="mt-1 text-[11px] leading-snug">
+                Winner selected; the promotion row has not landed in the live read model yet.
               </p>
             </div>
           {/if}

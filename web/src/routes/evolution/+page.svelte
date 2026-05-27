@@ -54,6 +54,10 @@
   $: organismVersions = snapshot?.organismVersions ?? [];
   $: lineageEdges = snapshot?.lineageEdges ?? [];
   $: promotions = snapshot?.promotions ?? [];
+  $: pendingMaterializations = promotions.filter(
+    (promotion) => !promotion.materialized && !promotion.materializationFailed
+  );
+  $: failedMaterializations = promotions.filter((promotion) => promotion.materializationFailed);
   $: currentParentVersion = organism
     ? organismVersions.find((version) => version.id === (organism.organismVersionId || organism.parentVersionId)) ??
       null
@@ -183,7 +187,7 @@
     if (['Active', 'Running', 'Passed', 'Selected', 'Promoted', 'Completed', 'Succeeded', 'Parent'].includes(status)) {
       return 'success';
     }
-    if (['Queued', 'Draft', 'Negotiating', 'Planned', 'Generating', 'Evaluating', 'Selecting', 'Paused', 'Claimed'].includes(status)) {
+    if (['Queued', 'Draft', 'Negotiating', 'Planned', 'Generating', 'Evaluating', 'Selecting', 'Promoting', 'Paused', 'Claimed'].includes(status)) {
       return 'warning';
     }
     if (['Failed', 'Stopped', 'Eliminated', 'Dismissed', 'Cancelled'].includes(status)) {
@@ -193,6 +197,35 @@
       return 'primary';
     }
     return 'neutral';
+  }
+
+  function episodeDirection(episode: EvolutionEpisode): EvolutionDirection | null {
+    return activeDirections.find((direction) => direction.id === episode.directionId) ?? null;
+  }
+
+  function episodePromotion(episode: EvolutionEpisode) {
+    return (
+      promotions.find((promotion) => promotion.id === episode.promotionId) ??
+      promotions.find((promotion) => promotion.episodeId === episode.id) ??
+      promotions.find((promotion) => promotion.winningVariantId === episode.winningVariantId) ??
+      null
+    );
+  }
+
+  function episodeMaterializationTone(episode: EvolutionEpisode): StatusTone {
+    const promotion = episodePromotion(episode);
+    if (promotion?.materializationFailed) return 'danger';
+    if (promotion?.materialized) return 'success';
+    if (episode.status === 'Promoting' || promotion) return 'warning';
+    return 'neutral';
+  }
+
+  function episodeMaterializationLabel(episode: EvolutionEpisode): string {
+    const promotion = episodePromotion(episode);
+    if (promotion?.materializationFailed) return 'install failed';
+    if (promotion?.materialized) return 'hot-loaded';
+    if (episode.status === 'Promoting' || promotion) return 'install pending';
+    return 'no promotion';
   }
 
   function variantReason(variant: EvolutionVariant): string {
@@ -364,14 +397,55 @@
 
           <div class="grid gap-3 p-3 sm:p-4">
             <div class="min-w-0">
-              <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-8">
                 <MetricTile label="Directions" value={activeDirections.length} />
                 <MetricTile label="Episodes" value={activeEpisodes.length} />
                 <MetricTile label="Variants" value={episodeVariants.length} />
                 <MetricTile label="Promotions" value={promotions.length} />
                 <MetricTile label="Materialized" value={promotions.filter((item) => item.materialized).length} />
+                <MetricTile label="Materializing" value={pendingMaterializations.length} />
+                <MetricTile label="Failed Installs" value={failedMaterializations.length} />
                 <MetricTile label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
               </div>
+
+              {#if activeEpisodes.length > 1}
+                <div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
+                    <PanelTitle icon={GitCompareArrows} title="Episode Track" />
+                    <span class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                      {activeEpisodes.length} live records
+                    </span>
+                  </div>
+                  <div class="grid gap-2 lg:grid-cols-3">
+                    {#each activeEpisodes as episode (episode.id)}
+                      {@const direction = episodeDirection(episode)}
+                      <button
+                        type="button"
+                        aria-label={`Open episode ${direction?.title || shortId(episode.id)}`}
+                        class={`min-w-0 rounded-[var(--radius-sm)] border px-2.5 py-2 text-left transition-colors duration-[var(--duration-soft)] ${
+                          selectedEpisode?.id === episode.id
+                            ? 'border-[var(--color-primary)]/30 bg-white shadow-[var(--shadow-xs)]'
+                            : 'border-[var(--color-border-soft)] bg-white/70 hover:border-[var(--color-primary)]/24 hover:bg-white'
+                        }`}
+                        onclick={() => (selectedEpisodeId = episode.id)}
+                      >
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <Badge tone={statusTone(episode.status)}>{episode.status}</Badge>
+                          <Badge tone={episodeMaterializationTone(episode)}>
+                            {episodeMaterializationLabel(episode)}
+                          </Badge>
+                        </div>
+                        <p class="mt-1.5 truncate text-[12px] font-semibold tracking-tight text-[var(--color-ink)]">
+                          {direction?.title || episode.summary || shortId(episode.id)}
+                        </p>
+                        <p class="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                          {episode.autonomyLane || 'lane pending'} · {shortId(episode.id, 12)}
+                        </p>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
 
               <EvolutionEpisodePanel
                 {selectedEpisode}

@@ -251,6 +251,24 @@ const directedCollections: Record<string, EntityRow[]> = {
       ProposedAdaptationGoal: 'Follow-up answers keep a visible source trail.',
       ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness']),
       BrainRunId: 'brain-observer'
+    }),
+    row('Direction', 'direction-comparison-preview', 'Approved', {
+      OrganismId: 'org-agent-answers',
+      PressureIdsJson: JSON.stringify([]),
+      PressureClass: 'growth',
+      Title: 'Publish comparison winner',
+      Summary: 'Promote the comparison preview variant after selection.',
+      AutonomyLane: 'growth-human-gated',
+      ProposedAdaptationGoal: 'Humans can compare candidate answers before acceptance.',
+      ProposedViabilityConstraintsJson: JSON.stringify(['Keep answer latency bounded'])
+    }),
+    row('Direction', 'direction-broken-publish', 'Approved', {
+      OrganismId: 'org-agent-answers',
+      PressureIdsJson: JSON.stringify([]),
+      PressureClass: 'repair',
+      Title: 'Recover failed publish',
+      Summary: 'Show the operator when a selected winner fails canonical materialization.',
+      AutonomyLane: 'repair-auto'
     })
   ],
   Episodes: [
@@ -264,6 +282,23 @@ const directedCollections: Record<string, EntityRow[]> = {
       ViabilityConstraintIdsJson: JSON.stringify(['constraint-correctness']),
       EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user']),
       PromotionId: 'promotion-citation-memory'
+    }),
+    row('Episode', 'episode-comparison-preview', 'Promoting', {
+      DirectionId: 'direction-comparison-preview',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'growth-human-gated',
+      WinningVariantId: 'variant-comparison-preview',
+      PromotionId: 'promotion-comparison-preview'
+    }),
+    row('Episode', 'episode-broken-publish', 'Failed', {
+      DirectionId: 'direction-broken-publish',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'repair-auto',
+      WinningVariantId: 'variant-broken-publish',
+      PromotionId: 'promotion-broken-publish',
+      Summary: 'Promotion materialization failed.'
     })
   ],
   Generations: [
@@ -294,6 +329,19 @@ const directedCollections: Record<string, EntityRow[]> = {
       StageResultId: 'stage-result-b-user',
       EvidenceArtifactId: 'evidence-b-user',
       Reason: 'Simulated users still could not find the source trail.'
+    }),
+    row('Variant', 'variant-comparison-preview', 'Selected', {
+      EpisodeId: 'episode-comparison-preview',
+      AppRef: 'arni-labs/agent-answers@comparison-preview',
+      RuntimeRef: 'agent-answers-comparison.local',
+      Summary: 'Adds a candidate answer comparison preview',
+      PromotionId: 'promotion-comparison-preview'
+    }),
+    row('Variant', 'variant-broken-publish', 'Selected', {
+      EpisodeId: 'episode-broken-publish',
+      AppRef: 'arni-labs/agent-answers@broken-publish',
+      Summary: 'Selected repair winner with a broken publish handoff',
+      PromotionId: 'promotion-broken-publish'
     })
   ],
   Promotions: [
@@ -308,6 +356,28 @@ const directedCollections: Record<string, EntityRow[]> = {
       RuntimeRef: 'temper://tenant/default/app/arni-labs/agent-answers@citation-winner',
       Materialized: true,
       Summary: 'Published the winner and hot-loaded it into the production tenant.'
+    }),
+    row('Promotion', 'promotion-comparison-preview', 'Promoted', {
+      EpisodeId: 'episode-comparison-preview',
+      WinningVariantId: 'variant-comparison-preview',
+      ParentVersionId: 'ov-agent-answers-parent',
+      NewOrganismVersionId: 'ov-agent-answers-comparison-preview',
+      AppRef: 'arni-labs/agent-answers@comparison-preview',
+      CanonicalAppRef: 'arni-labs/agent-answers@comparison-preview-canonical',
+      ProductionTenant: 'default',
+      Materialized: false,
+      Summary: 'Winner selected and waiting for production install.'
+    }),
+    row('Promotion', 'promotion-broken-publish', 'Failed', {
+      EpisodeId: 'episode-broken-publish',
+      WinningVariantId: 'variant-broken-publish',
+      ParentVersionId: 'ov-agent-answers-parent',
+      NewOrganismVersionId: 'ov-agent-answers-broken-publish',
+      AppRef: 'arni-labs/agent-answers@broken-publish',
+      ProductionTenant: 'default',
+      Materialized: false,
+      MaterializationFailed: true,
+      FailureReason: 'Genesis publish rejected the app bundle digest.'
     })
   ],
   AdaptationGoals: [
@@ -640,8 +710,30 @@ test('renders live Directed Evolution mission control and dispatches real contro
     /app\.datadoghq\.com\/logs/
   );
   await expect(page.getByText('Materialized').first()).toBeVisible();
-  await expect(page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner')).toBeVisible();
+  await expect(page.getByText('Materializing')).toBeVisible();
+  await expect(page.getByText('Failed Installs')).toBeVisible();
+  await expect(page.getByText('Hot-loaded').first()).toBeVisible();
+  await expect(
+    page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner', {
+      exact: true
+    })
+  ).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
+
+  await page.getByRole('button', { name: /Open episode Publish comparison winner/ }).click();
+  await expect(page.getByText('Hot-load pending').first()).toBeVisible();
+  await expect(
+    page.getByText('Winner selected. Promoter is publishing the canonical app ref')
+  ).toBeVisible();
+  await expect(page.getByText('Canonical ref: arni-labs/agent-answers@comparison-preview-canonical')).toBeVisible();
+  await expect(page.getByText('Runtime: default')).toBeVisible();
+
+  await page.getByRole('button', { name: /Open episode Recover failed publish/ }).click();
+  await expect(page.getByText('Materialization failed').first()).toBeVisible();
+  await expect(page.getByText('Genesis publish rejected the app bundle digest.')).toBeVisible();
+  await expect(page.getByText('Runtime: default')).toBeVisible();
+
+  await page.getByRole('button', { name: /Open episode Answer citations that survive follow-up/ }).click();
 
   await page.getByRole('button', { name: 'Inspect' }).nth(1).click();
   await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
@@ -650,17 +742,17 @@ test('renders live Directed Evolution mission control and dispatches real contro
   );
 
   await page.getByRole('button', { name: 'Pause' }).click();
-  await expect(page.getByText('Paused')).toBeVisible();
+  await expect(page.getByText('Paused').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Pin' }).click({ force: true });
-  await expect(page.getByText('Pinned')).toBeVisible();
+  await expect(page.getByText('Pinned').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Compare' }).first().click();
   await expect(page.getByText('Variant Compare')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Adds a source memory panel' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Dismiss' }).click();
-  await expect(page.getByText('Dismissed')).toBeVisible();
+  await expect(page.getByText('Dismissed').first()).toBeVisible();
 
   expect(actionUrls.some((url) => url.includes('/Episodes') && url.includes('PauseEpisode'))).toBe(
     true
