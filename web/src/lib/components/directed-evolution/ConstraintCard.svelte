@@ -15,8 +15,8 @@
   let { constraint, busy, tone, onPin }: ConstraintCardProps = $props();
 </script>
 
-<div class="relative z-[2] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-2.5">
-  <div class="flex items-start justify-between gap-2">
+<div class="relative z-[2] min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-2.5">
+  <div class="flex flex-wrap items-start justify-between gap-2">
     <Badge {tone}>{constraint.status}</Badge>
     {#if constraint.status !== 'Pinned' && constraint.status !== 'Archived'}
       <Button size="xs" onclick={onPin} disabled={busy}>

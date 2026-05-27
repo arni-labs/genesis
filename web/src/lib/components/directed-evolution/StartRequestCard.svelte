@@ -16,7 +16,7 @@
   let { selectedEpisode, startRequest, shortId, statusTone }: Props = $props();
 </script>
 
-<div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+<div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
   <div class="flex items-center justify-between gap-2">
     <PanelTitle icon={ClipboardCheck} title="Start Request" />
     {#if startRequest}

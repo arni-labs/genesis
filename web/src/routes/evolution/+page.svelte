@@ -134,6 +134,9 @@
     : [];
   $: inspectedVariant =
     episodeVariants.find((variant) => variant.id === inspectedVariantId) ??
+    episodeVariants.find((variant) => variant.id === selectedEpisode?.winningVariantId) ??
+    episodeVariants.find((variant) => variant.status === 'Promoted' || variant.status === 'Selected') ??
+    episodeVariants.find((variant) => variant.status !== 'Eliminated' && variant.status !== 'Failed') ??
     episodeVariants.find((variant) => variant.status === 'Eliminated' || variant.status === 'Failed') ??
     episodeVariants[0] ??
     null;
@@ -437,7 +440,13 @@
               <Badge tone={loading ? 'warning' : 'neutral'} pixel={!loading}>
                 {loading ? 'Syncing' : 'Live state'}
               </Badge>
-              <Button size="icon" title="Refresh evolution state" onclick={() => void refreshAll()} disabled={loading}>
+              <Button
+                size="icon"
+                title="Refresh evolution state"
+                aria-label="Refresh evolution state"
+                onclick={() => void refreshAll()}
+                disabled={loading}
+              >
                 <RefreshCw size={13} class={loading ? 'animate-spin' : ''} />
               </Button>
             </div>
@@ -466,16 +475,16 @@
 
           <div class="grid gap-3 p-3 sm:p-4">
             <div class="min-w-0">
-              <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-8">
-                <MetricTile label="Directions" value={activeDirections.length} />
-                <MetricTile label="Start Requests" value={snapshot?.episodeStartRequests.length ?? 0} />
-                <MetricTile label="Episodes" value={activeEpisodes.length} />
-                <MetricTile label="Variants" value={episodeVariants.length} />
-                <MetricTile label="Promotions" value={promotions.length} />
-                <MetricTile label="Materialized" value={promotions.filter((item) => item.materialized).length} />
-                <MetricTile label="Materializing" value={pendingMaterializations.length} />
-                <MetricTile label="Failed Installs" value={failedMaterializations.length} />
-                <MetricTile label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-9">
+                <MetricTile compact label="Directions" value={activeDirections.length} />
+                <MetricTile compact label="Start Requests" value={snapshot?.episodeStartRequests.length ?? 0} />
+                <MetricTile compact label="Episodes" value={activeEpisodes.length} />
+                <MetricTile compact label="Variants" value={episodeVariants.length} />
+                <MetricTile compact label="Promotions" value={promotions.length} />
+                <MetricTile compact label="Materialized" value={promotions.filter((item) => item.materialized).length} />
+                <MetricTile compact label="Materializing" value={pendingMaterializations.length} />
+                <MetricTile compact label="Failed Installs" value={failedMaterializations.length} />
+                <MetricTile compact label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
               </div>
 
               {#if activeEpisodes.length > 1}

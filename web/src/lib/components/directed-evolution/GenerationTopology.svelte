@@ -111,7 +111,7 @@
   }
 </script>
 
-<section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+<section class="min-w-0 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <PanelTitle icon={GitBranch} title="Generation Topology" />
     <span class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
@@ -126,7 +126,7 @@
         {@const survivors = generationSurvivors(generation)}
         {@const winner = generationWinner(generation)}
         {@const followUp = followUpLabel(generation, index)}
-        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+        <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-1.5">
@@ -160,7 +160,7 @@
               {@const results = resultForVariant(variant)}
               {@const isWinner = winner?.id === variant.id || variant.status === 'Promoted'}
               <div
-                class={`min-w-0 rounded-[var(--radius-xs)] border bg-white px-2 py-2 ${
+                class={`min-w-0 overflow-hidden rounded-[var(--radius-xs)] border bg-white px-2 py-2 ${
                   isWinner
                     ? 'border-[var(--color-success)]/35 shadow-[inset_0_0_0_1px_rgba(40,150,90,0.12)]'
                     : 'border-[var(--color-border-soft)]'
