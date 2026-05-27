@@ -54,6 +54,10 @@
   $: organismVersions = snapshot?.organismVersions ?? [];
   $: lineageEdges = snapshot?.lineageEdges ?? [];
   $: promotions = snapshot?.promotions ?? [];
+  $: currentParentVersion = organism
+    ? organismVersions.find((version) => version.id === (organism.organismVersionId || organism.parentVersionId)) ??
+      null
+    : null;
   $: activeDirections = (snapshot?.directions ?? []).filter((direction) => direction.status !== 'Archived');
   $: activeEpisodes = snapshot?.episodes ?? [];
   $: selectedEpisode =
@@ -233,6 +237,49 @@
     return pressure?.summary || direction.summary;
   }
 
+  function directionPressures(direction: EvolutionDirection) {
+    return (snapshot?.pressures ?? []).filter(
+      (pressure) => pressure.directionId === direction.id || direction.pressureIds.includes(pressure.id)
+    );
+  }
+
+  function directionSignals(direction: EvolutionDirection) {
+    const pressures = directionPressures(direction);
+    const pressureIds = new Set(pressures.map((pressure) => pressure.id));
+    const signalIds = new Set(pressures.flatMap((pressure) => pressure.signalIds));
+    return (snapshot?.signals ?? []).filter(
+      (signal) => signalIds.has(signal.id) || pressureIds.has(signal.pressureId)
+    );
+  }
+
+  function directionEvidence(direction: EvolutionDirection) {
+    const pressures = directionPressures(direction);
+    const signals = directionSignals(direction);
+    const ids = new Set(
+      [
+        ...pressures.map((pressure) => pressure.evidenceArtifactId),
+        ...signals.map((signal) => signal.evidenceArtifactId)
+      ].filter(Boolean)
+    );
+    const targetPairs = new Set([
+      `Direction:${direction.id}`,
+      ...pressures.map((pressure) => `Pressure:${pressure.id}`),
+      ...signals.map((signal) => `Signal:${signal.id}`)
+    ]);
+    return (snapshot?.evidenceArtifacts ?? []).filter(
+      (artifact) =>
+        ids.has(artifact.id) || targetPairs.has(`${artifact.targetEntityType}:${artifact.targetEntityId}`)
+    );
+  }
+
+  function directionBrainRun(direction: EvolutionDirection) {
+    const pressures = directionPressures(direction);
+    const brainRunIds = [direction.brainRunId, ...pressures.map((pressure) => pressure.brainRunId)].filter(
+      Boolean
+    );
+    return (snapshot?.brainRuns ?? []).find((run) => brainRunIds.includes(run.id)) ?? null;
+  }
+
   function resolveDirectedEvolutionTenant(): string {
     if (!browser) return defaultDirectedEvolutionTenant;
     const params = new URLSearchParams(window.location.search);
@@ -363,6 +410,7 @@
 
             <EvolutionLineagePolicy
               {organism}
+              {currentParentVersion}
               {organismVersions}
               {lineageEdges}
               {activePolicy}
@@ -400,6 +448,10 @@
 
       <EvolutionSideRail
         {activeDirections}
+        signals={snapshot?.signals ?? []}
+        pressures={snapshot?.pressures ?? []}
+        evidenceArtifacts={snapshot?.evidenceArtifacts ?? []}
+        brainRuns={snapshot?.brainRuns ?? []}
         {inspectedVariant}
         {recentWorkItems}
         {recentBrainRuns}
@@ -408,6 +460,10 @@
         {statusTone}
         {jsonEntries}
         {directionPressureSummary}
+        {directionPressures}
+        {directionSignals}
+        {directionEvidence}
+        {directionBrainRun}
         {variantMeasurements}
         {variantEvidence}
         {variantReason}

@@ -184,6 +184,9 @@ const directedCollections: Record<string, EntityRow[]> = {
       Name: 'Agent Answers',
       AppRef: `arni-labs/agent-answers@${childHash}`,
       ParentVersionId: 'ov-agent-answers-parent',
+      OrganismVersionId: 'ov-agent-answers-parent',
+      PromotionId: 'promotion-citation-memory',
+      Summary: 'Current parent is aligned to the promoted app ref.',
       BaselineEvaluationJson: JSON.stringify(['compile', 'simulated-user'])
     })
   ],
@@ -217,6 +220,7 @@ const directedCollections: Record<string, EntityRow[]> = {
       SignalKind: 'unmet_intent',
       OrganismId: 'org-agent-answers',
       Summary: 'User agent could not preserve source context after a follow-up question.',
+      EvidenceArtifactId: 'evidence-signal-citation',
       PressureId: 'pressure-citation'
     })
   ],
@@ -226,6 +230,7 @@ const directedCollections: Record<string, EntityRow[]> = {
       PressureClass: 'growth',
       Summary: 'Follow-up answers need durable citation memory.',
       SignalIdsJson: JSON.stringify(['sig-unmet-citation']),
+      EvidenceArtifactId: 'evidence-signal-citation',
       DirectionId: 'direction-citation-memory',
       BrainRunId: 'brain-observer'
     })
@@ -244,7 +249,8 @@ const directedCollections: Record<string, EntityRow[]> = {
       }),
       AutonomyLane: 'growth-human-gated',
       ProposedAdaptationGoal: 'Follow-up answers keep a visible source trail.',
-      ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness'])
+      ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness']),
+      BrainRunId: 'brain-observer'
     })
   ],
   Episodes: [
@@ -387,6 +393,13 @@ const directedCollections: Record<string, EntityRow[]> = {
     })
   ],
   EvidenceArtifacts: [
+    row('EvidenceArtifact', 'evidence-signal-citation', 'Linked', {
+      ArtifactKind: 'datadog_signal',
+      Uri: 'https://app.datadoghq.com/logs?query=service%3Aagent-answers%20source-context',
+      Summary: 'Datadog and simulated-user evidence showed repeated source-context loss.',
+      TargetEntityType: 'Signal',
+      TargetEntityId: 'sig-unmet-citation'
+    }),
     row('EvidenceArtifact', 'evidence-b-user', 'Linked', {
       ArtifactKind: 'simulated_user_trace',
       Uri: 'https://app.datadoghq.com/logs?query=service%3Atemperpaw%20variant-hidden-citations',
@@ -616,13 +629,22 @@ test('renders live Directed Evolution mission control and dispatches real contro
   ).toBeVisible();
   await expect(page.getByText('AI User Trial')).toBeVisible();
   await expect(page.getByText('Simulated users still could not find the source trail.')).toBeVisible();
-  await expect(page.getByText('repair_lane')).toBeVisible();
+  await expect(page.getByText('repair_lane').first()).toBeVisible();
+  await expect(page.getByText('human gate').first()).toBeVisible();
+  await expect(page.getByText('Ref Aligned')).toBeVisible();
+  await expect(page.getByText('Follow-up answers need durable citation memory.').first()).toBeVisible();
+  await expect(page.getByText('User agent could not preserve source context')).toBeVisible();
+  await expect(page.getByText('Observed unmet follow-up citation intent.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Datadog and simulated-user evidence/ })).toHaveAttribute(
+    'href',
+    /app\.datadoghq\.com\/logs/
+  );
   await expect(page.getByText('Materialized').first()).toBeVisible();
   await expect(page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner')).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
 
   await page.getByRole('button', { name: 'Inspect' }).nth(1).click();
-  await expect(page.getByRole('link', { name: 'Datadog' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
     'href',
     /app\.datadoghq\.com\/logs/
   );

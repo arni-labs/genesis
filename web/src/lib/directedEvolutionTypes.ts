@@ -10,6 +10,9 @@ export type EvolutionOrganism = EntityBase & {
   name: string;
   appRef: string;
   parentVersionId: string;
+  organismVersionId: string;
+  promotionId: string;
+  summary: string;
   baselineEvaluation: string;
 };
 

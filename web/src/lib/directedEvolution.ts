@@ -238,11 +238,16 @@ function base(row: EntityRow): EntityBase {
 }
 
 function normalizeOrganism(row: EntityRow): EvolutionOrganism {
+  const parentVersionId = stringField(row, 'ParentVersionId');
+  const organismVersionId = stringField(row, 'OrganismVersionId');
   return {
     ...base(row),
     name: stringField(row, 'Name'),
     appRef: stringField(row, 'AppRef'),
-    parentVersionId: stringField(row, 'ParentVersionId'),
+    parentVersionId,
+    organismVersionId: organismVersionId || parentVersionId,
+    promotionId: stringField(row, 'PromotionId'),
+    summary: stringField(row, 'Summary'),
     baselineEvaluation: stringField(row, 'BaselineEvaluationJson')
   };
 }

@@ -22,6 +22,8 @@ Genesis will host Mission Control for Directed Evolution. Mission Control reads
 live Directed Evolution control-plane entities and renders:
 
 - direction queue and direction provenance
+- live pressure, signal, evidence, and brain-run basis for each direction
+- current organism parent-ref alignment
 - active autonomy lanes
 - episode progress
 - generation and variant brackets
@@ -81,6 +83,9 @@ marketing copy or explanatory filler.
 - Component tests cover empty, active, eliminated, selected, promoted, and
   failed episode states.
 - Browser verification covers desktop and mobile Mission Control views.
+- Mission Control shows the human-gated or automated autonomy lane for each
+  direction, and expands the direction basis into live signal, pressure,
+  evidence, and brain-run records.
 - The local e2e proof starts from Agent Answers, runs an episode, and shows the
   resulting direction, variants, eliminations, selection, promotion, and
   lineage in Mission Control.
