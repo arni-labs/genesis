@@ -29,16 +29,21 @@ type CollectionName =
 type Principal = {
   id?: string;
   kind?: string;
+  agentType?: string;
 };
 
 function apiPath(path: string): string {
   return `${API_BASE}${path}`;
 }
 
-function baseHeaders(principal: Principal = {}, withBody = false): HeadersInit {
+function baseHeaders(
+  principal: Principal = {},
+  withBody = false,
+  tenantId = TENANT_ID
+): HeadersInit {
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    'X-Tenant-Id': TENANT_ID
+    'X-Tenant-Id': tenantId
   };
   if (withBody) {
     headers['Content-Type'] = 'application/json';
@@ -48,6 +53,10 @@ function baseHeaders(principal: Principal = {}, withBody = false): HeadersInit {
   }
   if (principal.kind) {
     headers['X-Temper-Principal-Kind'] = principal.kind;
+  }
+  if (principal.agentType) {
+    headers['X-Temper-Agent-Type'] = principal.agentType;
+    headers['X-Agent-Id'] = principal.id ?? principal.agentType;
   }
   return headers;
 }
@@ -74,12 +83,13 @@ async function responseError(response: Response): Promise<Error> {
 async function requestJson<T>(
   path: string,
   init: RequestInit = {},
-  principal: Principal = {}
+  principal: Principal = {},
+  tenantId = TENANT_ID
 ): Promise<T> {
   const response = await fetch(apiPath(path), {
     ...init,
     headers: {
-      ...baseHeaders(principal, init.body !== undefined),
+      ...baseHeaders(principal, init.body !== undefined, tenantId),
       ...(init.headers ?? {})
     }
   });
@@ -95,10 +105,16 @@ async function listCollection(collection: CollectionName, query = ''): Promise<E
 
 export async function listEntityCollection(
   collection: string,
-  query = ''
+  query = '',
+  tenantId = TENANT_ID
 ): Promise<EntityRow[]> {
   const suffix = query ? `?${query}` : '';
-  const body = await requestJson<{ value?: EntityRow[] }>(`/tdata/${collection}${suffix}`);
+  const body = await requestJson<{ value?: EntityRow[] }>(
+    `/tdata/${collection}${suffix}`,
+    {},
+    {},
+    tenantId
+  );
   return Array.isArray(body.value) ? body.value : [];
 }
 
@@ -108,7 +124,8 @@ export async function postEntityAction(
   namespace: string,
   action: string,
   body: Record<string, unknown>,
-  principal: Principal = { id: 'genesis-mission-control', kind: 'agent' }
+  principal: Principal = { id: 'genesis-mission-control', kind: 'agent', agentType: 'human' },
+  tenantId = TENANT_ID
 ): Promise<EntityRow> {
   const escapedId = id.replace(/'/g, "''");
   return requestJson<EntityRow>(
@@ -117,7 +134,8 @@ export async function postEntityAction(
       method: 'POST',
       body: JSON.stringify(body)
     },
-    principal
+    principal,
+    tenantId
   );
 }
 

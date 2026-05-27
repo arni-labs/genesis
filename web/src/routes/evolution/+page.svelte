@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { onDestroy, onMount } from 'svelte';
   import {
     AlertCircle,
@@ -25,8 +26,12 @@
     stopEpisode,
     type DirectedEvolutionSnapshot,
     type EvolutionDirection,
+    type EvolutionEliminationRule,
     type EvolutionEpisode,
+    type EvolutionEpisodeStartRequest,
     type EvolutionEvidenceArtifact,
+    type EvolutionMetricDefinition,
+    type EvolutionScoringRule,
     type EvolutionVariant
   } from '$lib/directedEvolution';
 
@@ -40,12 +45,27 @@
   let inspectedVariantId = '';
   let comparedVariantIds: string[] = [];
   let refreshTimer: number | undefined;
+  const defaultDirectedEvolutionTenant =
+    import.meta.env.VITE_DIRECTED_EVOLUTION_TENANT_ID ??
+    import.meta.env.VITE_TEMPER_TENANT_ID ??
+    'default';
+  let directedEvolutionTenantId = defaultDirectedEvolutionTenant;
 
   $: registryState = $registryStore;
   $: registrySnapshot = registryState.snapshot;
   $: organisms = snapshot?.organisms ?? [];
   $: organism = organisms.find((item) => item.status === 'Active') ?? organisms[0] ?? null;
   $: organismVersions = snapshot?.organismVersions ?? [];
+  $: lineageEdges = snapshot?.lineageEdges ?? [];
+  $: promotions = snapshot?.promotions ?? [];
+  $: pendingMaterializations = promotions.filter(
+    (promotion) => !promotionHotLoaded(promotion) && !promotionFailed(promotion)
+  );
+  $: failedMaterializations = promotions.filter((promotion) => promotionFailed(promotion));
+  $: currentParentVersion = organism
+    ? organismVersions.find((version) => version.id === (organism.organismVersionId || organism.parentVersionId)) ??
+      null
+    : null;
   $: activeDirections = (snapshot?.directions ?? []).filter((direction) => direction.status !== 'Archived');
   $: activeEpisodes = snapshot?.episodes ?? [];
   $: selectedEpisode =
@@ -56,6 +76,13 @@
   $: selectedDirection = selectedEpisode
     ? activeDirections.find((direction) => direction.id === selectedEpisode.directionId) ?? null
     : null;
+  $: selectedPromotion = selectedEpisode
+    ? promotions.find((promotion) => promotion.id === selectedEpisode.promotionId) ??
+      promotions.find((promotion) => promotion.episodeId === selectedEpisode.id) ??
+      promotions.find((promotion) => promotion.winningVariantId === selectedEpisode.winningVariantId) ??
+      null
+    : null;
+  $: selectedStartRequest = selectedEpisode ? episodeStartRequest(selectedEpisode) : null;
   $: currentGoal = selectedEpisode
     ? snapshot?.adaptationGoals.find((goal) => goal.id === selectedEpisode.adaptationGoalId) ?? null
     : null;
@@ -65,6 +92,11 @@
     : null;
   $: episodeVariants = selectedEpisode
     ? (snapshot?.variants ?? []).filter((variant) => variant.episodeId === selectedEpisode.id)
+    : [];
+  $: episodeGenerations = selectedEpisode
+    ? (snapshot?.generations ?? [])
+        .filter((generation) => generation.episodeId === selectedEpisode.id)
+        .sort((a, b) => a.generationIndex - b.generationIndex)
     : [];
   $: activePolicy =
     (snapshot?.autonomyPolicies ?? []).find(
@@ -88,6 +120,15 @@
         )
         .sort((a, b) => a.sequenceIndex - b.sequenceIndex)
     : [];
+  $: metrics = selectedEpisode
+    ? episodeMetrics(selectedEpisode, currentSelectionPressure)
+    : [];
+  $: eliminationRules = selectedEpisode
+    ? episodeEliminationRules(selectedEpisode, currentSelectionPressure)
+    : [];
+  $: scoringRules = selectedEpisode
+    ? episodeScoringRules(selectedEpisode, currentSelectionPressure)
+    : [];
   $: stageResults = selectedEpisode
     ? (snapshot?.stageResults ?? []).filter((result) => result.episodeId === selectedEpisode.id)
     : [];
@@ -106,6 +147,7 @@
   const terminalEpisodeStatuses = new Set(['Completed', 'Stopped', 'Failed']);
 
   onMount(() => {
+    directedEvolutionTenantId = resolveDirectedEvolutionTenant();
     void loadRegistry();
     void loadEvolution();
     refreshTimer = window.setInterval(() => void loadEvolution(), 12_000);
@@ -126,7 +168,7 @@
     loading = true;
     error = '';
     try {
-      snapshot = await loadDirectedEvolutionSnapshot();
+      snapshot = await loadDirectedEvolutionSnapshot(directedEvolutionTenantId);
     } catch (loadError) {
       error = loadError instanceof Error ? loadError.message : String(loadError);
     } finally {
@@ -164,7 +206,7 @@
     if (['Active', 'Running', 'Passed', 'Selected', 'Promoted', 'Completed', 'Succeeded', 'Parent'].includes(status)) {
       return 'success';
     }
-    if (['Queued', 'Draft', 'Negotiating', 'Planned', 'Generating', 'Evaluating', 'Selecting', 'Paused', 'Claimed'].includes(status)) {
+    if (['Queued', 'Draft', 'Negotiating', 'Planned', 'Generating', 'Evaluating', 'Selecting', 'Promoting', 'Paused', 'Claimed'].includes(status)) {
       return 'warning';
     }
     if (['Failed', 'Stopped', 'Eliminated', 'Dismissed', 'Cancelled'].includes(status)) {
@@ -174,6 +216,85 @@
       return 'primary';
     }
     return 'neutral';
+  }
+
+  function episodeDirection(episode: EvolutionEpisode): EvolutionDirection | null {
+    return activeDirections.find((direction) => direction.id === episode.directionId) ?? null;
+  }
+
+  function episodePromotion(episode: EvolutionEpisode) {
+    return (
+      promotions.find((promotion) => promotion.id === episode.promotionId) ??
+      promotions.find((promotion) => promotion.episodeId === episode.id) ??
+      promotions.find((promotion) => promotion.winningVariantId === episode.winningVariantId) ??
+      null
+    );
+  }
+
+  function promotionHotLoaded(promotion: { materialized: boolean; runtimeRef: string }): boolean {
+    return promotion.materialized || Boolean(promotion.runtimeRef);
+  }
+
+  function promotionFailed(promotion: { materializationFailed: boolean; status: string }): boolean {
+    return promotion.materializationFailed || promotion.status === 'Failed';
+  }
+
+  function episodeStartRequest(episode: EvolutionEpisode): EvolutionEpisodeStartRequest | null {
+    return (
+      (snapshot?.episodeStartRequests ?? []).find((request) => request.episodeId === episode.id) ??
+      (snapshot?.episodeStartRequests ?? []).find(
+        (request) => request.directionId === episode.directionId && request.organismId === episode.organismId
+      ) ??
+      null
+    );
+  }
+
+  function episodeMetrics(
+    episode: EvolutionEpisode,
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+  ): EvolutionMetricDefinition[] {
+    const ids = new Set([...(pressure?.metricIds ?? [])]);
+    const directMatches = (snapshot?.metricDefinitions ?? []).filter(
+      (metric) => metric.episodeId === episode.id || ids.has(metric.id)
+    );
+    if (directMatches.length) return directMatches;
+    return (snapshot?.metricDefinitions ?? []).filter((metric) => metric.status !== 'Archived');
+  }
+
+  function episodeEliminationRules(
+    episode: EvolutionEpisode,
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+  ): EvolutionEliminationRule[] {
+    const ids = new Set([...episode.eliminationRuleIds, ...(pressure?.eliminationRuleIds ?? [])]);
+    return (snapshot?.eliminationRules ?? []).filter(
+      (rule) => rule.episodeId === episode.id || ids.has(rule.id)
+    );
+  }
+
+  function episodeScoringRules(
+    episode: EvolutionEpisode,
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+  ): EvolutionScoringRule[] {
+    const ids = new Set([...episode.scoringRuleIds, ...(pressure?.scoringRuleIds ?? [])]);
+    return (snapshot?.scoringRules ?? []).filter(
+      (rule) => rule.episodeId === episode.id || ids.has(rule.id)
+    );
+  }
+
+  function episodeMaterializationTone(episode: EvolutionEpisode): StatusTone {
+    const promotion = episodePromotion(episode);
+    if (promotion && promotionFailed(promotion)) return 'danger';
+    if (promotion && promotionHotLoaded(promotion)) return 'success';
+    if (episode.status === 'Promoting' || promotion) return 'warning';
+    return 'neutral';
+  }
+
+  function episodeMaterializationLabel(episode: EvolutionEpisode): string {
+    const promotion = episodePromotion(episode);
+    if (promotion && promotionFailed(promotion)) return 'install failed';
+    if (promotion && promotionHotLoaded(promotion)) return 'hot-loaded';
+    if (episode.status === 'Promoting' || promotion) return 'install pending';
+    return 'no promotion';
   }
 
   function variantReason(variant: EvolutionVariant): string {
@@ -218,6 +339,63 @@
     return pressure?.summary || direction.summary;
   }
 
+  function directionPressures(direction: EvolutionDirection) {
+    return (snapshot?.pressures ?? []).filter(
+      (pressure) => pressure.directionId === direction.id || direction.pressureIds.includes(pressure.id)
+    );
+  }
+
+  function directionSignals(direction: EvolutionDirection) {
+    const pressures = directionPressures(direction);
+    const pressureIds = new Set(pressures.map((pressure) => pressure.id));
+    const signalIds = new Set(pressures.flatMap((pressure) => pressure.signalIds));
+    return (snapshot?.signals ?? []).filter(
+      (signal) => signalIds.has(signal.id) || pressureIds.has(signal.pressureId)
+    );
+  }
+
+  function directionEvidence(direction: EvolutionDirection) {
+    const pressures = directionPressures(direction);
+    const signals = directionSignals(direction);
+    const ids = new Set(
+      [
+        ...pressures.map((pressure) => pressure.evidenceArtifactId),
+        ...signals.map((signal) => signal.evidenceArtifactId)
+      ].filter(Boolean)
+    );
+    const targetPairs = new Set([
+      `Direction:${direction.id}`,
+      ...pressures.map((pressure) => `Pressure:${pressure.id}`),
+      ...signals.map((signal) => `Signal:${signal.id}`)
+    ]);
+    return (snapshot?.evidenceArtifacts ?? []).filter(
+      (artifact) =>
+        ids.has(artifact.id) || targetPairs.has(`${artifact.targetEntityType}:${artifact.targetEntityId}`)
+    );
+  }
+
+  function directionBrainRun(direction: EvolutionDirection) {
+    const pressures = directionPressures(direction);
+    const brainRunIds = [direction.brainRunId, ...pressures.map((pressure) => pressure.brainRunId)].filter(
+      Boolean
+    );
+    return (snapshot?.brainRuns ?? []).find((run) => brainRunIds.includes(run.id)) ?? null;
+  }
+
+  function resolveDirectedEvolutionTenant(): string {
+    if (!browser) return defaultDirectedEvolutionTenant;
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('tenant')?.trim();
+    if (fromUrl) {
+      window.localStorage.setItem('genesis-directed-evolution-tenant', fromUrl);
+      return fromUrl;
+    }
+    return (
+      window.localStorage.getItem('genesis-directed-evolution-tenant')?.trim() ||
+      defaultDirectedEvolutionTenant
+    );
+  }
+
 </script>
 
 <svelte:head>
@@ -250,6 +428,9 @@
               <p class="mt-1 max-w-[78ch] text-[12.5px] leading-relaxed text-[var(--color-muted)]">
                 {organism?.appRef ||
                   'Install and activate the Directed Evolution app to stream live organism, episode, variant, and evidence state here.'}
+              </p>
+              <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                Tenant {directedEvolutionTenantId}
               </p>
             </div>
             <div class="flex items-center gap-1.5">
@@ -285,34 +466,92 @@
 
           <div class="grid gap-3 p-3 sm:p-4">
             <div class="min-w-0">
-              <div class="grid gap-2 sm:grid-cols-4">
+              <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-8">
                 <MetricTile label="Directions" value={activeDirections.length} />
+                <MetricTile label="Start Requests" value={snapshot?.episodeStartRequests.length ?? 0} />
                 <MetricTile label="Episodes" value={activeEpisodes.length} />
                 <MetricTile label="Variants" value={episodeVariants.length} />
+                <MetricTile label="Promotions" value={promotions.length} />
+                <MetricTile label="Materialized" value={promotions.filter((item) => item.materialized).length} />
+                <MetricTile label="Materializing" value={pendingMaterializations.length} />
+                <MetricTile label="Failed Installs" value={failedMaterializations.length} />
                 <MetricTile label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
               </div>
+
+              {#if activeEpisodes.length > 1}
+                <div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
+                    <PanelTitle icon={GitCompareArrows} title="Episode Track" />
+                    <span class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                      {activeEpisodes.length} live records
+                    </span>
+                  </div>
+                  <div class="grid gap-2 lg:grid-cols-3">
+                    {#each activeEpisodes as episode (episode.id)}
+                      {@const direction = episodeDirection(episode)}
+                      <button
+                        type="button"
+                        aria-label={`Open episode ${direction?.title || shortId(episode.id)}`}
+                        class={`min-w-0 rounded-[var(--radius-sm)] border px-2.5 py-2 text-left transition-colors duration-[var(--duration-soft)] ${
+                          selectedEpisode?.id === episode.id
+                            ? 'border-[var(--color-primary)]/30 bg-white shadow-[var(--shadow-xs)]'
+                            : 'border-[var(--color-border-soft)] bg-white/70 hover:border-[var(--color-primary)]/24 hover:bg-white'
+                        }`}
+                        onclick={() => (selectedEpisodeId = episode.id)}
+                      >
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <Badge tone={statusTone(episode.status)}>{episode.status}</Badge>
+                          <Badge tone={episodeMaterializationTone(episode)}>
+                            {episodeMaterializationLabel(episode)}
+                          </Badge>
+                        </div>
+                        <p class="mt-1.5 truncate text-[12px] font-semibold tracking-tight text-[var(--color-ink)]">
+                          {direction?.title || episode.summary || shortId(episode.id)}
+                        </p>
+                        <p class="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                          {episode.autonomyLane || 'lane pending'} · {shortId(episode.id, 12)}
+                        </p>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
 
               <EvolutionEpisodePanel
                 {selectedEpisode}
                 {selectedDirection}
+                selectedPromotion={selectedPromotion}
                 {currentGoal}
                 {currentSelectionPressure}
+                generations={episodeGenerations}
                 {stages}
                 {stageResults}
                 {episodeVariants}
                 {constraints}
+                startRequest={selectedStartRequest}
+                metricDefinitions={metrics}
+                {eliminationRules}
+                {scoringRules}
                 {comparedVariantIds}
                 {actionBusy}
                 {shortId}
                 {statusTone}
                 onPauseEpisode={(episode) =>
-                  void runControl(`pause-${episode.id}`, () => pauseEpisode(episode.id))}
+                  void runControl(`pause-${episode.id}`, () =>
+                    pauseEpisode(episode.id, 'Paused from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onResumeEpisode={(episode) =>
-                  void runControl(`resume-${episode.id}`, () => resumeEpisode(episode.id))}
+                  void runControl(`resume-${episode.id}`, () =>
+                    resumeEpisode(episode.id, 'Resumed from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onStopEpisode={(episode) =>
-                  void runControl(`stop-${episode.id}`, () => stopEpisode(episode.id))}
+                  void runControl(`stop-${episode.id}`, () =>
+                    stopEpisode(episode.id, 'Stopped from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onPinConstraint={(constraint) =>
-                  void runControl(`pin-${constraint.id}`, () => pinViabilityConstraint(constraint.id))}
+                  void runControl(`pin-${constraint.id}`, () =>
+                    pinViabilityConstraint(constraint.id, 'Pinned from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onInspectVariant={(id) => (inspectedVariantId = id)}
                 onToggleCompare={toggleCompare}
               />
@@ -320,7 +559,13 @@
 
             <EvolutionLineagePolicy
               {organism}
+              {currentParentVersion}
               {organismVersions}
+              {lineageEdges}
+              episodes={activeEpisodes}
+              directions={activeDirections}
+              {promotions}
+              variants={snapshot?.variants ?? []}
               {activePolicy}
               {shortId}
               {statusTone}
@@ -356,6 +601,10 @@
 
       <EvolutionSideRail
         {activeDirections}
+        signals={snapshot?.signals ?? []}
+        pressures={snapshot?.pressures ?? []}
+        evidenceArtifacts={snapshot?.evidenceArtifacts ?? []}
+        brainRuns={snapshot?.brainRuns ?? []}
         {inspectedVariant}
         {recentWorkItems}
         {recentBrainRuns}
@@ -364,11 +613,17 @@
         {statusTone}
         {jsonEntries}
         {directionPressureSummary}
+        {directionPressures}
+        {directionSignals}
+        {directionEvidence}
+        {directionBrainRun}
         {variantMeasurements}
         {variantEvidence}
         {variantReason}
         onDismissDirection={(direction) =>
-          void runControl(`dismiss-${direction.id}`, () => dismissDirection(direction.id))}
+          void runControl(`dismiss-${direction.id}`, () =>
+            dismissDirection(direction.id, 'Dismissed from Genesis Mission Control', directedEvolutionTenantId)
+          )}
       />
     </div>
   </section>

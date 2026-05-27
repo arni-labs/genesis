@@ -1,31 +1,57 @@
 <script lang="ts">
-  import { Eye, GitCompareArrows, Pause, Play, ShieldCheck, Square } from '@lucide/svelte';
+  import {
+    AlertTriangle,
+    CheckCircle2,
+    Eye,
+    GitCompareArrows,
+    LoaderCircle,
+    PackageCheck,
+    Pause,
+    Play,
+    ShieldCheck,
+    Square
+  } from '@lucide/svelte';
   import { Badge, Button } from '$lib/components/ui';
   import type {
     EvolutionAdaptationGoal,
     EvolutionDirection,
+    EvolutionEliminationRule,
     EvolutionEpisode,
+    EvolutionEpisodeStartRequest,
     EvolutionEvaluationStage,
+    EvolutionGeneration,
+    EvolutionMetricDefinition,
+    EvolutionPromotion,
+    EvolutionScoringRule,
     EvolutionSelectionPressure,
     EvolutionStageResult,
     EvolutionVariant,
     EvolutionViabilityConstraint
   } from '$lib/directedEvolution';
   import ConstraintCard from './ConstraintCard.svelte';
+  import GenerationTopology from './GenerationTopology.svelte';
   import MetricTile from './MetricTile.svelte';
+  import MetricsRulesCard from './MetricsRulesCard.svelte';
   import PanelTitle from './PanelTitle.svelte';
+  import StartRequestCard from './StartRequestCard.svelte';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
   type Props = {
     selectedEpisode: EvolutionEpisode | null;
     selectedDirection: EvolutionDirection | null;
+    selectedPromotion: EvolutionPromotion | null;
     currentGoal: EvolutionAdaptationGoal | null;
     currentSelectionPressure: EvolutionSelectionPressure | null;
+    generations: EvolutionGeneration[];
     stages: EvolutionEvaluationStage[];
     stageResults: EvolutionStageResult[];
     episodeVariants: EvolutionVariant[];
     constraints: EvolutionViabilityConstraint[];
+    startRequest: EvolutionEpisodeStartRequest | null;
+    metricDefinitions: EvolutionMetricDefinition[];
+    eliminationRules: EvolutionEliminationRule[];
+    scoringRules: EvolutionScoringRule[];
     comparedVariantIds: string[];
     actionBusy: string;
     shortId: (value: string, length?: number) => string;
@@ -41,12 +67,18 @@
   let {
     selectedEpisode,
     selectedDirection,
+    selectedPromotion,
     currentGoal,
     currentSelectionPressure,
+    generations,
     stages,
     stageResults,
     episodeVariants,
     constraints,
+    startRequest,
+    metricDefinitions,
+    eliminationRules,
+    scoringRules,
     comparedVariantIds,
     actionBusy,
     shortId,
@@ -93,6 +125,38 @@
     if (status === 'Running') return 'bg-[var(--color-secondary)]';
     return 'bg-[var(--color-faint)]';
   }
+
+  function promotionMaterializationTone(promotion: EvolutionPromotion): StatusTone {
+    if (promotion.materializationFailed || promotion.status === 'Failed') return 'danger';
+    if (promotion.materialized || promotion.runtimeRef) return 'success';
+    return 'warning';
+  }
+
+  function promotionMaterializationLabel(promotion: EvolutionPromotion): string {
+    if (promotion.materializationFailed || promotion.status === 'Failed') return 'Materialization failed';
+    if (promotion.materialized || promotion.runtimeRef) return 'Hot-loaded';
+    return 'Hot-load pending';
+  }
+
+  function promotionMaterializationNote(promotion: EvolutionPromotion): string {
+    if (promotion.materializationFailed || promotion.status === 'Failed') {
+      return (
+        promotion.failureReason ||
+        'The winner was selected, but the canonical app publish or production install failed.'
+      );
+    }
+    if (promotion.materialized || promotion.runtimeRef) {
+      return 'The canonical app ref has been published and installed; the episode can be considered complete.';
+    }
+    return 'Winner selected. Promoter is publishing the canonical app ref and hot-loading it before episode completion.';
+  }
+
+  function materializationStepClass(isComplete: boolean, isFailed = false): string {
+    if (isFailed) return 'border-[var(--color-error)]/30 bg-[rgba(217,45,75,0.08)] text-[#7a1830]';
+    if (isComplete) return 'border-[var(--color-border)] bg-white text-[var(--color-ink)]';
+    return 'border-[var(--color-warning)]/30 bg-[rgba(214,166,0,0.10)] text-[#735900]';
+  }
+
 </script>
 
 <div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
@@ -168,8 +232,111 @@
             />
             <MetricTile label="Winner" value={selectedEpisode.winningVariantId ? 1 : 0} />
           </div>
+          {#if selectedPromotion}
+            <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+              <div class="flex items-center justify-between gap-2">
+                <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+                  Promotion
+                </p>
+                <Badge tone={promotionMaterializationTone(selectedPromotion)}>
+                  {promotionMaterializationLabel(selectedPromotion)}
+                </Badge>
+              </div>
+              <p class="mt-1 text-[11px] leading-snug text-[var(--color-ink-soft)]">
+                {promotionMaterializationNote(selectedPromotion)}
+              </p>
+              <div class="mt-2 grid gap-1.5">
+                <div
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(Boolean(selectedPromotion.winningVariantId || selectedEpisode.winningVariantId))}`}
+                >
+                  <CheckCircle2 size={13} class="shrink-0" />
+                  <span class="min-w-0 truncate">Winner selected: {shortId(selectedPromotion.winningVariantId || selectedEpisode.winningVariantId, 18)}</span>
+                </div>
+                <div
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(Boolean(selectedPromotion.canonicalAppRef), selectedPromotion.materializationFailed && !selectedPromotion.canonicalAppRef)}`}
+                >
+                  {#if selectedPromotion.materializationFailed && !selectedPromotion.canonicalAppRef}
+                    <AlertTriangle size={13} class="shrink-0" />
+                  {:else if selectedPromotion.canonicalAppRef}
+                    <PackageCheck size={13} class="shrink-0" />
+                  {:else}
+                    <LoaderCircle size={13} class="shrink-0 animate-spin" />
+                  {/if}
+                  <span class="min-w-0 truncate">
+                    Canonical ref: {selectedPromotion.canonicalAppRef || 'publish pending'}
+                  </span>
+                </div>
+                <div
+                  class={`grid grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-[var(--radius-xs)] border px-2 py-1.5 text-[11px] ${materializationStepClass(Boolean(selectedPromotion.materialized || selectedPromotion.runtimeRef), selectedPromotion.materializationFailed || selectedPromotion.status === 'Failed')}`}
+                >
+                  {#if selectedPromotion.materializationFailed || selectedPromotion.status === 'Failed'}
+                    <AlertTriangle size={13} class="shrink-0" />
+                  {:else if selectedPromotion.materialized || selectedPromotion.runtimeRef}
+                    <PackageCheck size={13} class="shrink-0" />
+                  {:else}
+                    <LoaderCircle size={13} class="shrink-0 animate-spin" />
+                  {/if}
+                  <span class="min-w-0 truncate">
+                    Runtime: {selectedPromotion.runtimeRef || selectedPromotion.productionTenant || 'install pending'}
+                  </span>
+                </div>
+              </div>
+              <p class="mt-2 truncate text-[11px] text-[var(--color-ink-soft)]">
+                {selectedPromotion.canonicalAppRef || selectedPromotion.appRef || 'canonical app pending'}
+              </p>
+              <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]">
+                {selectedPromotion.runtimeRef || selectedPromotion.productionTenant || 'runtime pending'}
+              </p>
+            </div>
+          {:else if selectedEpisode.status === 'Promoting'}
+            <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-warning)]/30 bg-[rgba(214,166,0,0.10)] p-2 text-[#735900]">
+              <div class="flex items-center justify-between gap-2">
+                <p class="font-mono text-[10px] uppercase tracking-[0.10em]">Promotion</p>
+                <Badge tone="warning">Promoter pending</Badge>
+              </div>
+              <p class="mt-1 text-[11px] leading-snug">
+                Winner selected; the promotion row has not landed in the live read model yet.
+              </p>
+            </div>
+          {/if}
         </div>
       </div>
+
+      <div class="grid gap-3 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)]">
+        <StartRequestCard {selectedEpisode} {startRequest} {shortId} {statusTone} />
+        <MetricsRulesCard {metricDefinitions} {eliminationRules} {scoringRules} {shortId} />
+      </div>
+
+      <GenerationTopology
+        {generations}
+        variants={episodeVariants}
+        {stageResults}
+        {comparedVariantIds}
+        {shortId}
+        {statusTone}
+        {onInspectVariant}
+        {onToggleCompare}
+      />
+
+      <aside class="relative z-20 grid content-start gap-3">
+        <PanelTitle icon={ShieldCheck} title="Viability Constraints" />
+        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {#if constraints.length}
+            {#each constraints as constraint (constraint.id)}
+              <ConstraintCard
+                constraint={constraint}
+                busy={actionBusy === `pin-${constraint.id}`}
+                tone={statusTone(constraint.status)}
+                onPin={() => onPinConstraint(constraint)}
+              />
+            {/each}
+          {:else}
+            <p class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-muted)]">
+              No constraints recorded for this episode.
+            </p>
+          {/if}
+        </div>
+      </aside>
 
       <div class="overflow-x-auto v-scrollbar">
         <div class="min-w-[760px] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
@@ -271,26 +438,6 @@
           {/if}
         </div>
       </div>
-
-      <aside class="grid content-start gap-3">
-        <PanelTitle icon={ShieldCheck} title="Viability Constraints" />
-        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {#if constraints.length}
-            {#each constraints as constraint (constraint.id)}
-              <ConstraintCard
-                constraint={constraint}
-                busy={actionBusy === `pin-${constraint.id}`}
-                tone={statusTone(constraint.status)}
-                onPin={() => onPinConstraint(constraint)}
-              />
-            {/each}
-          {:else}
-            <p class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-muted)]">
-              No constraints recorded for this episode.
-            </p>
-          {/if}
-        </div>
-      </aside>
     </div>
   {:else}
     <div class="px-3 py-12 text-center text-[12px] text-[var(--color-muted)]">

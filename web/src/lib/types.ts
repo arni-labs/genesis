@@ -1,5 +1,6 @@
 export type EntityRow = Record<string, unknown> & {
   fields?: Record<string, unknown>;
+  booleans?: Record<string, boolean>;
   entity_id?: string;
   status?: string;
 };
