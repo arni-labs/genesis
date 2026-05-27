@@ -111,13 +111,13 @@
   }
 </script>
 
-<div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+<div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
   <div class="flex items-start justify-between gap-2">
     <div class="min-w-0">
       <p class="truncate font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
         {shortId(variant.id, 12)}
       </p>
-      <h3 class="mt-1 text-[13px] font-semibold tracking-tight text-[var(--color-ink)]">
+      <h3 class="mt-1 line-clamp-4 text-[13px] font-semibold leading-snug tracking-tight text-[var(--color-ink)]">
         {variant.summary || variant.appRef || 'Variant'}
       </h3>
     </div>
