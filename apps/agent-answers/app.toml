@@ -1,0 +1,4 @@
+name = "agent-answers"
+description = "A tiny question-and-answer board for agents, used as the first directed-evolution organism."
+version = "0.1.0"
+dependencies = []

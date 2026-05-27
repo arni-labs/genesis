@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"><edmx:DataServices>
+  <Schema Namespace="Genesis.AgentAnswers" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+    <EntityType Name="Question"><Key><PropertyRef Name="Id"/></Key><Property Name="Id" Type="Edm.String" Nullable="false"/><Property Name="Status" Type="Edm.String"/><Property Name="Title" Type="Edm.String"/><Property Name="Body" Type="Edm.String"/><Property Name="AskedBy" Type="Edm.String"/><Property Name="CreatedAt" Type="Edm.String"/><Property Name="AnswerCount" Type="Edm.Int64"/><Property Name="AcceptedAnswerId" Type="Edm.String"/>
+      <Action Name="Configure" IsBound="true"><Parameter Name="bindingParameter" Type="Genesis.AgentAnswers.Question"/><Parameter Name="title" Type="Edm.String"/><Parameter Name="body" Type="Edm.String"/><Parameter Name="asked_by" Type="Edm.String"/><Parameter Name="created_at" Type="Edm.String"/></Action><Action Name="RecordAnswer" IsBound="true"><Parameter Name="bindingParameter" Type="Genesis.AgentAnswers.Question"/></Action><Action Name="Accept" IsBound="true"><Parameter Name="bindingParameter" Type="Genesis.AgentAnswers.Question"/><Parameter Name="accepted_answer_id" Type="Edm.String"/></Action>
+    </EntityType>
+    <EntityType Name="Answer"><Key><PropertyRef Name="Id"/></Key><Property Name="Id" Type="Edm.String" Nullable="false"/><Property Name="Status" Type="Edm.String"/><Property Name="QuestionId" Type="Edm.String"/><Property Name="Body" Type="Edm.String"/><Property Name="AnsweredBy" Type="Edm.String"/><Property Name="Evidence" Type="Edm.String"/><Property Name="CreatedAt" Type="Edm.String"/>
+      <Action Name="Submit" IsBound="true"><Parameter Name="bindingParameter" Type="Genesis.AgentAnswers.Answer"/><Parameter Name="question_id" Type="Edm.String"/><Parameter Name="body" Type="Edm.String"/><Parameter Name="answered_by" Type="Edm.String"/><Parameter Name="evidence" Type="Edm.String"/><Parameter Name="created_at" Type="Edm.String"/></Action><Action Name="Accept" IsBound="true"><Parameter Name="bindingParameter" Type="Genesis.AgentAnswers.Answer"/></Action>
+    </EntityType>
+    <EntityContainer Name="AgentAnswersService"><EntitySet Name="Questions" EntityType="Genesis.AgentAnswers.Question"/><EntitySet Name="Answers" EntityType="Genesis.AgentAnswers.Answer"/></EntityContainer>
+  </Schema>
+</edmx:DataServices></edmx:Edmx>

@@ -1,0 +1,49 @@
+[automaton]
+name = "Question"
+states = ["Draft", "Open", "Answered", "Resolved"]
+initial = "Draft"
+allow_indefinite_states = ["Draft", "Open", "Answered", "Resolved"]
+[[state]]
+name = "title"
+type = "string"
+initial = ""
+[[state]]
+name = "body"
+type = "string"
+initial = ""
+[[state]]
+name = "asked_by"
+type = "string"
+initial = ""
+[[state]]
+name = "created_at"
+type = "string"
+initial = ""
+[[state]]
+name = "answer_count"
+type = "counter"
+initial = 0
+[[state]]
+name = "accepted_answer_id"
+type = "string"
+initial = ""
+
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Draft"]
+to = "Open"
+params = ["title", "body", "asked_by", "created_at"]
+[[action]]
+name = "RecordAnswer"
+kind = "input"
+from = ["Open", "Answered"]
+to = "Answered"
+params = []
+effect = [{ type = "increment", var = "answer_count" }]
+[[action]]
+name = "Accept"
+kind = "input"
+from = ["Answered"]
+to = "Resolved"
+params = ["accepted_answer_id"]

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Loader2, RefreshCw } from '@lucide/svelte';
+  import { base } from '$app/paths';
+  import { page } from '$app/stores';
   import { Badge, IconButton } from '$lib/components/ui';
   import BrandMark from './BrandMark.svelte';
 
@@ -12,6 +14,10 @@
   };
 
   let { appCount, lineageCount, closureCount, loading, onRefresh }: TopbarProps = $props();
+
+  const evolutionHref = `${base}/evolution`;
+  const catalogHref = `${base}/`;
+  let pathname = $derived($page.url.pathname);
 </script>
 
 <header
@@ -22,6 +28,28 @@
     <h1 class="text-[20px] font-semibold leading-none tracking-[0.04em] text-[var(--color-ink)] [font-family:var(--font-mono)]">
       Genesis<span class="text-[var(--color-accent)]">.</span>
     </h1>
+    <nav class="ml-1 hidden items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-0.5 sm:flex">
+      <a
+        href={catalogHref}
+        class={`inline-flex h-6 items-center rounded-[var(--radius-xs)] px-2 font-mono text-[10px] uppercase tracking-[0.10em] transition-colors duration-[var(--duration-soft)] ${
+          pathname === catalogHref || pathname === `${catalogHref}/`
+            ? 'bg-white text-[var(--color-ink)] shadow-[var(--shadow-xs)]'
+            : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+        }`}
+      >
+        Catalog
+      </a>
+      <a
+        href={evolutionHref}
+        class={`inline-flex h-6 items-center rounded-[var(--radius-xs)] px-2 font-mono text-[10px] uppercase tracking-[0.10em] transition-colors duration-[var(--duration-soft)] ${
+          pathname === evolutionHref
+            ? 'bg-white text-[var(--color-ink)] shadow-[var(--shadow-xs)]'
+            : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+        }`}
+      >
+        Evolution
+      </a>
+    </nav>
   </div>
 
   <div class="flex items-center gap-3 font-mono text-[10px] tracking-[0.10em] uppercase text-[var(--color-muted)]">
