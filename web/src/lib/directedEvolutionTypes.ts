@@ -22,6 +22,15 @@ export type EvolutionOrganismVersion = EntityBase & {
   newParentVersionId: string;
 };
 
+export type EvolutionLineageEdge = EntityBase & {
+  organismId: string;
+  parentVersionId: string;
+  childVersionId: string;
+  episodeId: string;
+  promotionId: string;
+  summary: string;
+};
+
 export type EvolutionSignal = EntityBase & {
   source: string;
   signalKind: string;
@@ -68,6 +77,8 @@ export type EvolutionEpisode = EntityBase & {
   evaluationStageIds: string[];
   generationCount: number;
   winningVariantId: string;
+  promotionId: string;
+  organismVersionId: string;
   selectionExplanation: string;
   summary: string;
 };
@@ -98,6 +109,23 @@ export type EvolutionVariant = EntityBase & {
   reason: string;
   promotionId: string;
   organismVersionId: string;
+  failureReason: string;
+};
+
+export type EvolutionPromotion = EntityBase & {
+  episodeId: string;
+  winningVariantId: string;
+  parentVersionId: string;
+  newOrganismVersionId: string;
+  selectionExplanation: string;
+  evidenceArtifactId: string;
+  appRef: string;
+  canonicalAppRef: string;
+  productionTenant: string;
+  runtimeRef: string;
+  summary: string;
+  materialized: boolean;
+  materializationFailed: boolean;
   failureReason: string;
 };
 
@@ -225,12 +253,14 @@ export type EvolutionBrainRun = EntityBase & {
 export type DirectedEvolutionSnapshot = {
   organisms: EvolutionOrganism[];
   organismVersions: EvolutionOrganismVersion[];
+  lineageEdges: EvolutionLineageEdge[];
   signals: EvolutionSignal[];
   pressures: EvolutionPressure[];
   directions: EvolutionDirection[];
   episodes: EvolutionEpisode[];
   generations: EvolutionGeneration[];
   variants: EvolutionVariant[];
+  promotions: EvolutionPromotion[];
   adaptationGoals: EvolutionAdaptationGoal[];
   viabilityConstraints: EvolutionViabilityConstraint[];
   selectionPressures: EvolutionSelectionPressure[];

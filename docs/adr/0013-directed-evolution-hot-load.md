@@ -22,10 +22,11 @@ Genesis already provides the intended runtime path:
 
 ## Decision
 
-Directed Evolution, its dependencies, the Agent Answers organism, and the Agent
-Answers evaluator are installed into the live `default` tenant by pinned Genesis
-refs. The Genesis Railway image continues to boot only the `temper-git`
-bootstrap app.
+Directed Evolution and its dependencies are installed into a live control
+tenant by pinned Genesis refs. Agent Answers variants are installed into
+isolated variant tenants while they are evaluated, then the promoted winner is
+materialized into the configured production tenant. The Genesis Railway image
+continues to boot only the `temper-git` bootstrap app.
 
 Railway deploys are reserved for runtime or web changes: new server code, new
 WASM host behavior, bootstrap app changes, or Mission Control UI builds. App

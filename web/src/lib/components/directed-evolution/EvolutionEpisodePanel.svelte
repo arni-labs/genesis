@@ -6,6 +6,7 @@
     EvolutionDirection,
     EvolutionEpisode,
     EvolutionEvaluationStage,
+    EvolutionPromotion,
     EvolutionSelectionPressure,
     EvolutionStageResult,
     EvolutionVariant,
@@ -20,6 +21,7 @@
   type Props = {
     selectedEpisode: EvolutionEpisode | null;
     selectedDirection: EvolutionDirection | null;
+    selectedPromotion: EvolutionPromotion | null;
     currentGoal: EvolutionAdaptationGoal | null;
     currentSelectionPressure: EvolutionSelectionPressure | null;
     stages: EvolutionEvaluationStage[];
@@ -41,6 +43,7 @@
   let {
     selectedEpisode,
     selectedDirection,
+    selectedPromotion,
     currentGoal,
     currentSelectionPressure,
     stages,
@@ -168,8 +171,46 @@
             />
             <MetricTile label="Winner" value={selectedEpisode.winningVariantId ? 1 : 0} />
           </div>
+          {#if selectedPromotion}
+            <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+              <div class="flex items-center justify-between gap-2">
+                <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+                  Promotion
+                </p>
+                <Badge tone={selectedPromotion.materialized ? 'success' : statusTone(selectedPromotion.status)}>
+                  {selectedPromotion.materialized ? 'Materialized' : selectedPromotion.status}
+                </Badge>
+              </div>
+              <p class="mt-1 truncate text-[11px] text-[var(--color-ink-soft)]">
+                {selectedPromotion.canonicalAppRef || selectedPromotion.appRef || 'canonical app pending'}
+              </p>
+              <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]">
+                {selectedPromotion.runtimeRef || selectedPromotion.productionTenant || 'runtime pending'}
+              </p>
+            </div>
+          {/if}
         </div>
       </div>
+
+      <aside class="relative z-20 grid content-start gap-3">
+        <PanelTitle icon={ShieldCheck} title="Viability Constraints" />
+        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {#if constraints.length}
+            {#each constraints as constraint (constraint.id)}
+              <ConstraintCard
+                constraint={constraint}
+                busy={actionBusy === `pin-${constraint.id}`}
+                tone={statusTone(constraint.status)}
+                onPin={() => onPinConstraint(constraint)}
+              />
+            {/each}
+          {:else}
+            <p class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-muted)]">
+              No constraints recorded for this episode.
+            </p>
+          {/if}
+        </div>
+      </aside>
 
       <div class="overflow-x-auto v-scrollbar">
         <div class="min-w-[760px] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
@@ -271,26 +312,6 @@
           {/if}
         </div>
       </div>
-
-      <aside class="grid content-start gap-3">
-        <PanelTitle icon={ShieldCheck} title="Viability Constraints" />
-        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {#if constraints.length}
-            {#each constraints as constraint (constraint.id)}
-              <ConstraintCard
-                constraint={constraint}
-                busy={actionBusy === `pin-${constraint.id}`}
-                tone={statusTone(constraint.status)}
-                onPin={() => onPinConstraint(constraint)}
-              />
-            {/each}
-          {:else}
-            <p class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-muted)]">
-              No constraints recorded for this episode.
-            </p>
-          {/if}
-        </div>
-      </aside>
     </div>
   {:else}
     <div class="px-3 py-12 text-center text-[12px] text-[var(--color-muted)]">

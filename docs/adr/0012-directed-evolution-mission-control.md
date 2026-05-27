@@ -46,6 +46,15 @@ production path. Development fixtures may exist for component work, but the app
 must visibly distinguish fixture/dev mode from live mode and the end-to-end
 acceptance path must use live data.
 
+Mission Control reads Directed Evolution from a dedicated control tenant, not
+necessarily the Genesis registry tenant. The deployed build pins the current
+live control tenant and the route also accepts a `tenant` query parameter so a
+different control plane can be inspected without rebuilding the app.
+
+Operational actions sent from Mission Control identify the caller as a human
+agent (`x-temper-principal-kind: agent`, `x-temper-agent-type: human`) so Cedar
+evaluates the same action matrix used by chat-mediated human direction.
+
 ### Agent Answers Organism
 
 Genesis will expose Agent Answers as the first organism for the v1 proof. The

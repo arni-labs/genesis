@@ -3,6 +3,7 @@
   import { Badge, Card } from '$lib/components/ui';
   import type {
     EvolutionAutonomyPolicy,
+    EvolutionLineageEdge,
     EvolutionOrganism,
     EvolutionOrganismVersion
   } from '$lib/directedEvolution';
@@ -13,14 +14,20 @@
   type Props = {
     organism: EvolutionOrganism | null;
     organismVersions: EvolutionOrganismVersion[];
+    lineageEdges: EvolutionLineageEdge[];
     activePolicy: EvolutionAutonomyPolicy | null;
     shortId: (value: string, length?: number) => string;
     statusTone: (status: string) => StatusTone;
     jsonEntries: (value: string) => Array<[string, string]>;
   };
 
-  let { organism, organismVersions, activePolicy, shortId, statusTone, jsonEntries }: Props =
+  let { organism, organismVersions, lineageEdges, activePolicy, shortId, statusTone, jsonEntries }: Props =
     $props();
+
+  function versionLabel(versionId: string): string {
+    const version = organismVersions.find((item) => item.id === versionId);
+    return version?.summary || version?.appRef || shortId(versionId, 14);
+  }
 </script>
 
 <aside class="grid gap-3 lg:grid-cols-2">
@@ -32,6 +39,29 @@
       </Badge>
     </div>
     <div class="mt-3 grid gap-2">
+      {#if lineageEdges.length}
+        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+          <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+            Evolution Edges
+          </p>
+          <div class="mt-2 grid gap-1.5">
+            {#each lineageEdges.slice(-4) as edge (edge.id)}
+              <div class="grid grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)] items-center gap-1.5 text-[11px]">
+                <span class="truncate rounded-[var(--radius-xs)] bg-white px-2 py-1 text-[var(--color-ink-soft)]">
+                  {versionLabel(edge.parentVersionId)}
+                </span>
+                <span class="text-center font-mono text-[var(--color-primary)]">&gt;</span>
+                <span class="truncate rounded-[var(--radius-xs)] bg-white px-2 py-1 text-[var(--color-ink-soft)]">
+                  {versionLabel(edge.childVersionId)}
+                </span>
+              </div>
+              {#if edge.summary}
+                <p class="truncate text-[10.5px] text-[var(--color-muted)]">{edge.summary}</p>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
       {#if organismVersions.length}
         {#each organismVersions as version (version.id)}
           <div class="relative rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-2">

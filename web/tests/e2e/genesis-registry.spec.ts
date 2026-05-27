@@ -193,6 +193,22 @@ const directedCollections: Record<string, EntityRow[]> = {
       AppRef: `arni-labs/agent-answers@${childHash}`,
       CommitRef: childHash,
       Summary: 'Current production parent'
+    }),
+    row('OrganismVersion', 'ov-agent-answers-citation', 'Parent', {
+      OrganismId: 'org-agent-answers',
+      AppRef: 'arni-labs/agent-answers@citation-winner',
+      PromotionId: 'promotion-citation-memory',
+      Summary: 'Promoted organism with durable citation memory'
+    })
+  ],
+  LineageEdges: [
+    row('LineageEdge', 'edge-citation-memory', 'Recorded', {
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      ChildVersionId: 'ov-agent-answers-citation',
+      EpisodeId: 'episode-citation-memory',
+      PromotionId: 'promotion-citation-memory',
+      Summary: 'Citation memory evolved from the seed organism'
     })
   ],
   Signals: [
@@ -240,7 +256,8 @@ const directedCollections: Record<string, EntityRow[]> = {
       AdaptationGoalId: 'goal-citation-memory',
       SelectionPressureId: 'selection-citation-memory',
       ViabilityConstraintIdsJson: JSON.stringify(['constraint-correctness']),
-      EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user'])
+      EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user']),
+      PromotionId: 'promotion-citation-memory'
     })
   ],
   Generations: [
@@ -258,7 +275,8 @@ const directedCollections: Record<string, EntityRow[]> = {
       AppRef: 'arni-labs/agent-answers@variant-a',
       RuntimeRef: 'agent-answers-a.local',
       Summary: 'Adds a source memory panel',
-      BrainRunId: 'brain-variant-a'
+      BrainRunId: 'brain-variant-a',
+      PromotionId: 'promotion-citation-memory'
     }),
     row('Variant', 'variant-hidden-citations', 'Eliminated', {
       EpisodeId: 'episode-citation-memory',
@@ -270,6 +288,20 @@ const directedCollections: Record<string, EntityRow[]> = {
       StageResultId: 'stage-result-b-user',
       EvidenceArtifactId: 'evidence-b-user',
       Reason: 'Simulated users still could not find the source trail.'
+    })
+  ],
+  Promotions: [
+    row('Promotion', 'promotion-citation-memory', 'Promoted', {
+      EpisodeId: 'episode-citation-memory',
+      WinningVariantId: 'variant-memory-panel',
+      ParentVersionId: 'ov-agent-answers-parent',
+      NewOrganismVersionId: 'ov-agent-answers-citation',
+      AppRef: 'arni-labs/agent-answers@citation-winner',
+      CanonicalAppRef: 'arni-labs/agent-answers@citation-winner',
+      ProductionTenant: 'default',
+      RuntimeRef: 'temper://tenant/default/app/arni-labs/agent-answers@citation-winner',
+      Materialized: true,
+      Summary: 'Published the winner and hot-loaded it into the production tenant.'
     })
   ],
   AdaptationGoals: [
@@ -572,11 +604,14 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(page.getByText('AI User Trial')).toBeVisible();
   await expect(page.getByText('Simulated users still could not find the source trail.')).toBeVisible();
   await expect(page.getByText('repair_lane')).toBeVisible();
+  await expect(page.getByText('Materialized').first()).toBeVisible();
+  await expect(page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner')).toBeVisible();
+  await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
 
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect(page.getByText('Paused')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Pin' }).click();
+  await page.getByRole('button', { name: 'Pin' }).click({ force: true });
   await expect(page.getByText('Pinned')).toBeVisible();
 
   await page.getByRole('button', { name: 'Compare' }).first().click();

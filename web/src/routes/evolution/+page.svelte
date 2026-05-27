@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { onDestroy, onMount } from 'svelte';
   import {
     AlertCircle,
@@ -40,12 +41,19 @@
   let inspectedVariantId = '';
   let comparedVariantIds: string[] = [];
   let refreshTimer: number | undefined;
+  const defaultDirectedEvolutionTenant =
+    import.meta.env.VITE_DIRECTED_EVOLUTION_TENANT_ID ??
+    import.meta.env.VITE_TEMPER_TENANT_ID ??
+    'default';
+  let directedEvolutionTenantId = defaultDirectedEvolutionTenant;
 
   $: registryState = $registryStore;
   $: registrySnapshot = registryState.snapshot;
   $: organisms = snapshot?.organisms ?? [];
   $: organism = organisms.find((item) => item.status === 'Active') ?? organisms[0] ?? null;
   $: organismVersions = snapshot?.organismVersions ?? [];
+  $: lineageEdges = snapshot?.lineageEdges ?? [];
+  $: promotions = snapshot?.promotions ?? [];
   $: activeDirections = (snapshot?.directions ?? []).filter((direction) => direction.status !== 'Archived');
   $: activeEpisodes = snapshot?.episodes ?? [];
   $: selectedEpisode =
@@ -55,6 +63,12 @@
     null;
   $: selectedDirection = selectedEpisode
     ? activeDirections.find((direction) => direction.id === selectedEpisode.directionId) ?? null
+    : null;
+  $: selectedPromotion = selectedEpisode
+    ? promotions.find((promotion) => promotion.id === selectedEpisode.promotionId) ??
+      promotions.find((promotion) => promotion.episodeId === selectedEpisode.id) ??
+      promotions.find((promotion) => promotion.winningVariantId === selectedEpisode.winningVariantId) ??
+      null
     : null;
   $: currentGoal = selectedEpisode
     ? snapshot?.adaptationGoals.find((goal) => goal.id === selectedEpisode.adaptationGoalId) ?? null
@@ -106,6 +120,7 @@
   const terminalEpisodeStatuses = new Set(['Completed', 'Stopped', 'Failed']);
 
   onMount(() => {
+    directedEvolutionTenantId = resolveDirectedEvolutionTenant();
     void loadRegistry();
     void loadEvolution();
     refreshTimer = window.setInterval(() => void loadEvolution(), 12_000);
@@ -126,7 +141,7 @@
     loading = true;
     error = '';
     try {
-      snapshot = await loadDirectedEvolutionSnapshot();
+      snapshot = await loadDirectedEvolutionSnapshot(directedEvolutionTenantId);
     } catch (loadError) {
       error = loadError instanceof Error ? loadError.message : String(loadError);
     } finally {
@@ -218,6 +233,20 @@
     return pressure?.summary || direction.summary;
   }
 
+  function resolveDirectedEvolutionTenant(): string {
+    if (!browser) return defaultDirectedEvolutionTenant;
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('tenant')?.trim();
+    if (fromUrl) {
+      window.localStorage.setItem('genesis-directed-evolution-tenant', fromUrl);
+      return fromUrl;
+    }
+    return (
+      window.localStorage.getItem('genesis-directed-evolution-tenant')?.trim() ||
+      defaultDirectedEvolutionTenant
+    );
+  }
+
 </script>
 
 <svelte:head>
@@ -250,6 +279,9 @@
               <p class="mt-1 max-w-[78ch] text-[12.5px] leading-relaxed text-[var(--color-muted)]">
                 {organism?.appRef ||
                   'Install and activate the Directed Evolution app to stream live organism, episode, variant, and evidence state here.'}
+              </p>
+              <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                Tenant {directedEvolutionTenantId}
               </p>
             </div>
             <div class="flex items-center gap-1.5">
@@ -285,16 +317,19 @@
 
           <div class="grid gap-3 p-3 sm:p-4">
             <div class="min-w-0">
-              <div class="grid gap-2 sm:grid-cols-4">
+              <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
                 <MetricTile label="Directions" value={activeDirections.length} />
                 <MetricTile label="Episodes" value={activeEpisodes.length} />
                 <MetricTile label="Variants" value={episodeVariants.length} />
+                <MetricTile label="Promotions" value={promotions.length} />
+                <MetricTile label="Materialized" value={promotions.filter((item) => item.materialized).length} />
                 <MetricTile label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
               </div>
 
               <EvolutionEpisodePanel
                 {selectedEpisode}
                 {selectedDirection}
+                selectedPromotion={selectedPromotion}
                 {currentGoal}
                 {currentSelectionPressure}
                 {stages}
@@ -306,13 +341,21 @@
                 {shortId}
                 {statusTone}
                 onPauseEpisode={(episode) =>
-                  void runControl(`pause-${episode.id}`, () => pauseEpisode(episode.id))}
+                  void runControl(`pause-${episode.id}`, () =>
+                    pauseEpisode(episode.id, 'Paused from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onResumeEpisode={(episode) =>
-                  void runControl(`resume-${episode.id}`, () => resumeEpisode(episode.id))}
+                  void runControl(`resume-${episode.id}`, () =>
+                    resumeEpisode(episode.id, 'Resumed from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onStopEpisode={(episode) =>
-                  void runControl(`stop-${episode.id}`, () => stopEpisode(episode.id))}
+                  void runControl(`stop-${episode.id}`, () =>
+                    stopEpisode(episode.id, 'Stopped from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onPinConstraint={(constraint) =>
-                  void runControl(`pin-${constraint.id}`, () => pinViabilityConstraint(constraint.id))}
+                  void runControl(`pin-${constraint.id}`, () =>
+                    pinViabilityConstraint(constraint.id, 'Pinned from Genesis Mission Control', directedEvolutionTenantId)
+                  )}
                 onInspectVariant={(id) => (inspectedVariantId = id)}
                 onToggleCompare={toggleCompare}
               />
@@ -321,6 +364,7 @@
             <EvolutionLineagePolicy
               {organism}
               {organismVersions}
+              {lineageEdges}
               {activePolicy}
               {shortId}
               {statusTone}
@@ -368,7 +412,9 @@
         {variantEvidence}
         {variantReason}
         onDismissDirection={(direction) =>
-          void runControl(`dismiss-${direction.id}`, () => dismissDirection(direction.id))}
+          void runControl(`dismiss-${direction.id}`, () =>
+            dismissDirection(direction.id, 'Dismissed from Genesis Mission Control', directedEvolutionTenantId)
+          )}
       />
     </div>
   </section>
