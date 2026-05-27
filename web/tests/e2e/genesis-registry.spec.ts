@@ -389,8 +389,21 @@ const directedCollections: Record<string, EntityRow[]> = {
   EvidenceArtifacts: [
     row('EvidenceArtifact', 'evidence-b-user', 'Linked', {
       ArtifactKind: 'simulated_user_trace',
-      Uri: 'datadog://trace/variant-b',
+      Uri: 'https://app.datadoghq.com/logs?query=service%3Atemperpaw%20variant-hidden-citations',
       Summary: 'AI user could not locate citations after the follow-up.',
+      CorrelationJson: JSON.stringify({
+        output: {
+          evidence_scope: [
+            {
+              surface: 'logs',
+              query: 'service:temperpaw variant-hidden-citations',
+              result_summary: 'No user-visible citation trail appeared in the simulated-user run.',
+              datadog_url:
+                'https://app.datadoghq.com/logs?query=service%3Atemperpaw%20variant-hidden-citations'
+            }
+          ]
+        }
+      }),
       TargetEntityType: 'Variant',
       TargetEntityId: 'variant-hidden-citations'
     })
@@ -607,6 +620,12 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(page.getByText('Materialized').first()).toBeVisible();
   await expect(page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner')).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Inspect' }).nth(1).click();
+  await expect(page.getByRole('link', { name: 'Datadog' })).toHaveAttribute(
+    'href',
+    /app\.datadoghq\.com\/logs/
+  );
 
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect(page.getByText('Paused')).toBeVisible();
