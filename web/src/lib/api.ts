@@ -90,9 +90,35 @@ async function requestJson<T>(
 }
 
 async function listCollection(collection: CollectionName, query = ''): Promise<EntityRow[]> {
+  return listEntityCollection(collection, query);
+}
+
+export async function listEntityCollection(
+  collection: string,
+  query = ''
+): Promise<EntityRow[]> {
   const suffix = query ? `?${query}` : '';
   const body = await requestJson<{ value?: EntityRow[] }>(`/tdata/${collection}${suffix}`);
   return Array.isArray(body.value) ? body.value : [];
+}
+
+export async function postEntityAction(
+  collection: string,
+  id: string,
+  namespace: string,
+  action: string,
+  body: Record<string, unknown>,
+  principal: Principal = { id: 'genesis-mission-control', kind: 'agent' }
+): Promise<EntityRow> {
+  const escapedId = id.replace(/'/g, "''");
+  return requestJson<EntityRow>(
+    `/tdata/${collection}('${escapedId}')/${namespace}.${action}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body)
+    },
+    principal
+  );
 }
 
 async function loadCollection<T>(

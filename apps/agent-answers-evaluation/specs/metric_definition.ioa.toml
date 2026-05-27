@@ -1,0 +1,55 @@
+[automaton]
+name = "MetricDefinition"
+states = ["Draft", "Frozen", "Retired"]
+initial = "Draft"
+allow_indefinite_states = ["Draft", "Frozen"]
+[[state]]
+name = "trial_suite_id"
+type = "string"
+initial = ""
+[[state]]
+name = "key"
+type = "string"
+initial = ""
+[[state]]
+name = "description"
+type = "string"
+initial = ""
+[[state]]
+name = "instrument_kind"
+type = "string"
+initial = "runtime_fact"
+[[state]]
+name = "instrument_locator"
+type = "string"
+initial = ""
+[[state]]
+name = "interpretation"
+type = "string"
+initial = ""
+[[state]]
+name = "hard_constraint"
+type = "bool"
+initial = false
+[[state]]
+name = "frozen_at"
+type = "string"
+initial = ""
+[[action]]
+name = "Configure"
+kind = "input"
+from = ["Draft"]
+to = "Draft"
+params = ["trial_suite_id", "key", "description", "instrument_kind", "instrument_locator", "interpretation", "hard_constraint"]
+[[action]]
+name = "Freeze"
+kind = "input"
+from = ["Draft"]
+to = "Frozen"
+params = ["frozen_at"]
+[[action]]
+name = "Retire"
+kind = "input"
+from = ["Frozen"]
+to = "Retired"
+params = []
