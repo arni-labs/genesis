@@ -182,20 +182,20 @@ const directedCollections: Record<string, EntityRow[]> = {
   Organisms: [
     row('Organism', 'org-agent-answers', 'Active', {
       Name: 'Agent Answers',
-      AppRef: `arni-labs/agent-answers@${childHash}`,
+      AppRef: 'arni-labs/agent-answers@citation-winner',
       ParentVersionId: 'ov-agent-answers-parent',
-      OrganismVersionId: 'ov-agent-answers-parent',
+      OrganismVersionId: 'ov-agent-answers-citation',
       PromotionId: 'promotion-citation-memory',
       Summary: 'Current parent is aligned to the promoted app ref.',
       BaselineEvaluationJson: JSON.stringify(['compile', 'simulated-user'])
     })
   ],
   OrganismVersions: [
-    row('OrganismVersion', 'ov-agent-answers-parent', 'Parent', {
+    row('OrganismVersion', 'ov-agent-answers-parent', 'Superseded', {
       OrganismId: 'org-agent-answers',
-      AppRef: `arni-labs/agent-answers@${childHash}`,
+      AppRef: 'arni-labs/agent-answers@seed-parent',
       CommitRef: childHash,
-      Summary: 'Current production parent'
+      Summary: 'Seed production parent'
     }),
     row('OrganismVersion', 'ov-agent-answers-citation', 'Parent', {
       OrganismId: 'org-agent-answers',
@@ -302,17 +302,24 @@ const directedCollections: Record<string, EntityRow[]> = {
     })
   ],
   Generations: [
-    row('Generation', 'generation-citation-memory-1', 'Evaluating', {
+    row('Generation', 'generation-citation-memory-1', 'Failed', {
       EpisodeId: 'episode-citation-memory',
       ParentVersionId: 'ov-agent-answers-parent',
       GenerationIndex: 1,
+      VariantTargetCount: 2,
+      FailureReason: 'All variants were eliminated before selection. Queued follow-up generation 2 with prior elimination evidence.'
+    }),
+    row('Generation', 'generation-citation-memory-2', 'Evaluating', {
+      EpisodeId: 'episode-citation-memory',
+      ParentVersionId: 'ov-agent-answers-parent',
+      GenerationIndex: 2,
       VariantTargetCount: 2
     })
   ],
   Variants: [
     row('Variant', 'variant-memory-panel', 'Active', {
       EpisodeId: 'episode-citation-memory',
-      GenerationId: 'generation-citation-memory-1',
+      GenerationId: 'generation-citation-memory-2',
       AppRef: 'arni-labs/agent-answers@variant-a',
       RuntimeRef: 'agent-answers-a.local',
       Summary: 'Adds a source memory panel',
@@ -329,6 +336,14 @@ const directedCollections: Record<string, EntityRow[]> = {
       StageResultId: 'stage-result-b-user',
       EvidenceArtifactId: 'evidence-b-user',
       Reason: 'Simulated users still could not find the source trail.'
+    }),
+    row('Variant', 'variant-flat-sources', 'Eliminated', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      AppRef: 'arni-labs/agent-answers@variant-flat',
+      RuntimeRef: 'agent-answers-flat.local',
+      Summary: 'Adds a flat source note without follow-up recall',
+      Reason: 'Follow-up questions still lost the source relationship.'
     }),
     row('Variant', 'variant-comparison-preview', 'Selected', {
       EpisodeId: 'episode-comparison-preview',
@@ -422,7 +437,7 @@ const directedCollections: Record<string, EntityRow[]> = {
   StageResults: [
     row('StageResult', 'stage-result-a-compile', 'Passed', {
       EpisodeId: 'episode-citation-memory',
-      GenerationId: 'generation-citation-memory-1',
+      GenerationId: 'generation-citation-memory-2',
       VariantId: 'variant-memory-panel',
       EvaluationStageId: 'stage-compile',
       MetricsJson: JSON.stringify({ build: 'ok' }),
@@ -431,7 +446,7 @@ const directedCollections: Record<string, EntityRow[]> = {
     }),
     row('StageResult', 'stage-result-a-user', 'Running', {
       EpisodeId: 'episode-citation-memory',
-      GenerationId: 'generation-citation-memory-1',
+      GenerationId: 'generation-citation-memory-2',
       VariantId: 'variant-memory-panel',
       EvaluationStageId: 'stage-simulated-user',
       Summary: 'Simulated users are testing follow-up recall'
@@ -698,7 +713,14 @@ test('renders live Directed Evolution mission control and dispatches real contro
     page.getByText('Follow-up answers keep a visible source trail.', { exact: true }).first()
   ).toBeVisible();
   await expect(page.getByText('AI User Trial')).toBeVisible();
-  await expect(page.getByText('Simulated users still could not find the source trail.')).toBeVisible();
+  await expect(page.getByText('Generation Topology')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Generation 1' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Generation 2' })).toBeVisible();
+  await expect(page.getByText('evidence-fed follow-up')).toBeVisible();
+  await expect(
+    page.getByText('All variants were eliminated before selection. Queued follow-up generation 2')
+  ).toBeVisible();
+  await expect(page.getByText('Simulated users still could not find the source trail.').first()).toBeVisible();
   await expect(page.getByText('repair_lane').first()).toBeVisible();
   await expect(page.getByText('human gate').first()).toBeVisible();
   await expect(page.getByText('Ref Aligned')).toBeVisible();
@@ -718,7 +740,18 @@ test('renders live Directed Evolution mission control and dispatches real contro
       exact: true
     })
   ).toBeVisible();
+  await expect(page.getByText('Specimen History')).toBeVisible();
+  await expect(page.getByText('current parent', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('mutation edge')).toBeVisible();
+  await expect(page.getByText('winner variant')).toBeVisible();
+  await expect(page.getByText('Answer citations that survive follow-up').first()).toBeVisible();
+  await expect(page.getByText('Winner: Adds a source memory panel')).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
+  const evolutionOverflow = await page.evaluate(() => {
+    const root = document.documentElement;
+    return root.scrollWidth - root.clientWidth;
+  });
+  expect(evolutionOverflow).toBeLessThanOrEqual(1);
 
   await page.getByRole('button', { name: /Open episode Publish comparison winner/ }).click();
   await expect(page.getByText('Hot-load pending').first()).toBeVisible();
@@ -735,7 +768,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
 
   await page.getByRole('button', { name: /Open episode Answer citations that survive follow-up/ }).click();
 
-  await page.getByRole('button', { name: 'Inspect' }).nth(1).click();
+  await page.getByRole('button', { name: 'Inspect' }).first().click();
   await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
     'href',
     /app\.datadoghq\.com\/logs/
@@ -749,7 +782,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
 
   await page.getByRole('button', { name: 'Compare' }).first().click();
   await expect(page.getByText('Variant Compare')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Adds a source memory panel' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stores citations invisibly' }).first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Dismiss' }).click();
   await expect(page.getByText('Dismissed').first()).toBeVisible();

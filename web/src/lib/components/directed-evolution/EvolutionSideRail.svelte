@@ -94,8 +94,8 @@
   }
 </script>
 
-<aside class="grid content-start gap-3">
-  <section class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
+<aside class="grid min-w-0 content-start gap-3">
+  <section class="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
     <PanelTitle icon={BrainCircuit} title="Suggested Directions" />
     <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
       {pressures.length} pressures · {signals.length} signals · {evidenceArtifacts.length} evidence · {brainRuns.length} brain runs
@@ -243,7 +243,7 @@
     </div>
   </section>
 
-  <section class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
+  <section class="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
     <PanelTitle icon={Eye} title="Variant Inspector" />
     {#if inspectedVariant}
       <div class="mt-3">
@@ -263,7 +263,7 @@
     {/if}
   </section>
 
-  <section class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
+  <section class="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
     <PanelTitle icon={BrainCircuit} title="Brain Queue" />
     <div class="mt-3 grid gap-2">
       {#each recentWorkItems as item (item.id)}

@@ -17,6 +17,7 @@
     EvolutionDirection,
     EvolutionEpisode,
     EvolutionEvaluationStage,
+    EvolutionGeneration,
     EvolutionPromotion,
     EvolutionSelectionPressure,
     EvolutionStageResult,
@@ -24,6 +25,7 @@
     EvolutionViabilityConstraint
   } from '$lib/directedEvolution';
   import ConstraintCard from './ConstraintCard.svelte';
+  import GenerationTopology from './GenerationTopology.svelte';
   import MetricTile from './MetricTile.svelte';
   import PanelTitle from './PanelTitle.svelte';
 
@@ -35,6 +37,7 @@
     selectedPromotion: EvolutionPromotion | null;
     currentGoal: EvolutionAdaptationGoal | null;
     currentSelectionPressure: EvolutionSelectionPressure | null;
+    generations: EvolutionGeneration[];
     stages: EvolutionEvaluationStage[];
     stageResults: EvolutionStageResult[];
     episodeVariants: EvolutionVariant[];
@@ -57,6 +60,7 @@
     selectedPromotion,
     currentGoal,
     currentSelectionPressure,
+    generations,
     stages,
     stageResults,
     episodeVariants,
@@ -282,6 +286,17 @@
           {/if}
         </div>
       </div>
+
+      <GenerationTopology
+        {generations}
+        variants={episodeVariants}
+        {stageResults}
+        {comparedVariantIds}
+        {shortId}
+        {statusTone}
+        {onInspectVariant}
+        {onToggleCompare}
+      />
 
       <aside class="relative z-20 grid content-start gap-3">
         <PanelTitle icon={ShieldCheck} title="Viability Constraints" />

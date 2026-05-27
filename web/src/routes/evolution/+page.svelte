@@ -88,6 +88,11 @@
   $: episodeVariants = selectedEpisode
     ? (snapshot?.variants ?? []).filter((variant) => variant.episodeId === selectedEpisode.id)
     : [];
+  $: episodeGenerations = selectedEpisode
+    ? (snapshot?.generations ?? [])
+        .filter((generation) => generation.episodeId === selectedEpisode.id)
+        .sort((a, b) => a.generationIndex - b.generationIndex)
+    : [];
   $: activePolicy =
     (snapshot?.autonomyPolicies ?? []).find(
       (policy) => policy.status === 'Active' && (!organism || policy.organismId === organism.id)
@@ -453,6 +458,7 @@
                 selectedPromotion={selectedPromotion}
                 {currentGoal}
                 {currentSelectionPressure}
+                generations={episodeGenerations}
                 {stages}
                 {stageResults}
                 {episodeVariants}
@@ -487,6 +493,10 @@
               {currentParentVersion}
               {organismVersions}
               {lineageEdges}
+              episodes={activeEpisodes}
+              directions={activeDirections}
+              {promotions}
+              variants={snapshot?.variants ?? []}
               {activePolicy}
               {shortId}
               {statusTone}
