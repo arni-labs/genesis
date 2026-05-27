@@ -1,5 +1,5 @@
 [automaton]
-name = "MetricDefinition"
+name = "TrialMetricDefinition"
 states = ["Draft", "Frozen", "Retired"]
 initial = "Draft"
 allow_indefinite_states = ["Draft", "Frozen"]
