@@ -22,6 +22,8 @@ Genesis will host Mission Control for Directed Evolution. Mission Control reads
 live Directed Evolution control-plane entities and renders:
 
 - direction queue and direction provenance
+- live pressure, signal, evidence, and brain-run basis for each direction
+- current organism parent-ref alignment
 - active autonomy lanes
 - episode progress
 - generation and variant brackets
@@ -45,6 +47,15 @@ Mission Control must render from entity state, not from local fixtures, for the
 production path. Development fixtures may exist for component work, but the app
 must visibly distinguish fixture/dev mode from live mode and the end-to-end
 acceptance path must use live data.
+
+Mission Control reads Directed Evolution from a dedicated control tenant, not
+necessarily the Genesis registry tenant. The deployed build pins the current
+live control tenant and the route also accepts a `tenant` query parameter so a
+different control plane can be inspected without rebuilding the app.
+
+Operational actions sent from Mission Control identify the caller as a human
+agent (`x-temper-principal-kind: agent`, `x-temper-agent-type: human`) so Cedar
+evaluates the same action matrix used by chat-mediated human direction.
 
 ### Agent Answers Organism
 
@@ -72,6 +83,9 @@ marketing copy or explanatory filler.
 - Component tests cover empty, active, eliminated, selected, promoted, and
   failed episode states.
 - Browser verification covers desktop and mobile Mission Control views.
+- Mission Control shows the human-gated or automated autonomy lane for each
+  direction, and expands the direction basis into live signal, pressure,
+  evidence, and brain-run records.
 - The local e2e proof starts from Agent Answers, runs an episode, and shows the
   resulting direction, variants, eliminations, selection, promotion, and
   lineage in Mission Control.

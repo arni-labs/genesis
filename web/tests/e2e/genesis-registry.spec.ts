@@ -178,21 +178,40 @@ const blobs = [
   })
 ];
 
-const directedCollections: Record<string, EntityRow[]> = {
+const directedCollectionFixtures: Record<string, EntityRow[]> = {
   Organisms: [
     row('Organism', 'org-agent-answers', 'Active', {
       Name: 'Agent Answers',
-      AppRef: `arni-labs/agent-answers@${childHash}`,
+      AppRef: 'arni-labs/agent-answers@citation-winner',
       ParentVersionId: 'ov-agent-answers-parent',
+      OrganismVersionId: 'ov-agent-answers-citation',
+      PromotionId: 'promotion-citation-memory',
+      Summary: 'Current parent is aligned to the promoted app ref.',
       BaselineEvaluationJson: JSON.stringify(['compile', 'simulated-user'])
     })
   ],
   OrganismVersions: [
-    row('OrganismVersion', 'ov-agent-answers-parent', 'Parent', {
+    row('OrganismVersion', 'ov-agent-answers-parent', 'Superseded', {
       OrganismId: 'org-agent-answers',
-      AppRef: `arni-labs/agent-answers@${childHash}`,
+      AppRef: 'arni-labs/agent-answers@seed-parent',
       CommitRef: childHash,
-      Summary: 'Current production parent'
+      Summary: 'Seed production parent'
+    }),
+    row('OrganismVersion', 'ov-agent-answers-citation', 'Parent', {
+      OrganismId: 'org-agent-answers',
+      AppRef: 'arni-labs/agent-answers@citation-winner',
+      PromotionId: 'promotion-citation-memory',
+      Summary: 'Promoted organism with durable citation memory'
+    })
+  ],
+  LineageEdges: [
+    row('LineageEdge', 'edge-citation-memory', 'Recorded', {
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      ChildVersionId: 'ov-agent-answers-citation',
+      EpisodeId: 'episode-citation-memory',
+      PromotionId: 'promotion-citation-memory',
+      Summary: 'Citation memory evolved from the seed organism'
     })
   ],
   Signals: [
@@ -201,6 +220,7 @@ const directedCollections: Record<string, EntityRow[]> = {
       SignalKind: 'unmet_intent',
       OrganismId: 'org-agent-answers',
       Summary: 'User agent could not preserve source context after a follow-up question.',
+      EvidenceArtifactId: 'evidence-signal-citation',
       PressureId: 'pressure-citation'
     })
   ],
@@ -210,6 +230,7 @@ const directedCollections: Record<string, EntityRow[]> = {
       PressureClass: 'growth',
       Summary: 'Follow-up answers need durable citation memory.',
       SignalIdsJson: JSON.stringify(['sig-unmet-citation']),
+      EvidenceArtifactId: 'evidence-signal-citation',
       DirectionId: 'direction-citation-memory',
       BrainRunId: 'brain-observer'
     })
@@ -228,7 +249,53 @@ const directedCollections: Record<string, EntityRow[]> = {
       }),
       AutonomyLane: 'growth-human-gated',
       ProposedAdaptationGoal: 'Follow-up answers keep a visible source trail.',
-      ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness'])
+      ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness']),
+      BrainRunId: 'brain-observer'
+    }),
+    row('Direction', 'direction-comparison-preview', 'Approved', {
+      OrganismId: 'org-agent-answers',
+      PressureIdsJson: JSON.stringify([]),
+      PressureClass: 'growth',
+      Title: 'Publish comparison winner',
+      Summary: 'Promote the comparison preview variant after selection.',
+      AutonomyLane: 'growth-human-gated',
+      ProposedAdaptationGoal: 'Humans can compare candidate answers before acceptance.',
+      ProposedViabilityConstraintsJson: JSON.stringify(['Keep answer latency bounded'])
+    }),
+    row('Direction', 'direction-broken-publish', 'Approved', {
+      OrganismId: 'org-agent-answers',
+      PressureIdsJson: JSON.stringify([]),
+      PressureClass: 'repair',
+      Title: 'Recover failed publish',
+      Summary: 'Show the operator when a selected winner fails canonical materialization.',
+      AutonomyLane: 'repair-auto'
+    })
+  ],
+  EpisodeStartRequests: [
+    row('EpisodeStartRequest', 'request-citation-memory', 'Started', {
+      DirectionId: 'direction-citation-memory',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'growth-human-gated',
+      RequestedBy: 'brain-start',
+      AdaptationGoal: 'Follow-up answers keep a visible source trail.',
+      HumanNotes: 'Human approved this growth direction through chat.',
+      MetricsJson: JSON.stringify([
+        {
+          name: 'Source recall',
+          kind: 'simulated-user',
+          unit: 'score',
+          higher_is_better: true
+        }
+      ]),
+      EvaluationStagesJson: JSON.stringify(['Compile', 'AI User Trial']),
+      EliminationRulesJson: JSON.stringify(['Eliminate hidden citations']),
+      ScoringRulesJson: JSON.stringify(['Prefer source recall']),
+      SelectionStatement: 'Prefer variants that improve follow-up source recall without regressions.',
+      StartedBy: 'codex',
+      EpisodeId: 'episode-citation-memory',
+      Summary: 'Contract materialized into a running episode.',
+      HasContract: true
     })
   ],
   Episodes: [
@@ -240,25 +307,53 @@ const directedCollections: Record<string, EntityRow[]> = {
       AdaptationGoalId: 'goal-citation-memory',
       SelectionPressureId: 'selection-citation-memory',
       ViabilityConstraintIdsJson: JSON.stringify(['constraint-correctness']),
-      EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user'])
+      EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user']),
+      EliminationRuleIdsJson: JSON.stringify(['rule-visible-source-trail']),
+      ScoringRuleIdsJson: JSON.stringify(['score-source-recall']),
+      PromotionId: 'promotion-citation-memory'
+    }),
+    row('Episode', 'episode-comparison-preview', 'Promoting', {
+      DirectionId: 'direction-comparison-preview',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'growth-human-gated',
+      WinningVariantId: 'variant-comparison-preview',
+      PromotionId: 'promotion-comparison-preview'
+    }),
+    row('Episode', 'episode-broken-publish', 'Failed', {
+      DirectionId: 'direction-broken-publish',
+      OrganismId: 'org-agent-answers',
+      ParentVersionId: 'ov-agent-answers-parent',
+      AutonomyLane: 'repair-auto',
+      WinningVariantId: 'variant-broken-publish',
+      PromotionId: 'promotion-broken-publish',
+      Summary: 'Promotion materialization failed.'
     })
   ],
   Generations: [
-    row('Generation', 'generation-citation-memory-1', 'Evaluating', {
+    row('Generation', 'generation-citation-memory-1', 'Failed', {
       EpisodeId: 'episode-citation-memory',
       ParentVersionId: 'ov-agent-answers-parent',
       GenerationIndex: 1,
+      VariantTargetCount: 2,
+      FailureReason: 'All variants were eliminated before selection. Queued follow-up generation 2 with prior elimination evidence.'
+    }),
+    row('Generation', 'generation-citation-memory-2', 'Evaluating', {
+      EpisodeId: 'episode-citation-memory',
+      ParentVersionId: 'ov-agent-answers-parent',
+      GenerationIndex: 2,
       VariantTargetCount: 2
     })
   ],
   Variants: [
     row('Variant', 'variant-memory-panel', 'Active', {
       EpisodeId: 'episode-citation-memory',
-      GenerationId: 'generation-citation-memory-1',
+      GenerationId: 'generation-citation-memory-2',
       AppRef: 'arni-labs/agent-answers@variant-a',
       RuntimeRef: 'agent-answers-a.local',
       Summary: 'Adds a source memory panel',
-      BrainRunId: 'brain-variant-a'
+      BrainRunId: 'brain-variant-a',
+      PromotionId: 'promotion-citation-memory'
     }),
     row('Variant', 'variant-hidden-citations', 'Eliminated', {
       EpisodeId: 'episode-citation-memory',
@@ -270,6 +365,63 @@ const directedCollections: Record<string, EntityRow[]> = {
       StageResultId: 'stage-result-b-user',
       EvidenceArtifactId: 'evidence-b-user',
       Reason: 'Simulated users still could not find the source trail.'
+    }),
+    row('Variant', 'variant-flat-sources', 'Eliminated', {
+      EpisodeId: 'episode-citation-memory',
+      GenerationId: 'generation-citation-memory-1',
+      AppRef: 'arni-labs/agent-answers@variant-flat',
+      RuntimeRef: 'agent-answers-flat.local',
+      Summary: 'Adds a flat source note without follow-up recall',
+      Reason: 'Follow-up questions still lost the source relationship.'
+    }),
+    row('Variant', 'variant-comparison-preview', 'Selected', {
+      EpisodeId: 'episode-comparison-preview',
+      AppRef: 'arni-labs/agent-answers@comparison-preview',
+      RuntimeRef: 'agent-answers-comparison.local',
+      Summary: 'Adds a candidate answer comparison preview',
+      PromotionId: 'promotion-comparison-preview'
+    }),
+    row('Variant', 'variant-broken-publish', 'Selected', {
+      EpisodeId: 'episode-broken-publish',
+      AppRef: 'arni-labs/agent-answers@broken-publish',
+      Summary: 'Selected repair winner with a broken publish handoff',
+      PromotionId: 'promotion-broken-publish'
+    })
+  ],
+  Promotions: [
+    row('Promotion', 'promotion-citation-memory', 'Promoted', {
+      EpisodeId: 'episode-citation-memory',
+      WinningVariantId: 'variant-memory-panel',
+      ParentVersionId: 'ov-agent-answers-parent',
+      NewOrganismVersionId: 'ov-agent-answers-citation',
+      AppRef: 'arni-labs/agent-answers@citation-winner',
+      CanonicalAppRef: 'arni-labs/agent-answers@citation-winner',
+      ProductionTenant: 'default',
+      RuntimeRef: 'temper://tenant/default/app/arni-labs/agent-answers@citation-winner',
+      Materialized: true,
+      Summary: 'Published the winner and hot-loaded it into the production tenant.'
+    }),
+    row('Promotion', 'promotion-comparison-preview', 'Promoted', {
+      EpisodeId: 'episode-comparison-preview',
+      WinningVariantId: 'variant-comparison-preview',
+      ParentVersionId: 'ov-agent-answers-parent',
+      NewOrganismVersionId: 'ov-agent-answers-comparison-preview',
+      AppRef: 'arni-labs/agent-answers@comparison-preview',
+      CanonicalAppRef: 'arni-labs/agent-answers@comparison-preview-canonical',
+      ProductionTenant: 'default',
+      Materialized: false,
+      Summary: 'Winner selected and waiting for production install.'
+    }),
+    row('Promotion', 'promotion-broken-publish', 'Failed', {
+      EpisodeId: 'episode-broken-publish',
+      WinningVariantId: 'variant-broken-publish',
+      ParentVersionId: 'ov-agent-answers-parent',
+      NewOrganismVersionId: 'ov-agent-answers-broken-publish',
+      AppRef: 'arni-labs/agent-answers@broken-publish',
+      ProductionTenant: 'default',
+      Materialized: false,
+      MaterializationFailed: true,
+      FailureReason: 'Genesis publish rejected the app bundle digest.'
     })
   ],
   AdaptationGoals: [
@@ -295,6 +447,22 @@ const directedCollections: Record<string, EntityRow[]> = {
       ScoringRuleIdsJson: JSON.stringify(['score-source-recall'])
     })
   ],
+  EliminationRules: [
+    row('EliminationRule', 'rule-visible-source-trail', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      RuleStatement: 'Eliminate hidden citations',
+      MetricIdsJson: JSON.stringify(['metric-source-recall']),
+      ThresholdJson: JSON.stringify({ min: 0.8 })
+    })
+  ],
+  ScoringRules: [
+    row('ScoringRule', 'score-source-recall', 'Active', {
+      EpisodeId: 'episode-citation-memory',
+      RuleStatement: 'Prefer source recall',
+      MetricIdsJson: JSON.stringify(['metric-source-recall']),
+      Weight: '0.7'
+    })
+  ],
   EvaluationStages: [
     row('EvaluationStage', 'stage-compile', 'Active', {
       EpisodeId: 'episode-citation-memory',
@@ -314,7 +482,7 @@ const directedCollections: Record<string, EntityRow[]> = {
   StageResults: [
     row('StageResult', 'stage-result-a-compile', 'Passed', {
       EpisodeId: 'episode-citation-memory',
-      GenerationId: 'generation-citation-memory-1',
+      GenerationId: 'generation-citation-memory-2',
       VariantId: 'variant-memory-panel',
       EvaluationStageId: 'stage-compile',
       MetricsJson: JSON.stringify({ build: 'ok' }),
@@ -323,7 +491,7 @@ const directedCollections: Record<string, EntityRow[]> = {
     }),
     row('StageResult', 'stage-result-a-user', 'Running', {
       EpisodeId: 'episode-citation-memory',
-      GenerationId: 'generation-citation-memory-1',
+      GenerationId: 'generation-citation-memory-2',
       VariantId: 'variant-memory-panel',
       EvaluationStageId: 'stage-simulated-user',
       Summary: 'Simulated users are testing follow-up recall'
@@ -342,7 +510,9 @@ const directedCollections: Record<string, EntityRow[]> = {
       EpisodeId: 'episode-citation-memory',
       MetricName: 'Source recall',
       Unit: 'score',
-      DesiredDirection: 'higher'
+      DesiredDirection: 'higher',
+      HigherIsBetter: 'true',
+      Description: 'Simulated users can recover the answer source trail.'
     })
   ],
   Measurements: [
@@ -355,10 +525,30 @@ const directedCollections: Record<string, EntityRow[]> = {
     })
   ],
   EvidenceArtifacts: [
+    row('EvidenceArtifact', 'evidence-signal-citation', 'Linked', {
+      ArtifactKind: 'datadog_signal',
+      Uri: 'https://app.datadoghq.com/logs?query=service%3Aagent-answers%20source-context',
+      Summary: 'Datadog and simulated-user evidence showed repeated source-context loss.',
+      TargetEntityType: 'Signal',
+      TargetEntityId: 'sig-unmet-citation'
+    }),
     row('EvidenceArtifact', 'evidence-b-user', 'Linked', {
       ArtifactKind: 'simulated_user_trace',
-      Uri: 'datadog://trace/variant-b',
+      Uri: 'https://app.datadoghq.com/logs?query=service%3Atemperpaw%20variant-hidden-citations',
       Summary: 'AI user could not locate citations after the follow-up.',
+      CorrelationJson: JSON.stringify({
+        output: {
+          evidence_scope: [
+            {
+              surface: 'logs',
+              query: 'service:temperpaw variant-hidden-citations',
+              result_summary: 'No user-visible citation trail appeared in the simulated-user run.',
+              datadog_url:
+                'https://app.datadoghq.com/logs?query=service%3Atemperpaw%20variant-hidden-citations'
+            }
+          ]
+        }
+      }),
       TargetEntityType: 'Variant',
       TargetEntityId: 'variant-hidden-citations'
     })
@@ -402,7 +592,18 @@ const directedCollections: Record<string, EntityRow[]> = {
   ]
 };
 
+function cloneDirectedCollections(): Record<string, EntityRow[]> {
+  return Object.fromEntries(
+    Object.entries(directedCollectionFixtures).map(([collection, rows]) => [
+      collection,
+      rows.map((item) => JSON.parse(JSON.stringify(item)) as EntityRow)
+    ])
+  );
+}
+
 async function mockOData(page: Page) {
+  const directedCollections = cloneDirectedCollections();
+
   await page.route('**/tdata/Apps', async (route) => {
     await route.fulfill({ json: { value: apps } });
   });
@@ -570,21 +771,85 @@ test('renders live Directed Evolution mission control and dispatches real contro
     page.getByText('Follow-up answers keep a visible source trail.', { exact: true }).first()
   ).toBeVisible();
   await expect(page.getByText('AI User Trial')).toBeVisible();
-  await expect(page.getByText('Simulated users still could not find the source trail.')).toBeVisible();
-  await expect(page.getByText('repair_lane')).toBeVisible();
+  await expect(page.getByText('Start Request', { exact: true })).toBeVisible();
+  await expect(page.getByText('brain-start')).toBeVisible();
+  await expect(page.getByText('Metrics & Rules')).toBeVisible();
+  await expect(page.getByText('Source recall', { exact: true })).toBeVisible();
+  await expect(page.getByText('Eliminate hidden citations')).toBeVisible();
+  await expect(page.getByText('Weight 0.7')).toBeVisible();
+  await expect(page.getByText('Generation Topology')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Generation 1' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Generation 2' })).toBeVisible();
+  await expect(page.getByText('evidence-fed follow-up')).toBeVisible();
+  await expect(
+    page.getByText('All variants were eliminated before selection. Queued follow-up generation 2')
+  ).toBeVisible();
+  await expect(page.getByText('Simulated users still could not find the source trail.').first()).toBeVisible();
+  await expect(page.getByText('repair_lane').first()).toBeVisible();
+  await expect(page.getByText('human gate').first()).toBeVisible();
+  await expect(page.getByText('Ref Aligned')).toBeVisible();
+  await expect(page.getByText('Follow-up answers need durable citation memory.').first()).toBeVisible();
+  await expect(page.getByText('User agent could not preserve source context')).toBeVisible();
+  await expect(page.getByText('Observed unmet follow-up citation intent.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Datadog and simulated-user evidence/ })).toHaveAttribute(
+    'href',
+    /app\.datadoghq\.com\/logs/
+  );
+  await expect(page.getByText('Materialized').first()).toBeVisible();
+  await expect(page.getByText('Materializing')).toBeVisible();
+  await expect(page.getByText('Failed Installs')).toBeVisible();
+  await expect(page.getByText('Hot-loaded').first()).toBeVisible();
+  await expect(
+    page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner', {
+      exact: true
+    })
+  ).toBeVisible();
+  await expect(page.getByText('Specimen History')).toBeVisible();
+  await expect(page.getByText('current parent', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('mutation edge')).toBeVisible();
+  await expect(page.getByText('winner variant')).toBeVisible();
+  await expect(page.getByText('Answer citations that survive follow-up').first()).toBeVisible();
+  await expect(page.getByText('Winner: Adds a source memory panel')).toBeVisible();
+  await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
+  const evolutionOverflow = await page.evaluate(() => {
+    const root = document.documentElement;
+    return root.scrollWidth - root.clientWidth;
+  });
+  expect(evolutionOverflow).toBeLessThanOrEqual(1);
+
+  await page.getByRole('button', { name: /Open episode Publish comparison winner/ }).click();
+  await expect(page.getByText('Hot-load pending').first()).toBeVisible();
+  await expect(
+    page.getByText('Winner selected. Promoter is publishing the canonical app ref')
+  ).toBeVisible();
+  await expect(page.getByText('Canonical ref: arni-labs/agent-answers@comparison-preview-canonical')).toBeVisible();
+  await expect(page.getByText('Runtime: default')).toBeVisible();
+
+  await page.getByRole('button', { name: /Open episode Recover failed publish/ }).click();
+  await expect(page.getByText('Materialization failed').first()).toBeVisible();
+  await expect(page.getByText('Genesis publish rejected the app bundle digest.')).toBeVisible();
+  await expect(page.getByText('Runtime: default')).toBeVisible();
+
+  await page.getByRole('button', { name: /Open episode Answer citations that survive follow-up/ }).click();
+
+  await page.getByRole('button', { name: 'Inspect' }).first().click();
+  await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
+    'href',
+    /app\.datadoghq\.com\/logs/
+  );
 
   await page.getByRole('button', { name: 'Pause' }).click();
-  await expect(page.getByText('Paused')).toBeVisible();
+  await expect(page.getByText('Paused').first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'Pin' }).click();
-  await expect(page.getByText('Pinned')).toBeVisible();
+  await page.getByRole('button', { name: 'Pin' }).click({ force: true });
+  await expect(page.getByText('Pinned').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Compare' }).first().click();
   await expect(page.getByText('Variant Compare')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Adds a source memory panel' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stores citations invisibly' }).first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Dismiss' }).click();
-  await expect(page.getByText('Dismissed')).toBeVisible();
+  await expect(page.getByText('Dismissed').first()).toBeVisible();
 
   expect(actionUrls.some((url) => url.includes('/Episodes') && url.includes('PauseEpisode'))).toBe(
     true

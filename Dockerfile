@@ -8,7 +8,8 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web ./
-RUN npm run build
+ARG VITE_DIRECTED_EVOLUTION_TENANT_ID=de-control-agent-answers-20260527001135
+RUN VITE_DIRECTED_EVOLUTION_TENANT_ID=${VITE_DIRECTED_EVOLUTION_TENANT_ID} npm run build
 
 FROM rust:1-bookworm AS rust-builder
 RUN apt-get update && apt-get install -y \

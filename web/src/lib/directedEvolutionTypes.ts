@@ -10,6 +10,9 @@ export type EvolutionOrganism = EntityBase & {
   name: string;
   appRef: string;
   parentVersionId: string;
+  organismVersionId: string;
+  promotionId: string;
+  summary: string;
   baselineEvaluation: string;
 };
 
@@ -20,6 +23,15 @@ export type EvolutionOrganismVersion = EntityBase & {
   promotionId: string;
   summary: string;
   newParentVersionId: string;
+};
+
+export type EvolutionLineageEdge = EntityBase & {
+  organismId: string;
+  parentVersionId: string;
+  childVersionId: string;
+  episodeId: string;
+  promotionId: string;
+  summary: string;
 };
 
 export type EvolutionSignal = EntityBase & {
@@ -57,6 +69,29 @@ export type EvolutionDirection = EntityBase & {
   selectionNotes: string;
 };
 
+export type EvolutionEpisodeStartRequest = EntityBase & {
+  hasContract: boolean;
+  directionId: string;
+  organismId: string;
+  parentVersionId: string;
+  autonomyLane: string;
+  requestedBy: string;
+  adaptationGoal: string;
+  humanNotes: string;
+  viabilityConstraints: string[];
+  metrics: string[];
+  evaluationStages: string[];
+  eliminationRules: string[];
+  scoringRules: string[];
+  selectionStatement: string;
+  contractJson: string;
+  startedBy: string;
+  reason: string;
+  episodeId: string;
+  summary: string;
+  evidenceArtifactId: string;
+};
+
 export type EvolutionEpisode = EntityBase & {
   directionId: string;
   organismId: string;
@@ -66,10 +101,18 @@ export type EvolutionEpisode = EntityBase & {
   selectionPressureId: string;
   viabilityConstraintIds: string[];
   evaluationStageIds: string[];
+  eliminationRuleIds: string[];
+  scoringRuleIds: string[];
   generationCount: number;
+  startedBy: string;
+  reason: string;
   winningVariantId: string;
+  promotionId: string;
+  organismVersionId: string;
   selectionExplanation: string;
+  evidenceArtifactId: string;
   summary: string;
+  failureReason: string;
 };
 
 export type EvolutionGeneration = EntityBase & {
@@ -101,6 +144,23 @@ export type EvolutionVariant = EntityBase & {
   failureReason: string;
 };
 
+export type EvolutionPromotion = EntityBase & {
+  episodeId: string;
+  winningVariantId: string;
+  parentVersionId: string;
+  newOrganismVersionId: string;
+  selectionExplanation: string;
+  evidenceArtifactId: string;
+  appRef: string;
+  canonicalAppRef: string;
+  productionTenant: string;
+  runtimeRef: string;
+  summary: string;
+  materialized: boolean;
+  materializationFailed: boolean;
+  failureReason: string;
+};
+
 export type EvolutionAdaptationGoal = EntityBase & {
   episodeId: string;
   goalStatement: string;
@@ -123,6 +183,24 @@ export type EvolutionSelectionPressure = EntityBase & {
   eliminationRuleIds: string[];
   scoringRuleIds: string[];
   createdByBrainRunId: string;
+};
+
+export type EvolutionEliminationRule = EntityBase & {
+  episodeId: string;
+  ruleStatement: string;
+  metricIds: string[];
+  thresholdJson: string;
+  createdByBrainRunId: string;
+  reason: string;
+};
+
+export type EvolutionScoringRule = EntityBase & {
+  episodeId: string;
+  ruleStatement: string;
+  metricIds: string[];
+  weight: string;
+  createdByBrainRunId: string;
+  reason: string;
 };
 
 export type EvolutionEvaluationStage = EntityBase & {
@@ -155,6 +233,8 @@ export type EvolutionMetricDefinition = EntityBase & {
   metricKind: string;
   source: string;
   desiredDirection: string;
+  higherIsBetter: string;
+  description: string;
 };
 
 export type EvolutionMeasurement = EntityBase & {
@@ -225,15 +305,20 @@ export type EvolutionBrainRun = EntityBase & {
 export type DirectedEvolutionSnapshot = {
   organisms: EvolutionOrganism[];
   organismVersions: EvolutionOrganismVersion[];
+  lineageEdges: EvolutionLineageEdge[];
   signals: EvolutionSignal[];
   pressures: EvolutionPressure[];
   directions: EvolutionDirection[];
+  episodeStartRequests: EvolutionEpisodeStartRequest[];
   episodes: EvolutionEpisode[];
   generations: EvolutionGeneration[];
   variants: EvolutionVariant[];
+  promotions: EvolutionPromotion[];
   adaptationGoals: EvolutionAdaptationGoal[];
   viabilityConstraints: EvolutionViabilityConstraint[];
   selectionPressures: EvolutionSelectionPressure[];
+  eliminationRules: EvolutionEliminationRule[];
+  scoringRules: EvolutionScoringRule[];
   evaluationStages: EvolutionEvaluationStage[];
   stageResults: EvolutionStageResult[];
   metricDefinitions: EvolutionMetricDefinition[];

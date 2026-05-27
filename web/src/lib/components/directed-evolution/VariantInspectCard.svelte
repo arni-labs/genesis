@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ExternalLink } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui';
   import type {
     EvolutionEvidenceArtifact,
@@ -25,6 +26,89 @@
     shortId,
     statusTone
   }: VariantInspectCardProps = $props();
+
+  type EvidenceScope = {
+    surface?: string;
+    query?: string;
+    result_summary?: string;
+    resultSummary?: string;
+    datadog_url?: string;
+    datadogUrl?: string;
+  };
+
+  function parsedCorrelation(artifact: EvolutionEvidenceArtifact): Record<string, unknown> {
+    if (!artifact.correlationJson) return {};
+    try {
+      const value = JSON.parse(artifact.correlationJson);
+      return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function evidenceScopes(artifact: EvolutionEvidenceArtifact): EvidenceScope[] {
+    const correlation = parsedCorrelation(artifact);
+    const output = correlation.output;
+    const candidates = [
+      correlation.evidence_scope,
+      correlation.evidenceScope,
+      output && typeof output === 'object' && !Array.isArray(output)
+        ? (output as Record<string, unknown>).evidence_scope
+        : undefined,
+      output && typeof output === 'object' && !Array.isArray(output)
+        ? (output as Record<string, unknown>).evidenceScope
+        : undefined
+    ];
+
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        return candidate.filter(
+          (item): item is EvidenceScope => item && typeof item === 'object' && !Array.isArray(item)
+        );
+      }
+    }
+    return [];
+  }
+
+  function datadogHref(artifact: EvolutionEvidenceArtifact): string {
+    if (isDatadogHref(artifact.uri)) return artifact.uri;
+    const scope = evidenceScopes(artifact).find((entry) => entry.datadog_url || entry.datadogUrl);
+    const href = (scope?.datadog_url || scope?.datadogUrl || '').trim();
+    return isDatadogHref(href) ? href : '';
+  }
+
+  function isDatadogHref(value: string): boolean {
+    return [
+      'https://app.datadoghq.com',
+      'https://app.us3.datadoghq.com',
+      'https://app.us5.datadoghq.com',
+      'https://app.datadoghq.eu',
+      'https://app.ap1.datadoghq.com',
+      'https://app.ap2.datadoghq.com',
+      'https://app.ddog-gov.com'
+    ].some((prefix) => value.startsWith(prefix));
+  }
+
+  function evidenceSummary(artifact: EvolutionEvidenceArtifact): string {
+    const scope = evidenceScopes(artifact)[0];
+    return (
+      scope?.result_summary ||
+      scope?.resultSummary ||
+      artifact.summary ||
+      artifact.uri ||
+      shortId(artifact.id)
+    );
+  }
+
+  function evidenceSurface(artifact: EvolutionEvidenceArtifact): string {
+    return evidenceScopes(artifact)[0]?.surface || artifact.artifactKind || 'Evidence';
+  }
+
+  function evidenceQuery(artifact: EvolutionEvidenceArtifact): string {
+    return evidenceScopes(artifact)[0]?.query || '';
+  }
 </script>
 
 <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
@@ -65,10 +149,34 @@
   {#if evidence.length}
     <div class="mt-3 border-t border-[var(--color-border)] pt-2">
       {#each evidence.slice(0, 3) as artifact (artifact.id)}
-        <p class="truncate text-[11px] text-[var(--color-muted)]">
-          <span class="font-semibold text-[var(--color-ink-soft)]">{artifact.artifactKind || 'Evidence'}:</span>
-          {artifact.summary || artifact.uri || shortId(artifact.id)}
-        </p>
+        {@const href = datadogHref(artifact)}
+        {@const query = evidenceQuery(artifact)}
+        <div class="mb-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5 last:mb-0">
+          <div class="flex items-center justify-between gap-2">
+            <p class="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+              {evidenceSurface(artifact)}
+            </p>
+            {#if href}
+              <a
+                class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary)] hover:bg-white"
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink size={10} />
+                Datadog
+              </a>
+            {/if}
+          </div>
+          <p class="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--color-muted)]">
+            {evidenceSummary(artifact)}
+          </p>
+          {#if query}
+            <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-faint)]">
+              {query}
+            </p>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}

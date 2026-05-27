@@ -11,15 +11,20 @@ import type {
   EvolutionAutonomyPolicy,
   EvolutionBrainRun,
   EvolutionDirection,
+  EvolutionEliminationRule,
   EvolutionEpisode,
+  EvolutionEpisodeStartRequest,
   EvolutionEvaluationStage,
   EvolutionEvidenceArtifact,
   EvolutionGeneration,
+  EvolutionLineageEdge,
   EvolutionMeasurement,
   EvolutionMetricDefinition,
   EvolutionOrganism,
   EvolutionOrganismVersion,
   EvolutionPressure,
+  EvolutionPromotion,
+  EvolutionScoringRule,
   EvolutionSelectionPressure,
   EvolutionSignal,
   EvolutionStageResult,
@@ -42,10 +47,11 @@ type CollectionResult<T> = {
 
 async function loadDirectedCollection<T>(
   collection: string,
-  normalizer: (row: EntityRow) => T
+  normalizer: (row: EntityRow) => T,
+  tenantId?: string
 ): Promise<CollectionResult<T>> {
   try {
-    const rows = await listEntityCollection(collection, COLLECTION_TOP);
+    const rows = await listEntityCollection(collection, COLLECTION_TOP, tenantId);
     return { value: rows.map(normalizer) };
   } catch (error) {
     return {
@@ -58,19 +64,26 @@ async function loadDirectedCollection<T>(
   }
 }
 
-export async function loadDirectedEvolutionSnapshot(): Promise<DirectedEvolutionSnapshot> {
+export async function loadDirectedEvolutionSnapshot(
+  tenantId?: string
+): Promise<DirectedEvolutionSnapshot> {
   const [
     organisms,
     organismVersions,
+    lineageEdges,
     signals,
     pressures,
     directions,
+    episodeStartRequests,
     episodes,
     generations,
     variants,
+    promotions,
     adaptationGoals,
     viabilityConstraints,
     selectionPressures,
+    eliminationRules,
+    scoringRules,
     evaluationStages,
     stageResults,
     metricDefinitions,
@@ -81,40 +94,50 @@ export async function loadDirectedEvolutionSnapshot(): Promise<DirectedEvolution
     workItems,
     brainRuns
   ] = await Promise.all([
-    loadDirectedCollection('Organisms', normalizeOrganism),
-    loadDirectedCollection('OrganismVersions', normalizeOrganismVersion),
-    loadDirectedCollection('Signals', normalizeSignal),
-    loadDirectedCollection('Pressures', normalizePressure),
-    loadDirectedCollection('Directions', normalizeDirection),
-    loadDirectedCollection('Episodes', normalizeEpisode),
-    loadDirectedCollection('Generations', normalizeGeneration),
-    loadDirectedCollection('Variants', normalizeVariant),
-    loadDirectedCollection('AdaptationGoals', normalizeAdaptationGoal),
-    loadDirectedCollection('ViabilityConstraints', normalizeViabilityConstraint),
-    loadDirectedCollection('SelectionPressures', normalizeSelectionPressure),
-    loadDirectedCollection('EvaluationStages', normalizeEvaluationStage),
-    loadDirectedCollection('StageResults', normalizeStageResult),
-    loadDirectedCollection('MetricDefinitions', normalizeMetricDefinition),
-    loadDirectedCollection('Measurements', normalizeMeasurement),
-    loadDirectedCollection('EvidenceArtifacts', normalizeEvidenceArtifact),
-    loadDirectedCollection('Trials', normalizeTrial),
-    loadDirectedCollection('AutonomyPolicies', normalizeAutonomyPolicy),
-    loadDirectedCollection('WorkItems', normalizeWorkItem),
-    loadDirectedCollection('BrainRuns', normalizeBrainRun)
+    loadDirectedCollection('Organisms', normalizeOrganism, tenantId),
+    loadDirectedCollection('OrganismVersions', normalizeOrganismVersion, tenantId),
+    loadDirectedCollection('LineageEdges', normalizeLineageEdge, tenantId),
+    loadDirectedCollection('Signals', normalizeSignal, tenantId),
+    loadDirectedCollection('Pressures', normalizePressure, tenantId),
+    loadDirectedCollection('Directions', normalizeDirection, tenantId),
+    loadDirectedCollection('EpisodeStartRequests', normalizeEpisodeStartRequest, tenantId),
+    loadDirectedCollection('Episodes', normalizeEpisode, tenantId),
+    loadDirectedCollection('Generations', normalizeGeneration, tenantId),
+    loadDirectedCollection('Variants', normalizeVariant, tenantId),
+    loadDirectedCollection('Promotions', normalizePromotion, tenantId),
+    loadDirectedCollection('AdaptationGoals', normalizeAdaptationGoal, tenantId),
+    loadDirectedCollection('ViabilityConstraints', normalizeViabilityConstraint, tenantId),
+    loadDirectedCollection('SelectionPressures', normalizeSelectionPressure, tenantId),
+    loadDirectedCollection('EliminationRules', normalizeEliminationRule, tenantId),
+    loadDirectedCollection('ScoringRules', normalizeScoringRule, tenantId),
+    loadDirectedCollection('EvaluationStages', normalizeEvaluationStage, tenantId),
+    loadDirectedCollection('StageResults', normalizeStageResult, tenantId),
+    loadDirectedCollection('MetricDefinitions', normalizeMetricDefinition, tenantId),
+    loadDirectedCollection('Measurements', normalizeMeasurement, tenantId),
+    loadDirectedCollection('EvidenceArtifacts', normalizeEvidenceArtifact, tenantId),
+    loadDirectedCollection('Trials', normalizeTrial, tenantId),
+    loadDirectedCollection('AutonomyPolicies', normalizeAutonomyPolicy, tenantId),
+    loadDirectedCollection('WorkItems', normalizeWorkItem, tenantId),
+    loadDirectedCollection('BrainRuns', normalizeBrainRun, tenantId)
   ]);
 
   return {
     organisms: organisms.value,
     organismVersions: organismVersions.value,
+    lineageEdges: lineageEdges.value,
     signals: signals.value,
     pressures: pressures.value,
     directions: directions.value,
+    episodeStartRequests: episodeStartRequests.value,
     episodes: episodes.value,
     generations: generations.value,
     variants: variants.value,
+    promotions: promotions.value,
     adaptationGoals: adaptationGoals.value,
     viabilityConstraints: viabilityConstraints.value,
     selectionPressures: selectionPressures.value,
+    eliminationRules: eliminationRules.value,
+    scoringRules: scoringRules.value,
     evaluationStages: evaluationStages.value,
     stageResults: stageResults.value,
     metricDefinitions: metricDefinitions.value,
@@ -127,15 +150,20 @@ export async function loadDirectedEvolutionSnapshot(): Promise<DirectedEvolution
     warnings: [
       organisms.warning,
       organismVersions.warning,
+      lineageEdges.warning,
       signals.warning,
       pressures.warning,
       directions.warning,
+      episodeStartRequests.warning,
       episodes.warning,
       generations.warning,
       variants.warning,
+      promotions.warning,
       adaptationGoals.warning,
       viabilityConstraints.warning,
       selectionPressures.warning,
+      eliminationRules.warning,
+      scoringRules.warning,
       evaluationStages.warning,
       stageResults.warning,
       metricDefinitions.warning,
@@ -149,39 +177,71 @@ export async function loadDirectedEvolutionSnapshot(): Promise<DirectedEvolution
   };
 }
 
-export function pauseEpisode(id: string, reason = 'Paused from Genesis Mission Control') {
-  return directedAction('Episodes', id, 'PauseEpisode', { Reason: reason });
+export function resumeEpisode(
+  id: string,
+  reason = 'Resumed from Genesis Mission Control',
+  tenantId?: string
+) {
+  return directedAction('Episodes', id, 'ResumeEpisode', { Reason: reason }, tenantId);
 }
 
-export function resumeEpisode(id: string, reason = 'Resumed from Genesis Mission Control') {
-  return directedAction('Episodes', id, 'ResumeEpisode', { Reason: reason });
+export function pauseEpisode(
+  id: string,
+  reason = 'Paused from Genesis Mission Control',
+  tenantId?: string
+) {
+  return directedAction('Episodes', id, 'PauseEpisode', { Reason: reason }, tenantId);
 }
 
-export function stopEpisode(id: string, reason = 'Stopped from Genesis Mission Control') {
-  return directedAction('Episodes', id, 'StopEpisode', { Reason: reason });
+export function stopEpisode(
+  id: string,
+  reason = 'Stopped from Genesis Mission Control',
+  tenantId?: string
+) {
+  return directedAction('Episodes', id, 'StopEpisode', { Reason: reason }, tenantId);
 }
 
-export function dismissDirection(id: string, reason = 'Dismissed from Genesis Mission Control') {
-  return directedAction('Directions', id, 'DismissDirection', { Reason: reason });
+export function dismissDirection(
+  id: string,
+  reason = 'Dismissed from Genesis Mission Control',
+  tenantId?: string
+) {
+  return directedAction('Directions', id, 'DismissDirection', { Reason: reason }, tenantId);
 }
 
 export function pinViabilityConstraint(
   id: string,
-  reason = 'Pinned from Genesis Mission Control'
+  reason = 'Pinned from Genesis Mission Control',
+  tenantId?: string
 ) {
-  return directedAction('ViabilityConstraints', id, 'PinViabilityConstraint', {
-    PinnedBy: 'genesis-mission-control',
-    Reason: reason
-  });
+  return directedAction(
+    'ViabilityConstraints',
+    id,
+    'PinViabilityConstraint',
+    {
+      PinnedBy: 'genesis-mission-control',
+      Reason: reason
+    },
+    tenantId
+  );
 }
 
 function directedAction(
   collection: string,
   id: string,
   action: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  tenantId?: string
 ) {
-  return postEntityAction(collection, id, DIRECTED_EVOLUTION_NAMESPACE, action, body);
+  return postEntityAction(
+    collection,
+    id,
+    DIRECTED_EVOLUTION_NAMESPACE,
+    action,
+    body,
+    { id: 'genesis-mission-control', kind: 'agent', agentType: 'human' },
+    tenantId
+  );
 }
 
 function base(row: EntityRow): EntityBase {
@@ -193,11 +253,16 @@ function base(row: EntityRow): EntityBase {
 }
 
 function normalizeOrganism(row: EntityRow): EvolutionOrganism {
+  const parentVersionId = stringField(row, 'ParentVersionId');
+  const organismVersionId = stringField(row, 'OrganismVersionId');
   return {
     ...base(row),
     name: stringField(row, 'Name'),
     appRef: stringField(row, 'AppRef'),
-    parentVersionId: stringField(row, 'ParentVersionId'),
+    parentVersionId,
+    organismVersionId: organismVersionId || parentVersionId,
+    promotionId: stringField(row, 'PromotionId'),
+    summary: stringField(row, 'Summary'),
     baselineEvaluation: stringField(row, 'BaselineEvaluationJson')
   };
 }
@@ -211,6 +276,18 @@ function normalizeOrganismVersion(row: EntityRow): EvolutionOrganismVersion {
     promotionId: stringField(row, 'PromotionId'),
     summary: stringField(row, 'Summary'),
     newParentVersionId: stringField(row, 'NewParentVersionId')
+  };
+}
+
+function normalizeLineageEdge(row: EntityRow): EvolutionLineageEdge {
+  return {
+    ...base(row),
+    organismId: stringField(row, 'OrganismId'),
+    parentVersionId: stringField(row, 'ParentVersionId'),
+    childVersionId: stringField(row, 'ChildVersionId'),
+    episodeId: stringField(row, 'EpisodeId'),
+    promotionId: stringField(row, 'PromotionId'),
+    summary: stringField(row, 'Summary')
   };
 }
 
@@ -271,10 +348,50 @@ function normalizeEpisode(row: EntityRow): EvolutionEpisode {
     selectionPressureId: stringField(row, 'SelectionPressureId'),
     viabilityConstraintIds: parseJsonList(stringField(row, 'ViabilityConstraintIdsJson')),
     evaluationStageIds: parseJsonList(stringField(row, 'EvaluationStageIdsJson')),
+    eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
+    scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
     generationCount: numberField(row, 'generation_count', 'GenerationCount'),
+    startedBy: stringField(row, 'StartedBy'),
+    reason: stringField(row, 'Reason'),
     winningVariantId: stringField(row, 'WinningVariantId'),
+    promotionId: stringField(row, 'PromotionId'),
+    organismVersionId: stringField(row, 'OrganismVersionId'),
     selectionExplanation: stringField(row, 'SelectionExplanation'),
-    summary: stringField(row, 'Summary')
+    evidenceArtifactId: stringField(row, 'EvidenceArtifactId'),
+    summary: stringField(row, 'Summary'),
+    failureReason: stringField(row, 'FailureReason')
+  };
+}
+
+function normalizeEpisodeStartRequest(row: EntityRow): EvolutionEpisodeStartRequest {
+  const contractJson = stringField(row, 'ContractJson');
+  const status = stringField(row, 'Status') || 'Recorded';
+  return {
+    ...base(row),
+    status,
+    hasContract:
+      booleanField(row, 'has_contract', 'HasContract') ||
+      Boolean(contractJson) ||
+      status === 'Started',
+    directionId: stringField(row, 'DirectionId'),
+    organismId: stringField(row, 'OrganismId'),
+    parentVersionId: stringField(row, 'ParentVersionId'),
+    autonomyLane: stringField(row, 'AutonomyLane'),
+    requestedBy: stringField(row, 'RequestedBy'),
+    adaptationGoal: stringField(row, 'AdaptationGoal'),
+    humanNotes: stringField(row, 'HumanNotes'),
+    viabilityConstraints: parseJsonList(stringField(row, 'ViabilityConstraintsJson')),
+    metrics: parseJsonList(stringField(row, 'MetricsJson')),
+    evaluationStages: parseJsonList(stringField(row, 'EvaluationStagesJson')),
+    eliminationRules: parseJsonList(stringField(row, 'EliminationRulesJson')),
+    scoringRules: parseJsonList(stringField(row, 'ScoringRulesJson')),
+    selectionStatement: stringField(row, 'SelectionStatement'),
+    contractJson,
+    startedBy: stringField(row, 'StartedBy'),
+    reason: stringField(row, 'Reason'),
+    episodeId: stringField(row, 'EpisodeId'),
+    summary: stringField(row, 'Summary'),
+    evidenceArtifactId: stringField(row, 'EvidenceArtifactId')
   };
 }
 
@@ -313,6 +430,26 @@ function normalizeVariant(row: EntityRow): EvolutionVariant {
   };
 }
 
+function normalizePromotion(row: EntityRow): EvolutionPromotion {
+  return {
+    ...base(row),
+    episodeId: stringField(row, 'EpisodeId'),
+    winningVariantId: stringField(row, 'WinningVariantId'),
+    parentVersionId: stringField(row, 'ParentVersionId'),
+    newOrganismVersionId: stringField(row, 'NewOrganismVersionId'),
+    selectionExplanation: stringField(row, 'SelectionExplanation'),
+    evidenceArtifactId: stringField(row, 'EvidenceArtifactId'),
+    appRef: stringField(row, 'AppRef'),
+    canonicalAppRef: stringField(row, 'CanonicalAppRef'),
+    productionTenant: stringField(row, 'ProductionTenant'),
+    runtimeRef: stringField(row, 'RuntimeRef'),
+    summary: stringField(row, 'Summary'),
+    materialized: booleanField(row, 'materialized', 'Materialized'),
+    materializationFailed: booleanField(row, 'materialization_failed', 'MaterializationFailed'),
+    failureReason: stringField(row, 'FailureReason')
+  };
+}
+
 function normalizeAdaptationGoal(row: EntityRow): EvolutionAdaptationGoal {
   return {
     ...base(row),
@@ -343,6 +480,30 @@ function normalizeSelectionPressure(row: EntityRow): EvolutionSelectionPressure 
     eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
     scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
     createdByBrainRunId: stringField(row, 'CreatedByBrainRunId')
+  };
+}
+
+function normalizeEliminationRule(row: EntityRow): EvolutionEliminationRule {
+  return {
+    ...base(row),
+    episodeId: stringField(row, 'EpisodeId'),
+    ruleStatement: stringField(row, 'RuleStatement'),
+    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    thresholdJson: stringField(row, 'ThresholdJson'),
+    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    reason: stringField(row, 'Reason')
+  };
+}
+
+function normalizeScoringRule(row: EntityRow): EvolutionScoringRule {
+  return {
+    ...base(row),
+    episodeId: stringField(row, 'EpisodeId'),
+    ruleStatement: stringField(row, 'RuleStatement'),
+    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    weight: stringField(row, 'Weight'),
+    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    reason: stringField(row, 'Reason')
   };
 }
 
@@ -383,7 +544,9 @@ function normalizeMetricDefinition(row: EntityRow): EvolutionMetricDefinition {
     unit: stringField(row, 'Unit'),
     metricKind: stringField(row, 'MetricKind'),
     source: stringField(row, 'Source'),
-    desiredDirection: stringField(row, 'DesiredDirection')
+    desiredDirection: stringField(row, 'DesiredDirection'),
+    higherIsBetter: stringField(row, 'HigherIsBetter'),
+    description: stringField(row, 'Description')
   };
 }
 
@@ -481,4 +644,22 @@ function numberField(row: EntityRow, ...keys: string[]): number {
     }
   }
   return 0;
+}
+
+function booleanField(row: EntityRow, ...keys: string[]): boolean {
+  for (const key of keys) {
+    const value = stringField(row, key);
+    if (value) {
+      return value === 'true' || value === '1';
+    }
+    const booleans = row.booleans;
+    const raw =
+      (booleans && typeof booleans === 'object'
+        ? (booleans as Record<string, unknown>)[key]
+        : undefined) ?? row.fields?.[key];
+    if (typeof raw === 'boolean') {
+      return raw;
+    }
+  }
+  return false;
 }
