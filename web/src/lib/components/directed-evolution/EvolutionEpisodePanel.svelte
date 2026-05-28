@@ -17,7 +17,6 @@
     EvolutionDirection,
     EvolutionEliminationRule,
     EvolutionEpisode,
-    EvolutionEpisodeStartRequest,
     EvolutionEvaluationStage,
     EvolutionGeneration,
     EvolutionMetricDefinition,
@@ -33,7 +32,7 @@
   import MetricTile from './MetricTile.svelte';
   import MetricsRulesCard from './MetricsRulesCard.svelte';
   import PanelTitle from './PanelTitle.svelte';
-  import StartRequestCard from './StartRequestCard.svelte';
+  import EpisodeProtocolCard from './EpisodeProtocolCard.svelte';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
@@ -48,7 +47,6 @@
     stageResults: EvolutionStageResult[];
     episodeVariants: EvolutionVariant[];
     constraints: EvolutionViabilityConstraint[];
-    startRequest: EvolutionEpisodeStartRequest | null;
     metricDefinitions: EvolutionMetricDefinition[];
     eliminationRules: EvolutionEliminationRule[];
     scoringRules: EvolutionScoringRule[];
@@ -75,7 +73,6 @@
     stageResults,
     episodeVariants,
     constraints,
-    startRequest,
     metricDefinitions,
     eliminationRules,
     scoringRules,
@@ -308,7 +305,7 @@
       </div>
 
       <div class="grid min-w-0 gap-3 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)]">
-        <StartRequestCard {selectedEpisode} {startRequest} {shortId} {statusTone} />
+        <EpisodeProtocolCard {selectedEpisode} {shortId} {statusTone} />
         <MetricsRulesCard {metricDefinitions} {eliminationRules} {scoringRules} {shortId} />
       </div>
 
