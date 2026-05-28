@@ -204,8 +204,8 @@
   }
 </script>
 
-<aside class="grid gap-3 lg:grid-cols-2">
-  <Card radius="md" class="p-3">
+<aside class="grid min-w-0 gap-3 lg:grid-cols-2">
+  <Card radius="md" class="min-w-0 p-3">
     <div class="flex items-center justify-between gap-2">
       <PanelTitle icon={GitBranch} title="Organism Lineage" />
       <Badge tone={organism?.status ? statusTone(organism.status) : 'neutral'}>
@@ -214,8 +214,8 @@
     </div>
     <div class="mt-3 grid gap-2">
       {#if organism}
-        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
-          <div class="flex items-center justify-between gap-2">
+        <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
               Current Parent
             </p>
@@ -223,7 +223,7 @@
               {parentRefAligned() === false ? 'Ref Mismatch' : parentRefAligned() ? 'Ref Aligned' : 'Ref Pending'}
             </Badge>
           </div>
-          <p class="mt-1 truncate text-[12px] font-semibold tracking-tight text-[var(--color-ink)]">
+          <p class="mt-1 break-all text-[12px] font-semibold leading-snug tracking-tight text-[var(--color-ink)]">
             {organism.appRef || 'organism app ref pending'}
           </p>
           <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]">
@@ -243,13 +243,13 @@
       {/if}
 
       {#if lineageEdges.length}
-        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+        <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
           <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
             Evolution Edges
           </p>
           <div class="mt-2 grid gap-1.5">
             {#each lineageEdges.slice(-4) as edge (edge.id)}
-              <div class="grid grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)] items-center gap-1.5 text-[11px]">
+              <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)] items-center gap-1.5 text-[11px]">
                 <span class="truncate rounded-[var(--radius-xs)] bg-white px-2 py-1 text-[var(--color-ink-soft)]">
                   {versionLabel(edge.parentVersionId)}
                 </span>
@@ -266,7 +266,7 @@
         </div>
       {/if}
       {#if scopedVersions().length}
-        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+        <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <PanelTitle icon={GitCommit} title="Specimen History" />
             <span class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
@@ -286,7 +286,7 @@
                   <div class="absolute -top-2 left-4 h-2 border-l border-[var(--color-border)]" aria-hidden="true"></div>
                 {/if}
                 <div class="flex flex-wrap items-start justify-between gap-2">
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-1.5">
                       <Badge tone={versionRoleTone(version)}>{versionRole(version)}</Badge>
                       <Badge tone={statusTone(version.status)}>{version.status}</Badge>
@@ -363,7 +363,7 @@
     </div>
   </Card>
 
-  <Card radius="md" class="p-3">
+  <Card radius="md" class="min-w-0 p-3">
     <PanelTitle icon={Activity} title="Autonomy Policy" />
     {#if activePolicy}
       <p class="mt-2 text-[12px] leading-relaxed text-[var(--color-ink)]">
@@ -371,7 +371,7 @@
       </p>
       <div class="mt-2 grid gap-1.5 sm:grid-cols-3">
         {#each jsonEntries(activePolicy.policyJson).slice(0, 6) as [key, value] (key)}
-          <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5 text-[11px]">
+          <div class="min-w-0 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5 text-[11px]">
             <div class="flex items-center justify-between gap-2">
               <span class="truncate font-mono uppercase tracking-[0.08em] text-[var(--color-muted)]">
                 {key}

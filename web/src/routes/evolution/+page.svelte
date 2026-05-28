@@ -2,15 +2,19 @@
   import { browser } from '$app/environment';
   import { onDestroy, onMount } from 'svelte';
   import {
+    Activity,
     AlertCircle,
+    Compass,
+    Dna,
+    FileDiff,
     GitCompareArrows,
+    ListChecks,
     RefreshCw,
     X
   } from '@lucide/svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import EvolutionEpisodePanel from '$lib/components/directed-evolution/EvolutionEpisodePanel.svelte';
   import EvolutionLineagePolicy from '$lib/components/directed-evolution/EvolutionLineagePolicy.svelte';
-  import EvolutionSideRail from '$lib/components/directed-evolution/EvolutionSideRail.svelte';
   import MetricTile from '$lib/components/directed-evolution/MetricTile.svelte';
   import PanelTitle from '$lib/components/directed-evolution/PanelTitle.svelte';
   import VariantInspectCard from '$lib/components/directed-evolution/VariantInspectCard.svelte';
@@ -28,20 +32,29 @@
     type EvolutionDirection,
     type EvolutionEliminationRule,
     type EvolutionEpisode,
-    type EvolutionEpisodeStartRequest,
     type EvolutionEvidenceArtifact,
     type EvolutionMetricDefinition,
+    type EvolutionMutation,
     type EvolutionScoringRule,
+    type EvolutionSelectionProtocol,
+    type EvolutionSimulatedUserPlan,
     type EvolutionVariant
   } from '$lib/directedEvolution';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
+  type EvolutionView = 'directions' | 'detail' | 'genealogy';
+  const evolutionViews = [
+    { id: 'directions', label: 'Directions', icon: Compass },
+    { id: 'detail', label: 'Direction Detail', icon: ListChecks },
+    { id: 'genealogy', label: 'Organism Genealogy', icon: Dna }
+  ] satisfies { id: EvolutionView; label: string; icon: typeof Compass }[];
 
   let snapshot: DirectedEvolutionSnapshot | null = null;
   let loading = false;
   let error = '';
   let actionBusy = '';
   let selectedEpisodeId = '';
+  let activeView: EvolutionView = 'detail';
   let inspectedVariantId = '';
   let comparedVariantIds: string[] = [];
   let refreshTimer: number | undefined;
@@ -82,7 +95,6 @@
       promotions.find((promotion) => promotion.winningVariantId === selectedEpisode.winningVariantId) ??
       null
     : null;
-  $: selectedStartRequest = selectedEpisode ? episodeStartRequest(selectedEpisode) : null;
   $: currentGoal = selectedEpisode
     ? snapshot?.adaptationGoals.find((goal) => goal.id === selectedEpisode.adaptationGoalId) ?? null
     : null;
@@ -90,6 +102,8 @@
     ? snapshot?.selectionPressures.find((pressure) => pressure.id === selectedEpisode.selectionPressureId) ??
       null
     : null;
+  $: currentSelectionProtocol = selectedEpisode ? episodeSelectionProtocol(selectedEpisode) : null;
+  $: currentSimulatedUserPlan = selectedEpisode ? episodeSimulatedUserPlan(selectedEpisode) : null;
   $: episodeVariants = selectedEpisode
     ? (snapshot?.variants ?? []).filter((variant) => variant.episodeId === selectedEpisode.id)
     : [];
@@ -121,7 +135,7 @@
         .sort((a, b) => a.sequenceIndex - b.sequenceIndex)
     : [];
   $: metrics = selectedEpisode
-    ? episodeMetrics(selectedEpisode, currentSelectionPressure)
+    ? episodeMetrics(selectedEpisode, currentSelectionPressure, currentSelectionProtocol)
     : [];
   $: eliminationRules = selectedEpisode
     ? episodeEliminationRules(selectedEpisode, currentSelectionPressure)
@@ -132,8 +146,14 @@
   $: stageResults = selectedEpisode
     ? (snapshot?.stageResults ?? []).filter((result) => result.episodeId === selectedEpisode.id)
     : [];
+  $: episodeTrials = selectedEpisode
+    ? (snapshot?.trials ?? []).filter((trial) => trial.episodeId === selectedEpisode.id)
+    : [];
   $: inspectedVariant =
     episodeVariants.find((variant) => variant.id === inspectedVariantId) ??
+    episodeVariants.find((variant) => variant.id === selectedEpisode?.winningVariantId) ??
+    episodeVariants.find((variant) => variant.status === 'Promoted' || variant.status === 'Selected') ??
+    episodeVariants.find((variant) => variant.status !== 'Eliminated' && variant.status !== 'Failed') ??
     episodeVariants.find((variant) => variant.status === 'Eliminated' || variant.status === 'Failed') ??
     episodeVariants[0] ??
     null;
@@ -197,6 +217,20 @@
     comparedVariantIds = [...comparedVariantIds.slice(-2), variant.id];
   }
 
+  function selectEpisode(episodeId: string) {
+    selectedEpisodeId = episodeId;
+    activeView = 'detail';
+  }
+
+  function selectDirection(direction: EvolutionDirection) {
+    const episode =
+      (snapshot?.episodes ?? []).find((item) => item.id === direction.episodeId) ??
+      (snapshot?.episodes ?? []).find((item) => item.directionId === direction.id);
+    if (episode) {
+      selectEpisode(episode.id);
+    }
+  }
+
   function shortId(value: string, length = 10): string {
     if (!value) return 'pending';
     return value.length > length ? `${value.slice(0, length)}...` : value;
@@ -239,21 +273,32 @@
     return promotion.materializationFailed || promotion.status === 'Failed';
   }
 
-  function episodeStartRequest(episode: EvolutionEpisode): EvolutionEpisodeStartRequest | null {
+  function episodeSelectionProtocol(episode: EvolutionEpisode): EvolutionSelectionProtocol | null {
     return (
-      (snapshot?.episodeStartRequests ?? []).find((request) => request.episodeId === episode.id) ??
-      (snapshot?.episodeStartRequests ?? []).find(
-        (request) => request.directionId === episode.directionId && request.organismId === episode.organismId
-      ) ??
+      (snapshot?.selectionProtocols ?? []).find((protocol) => protocol.id === episode.selectionProtocolId) ??
+      (snapshot?.selectionProtocols ?? []).find((protocol) => protocol.episodeId === episode.id) ??
+      null
+    );
+  }
+
+  function episodeSimulatedUserPlan(episode: EvolutionEpisode): EvolutionSimulatedUserPlan | null {
+    return (
+      (snapshot?.simulatedUserPlans ?? []).find((plan) => plan.id === episode.simulatedUserPlanId) ??
+      (snapshot?.simulatedUserPlans ?? []).find((plan) => plan.episodeId === episode.id) ??
       null
     );
   }
 
   function episodeMetrics(
     episode: EvolutionEpisode,
-    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null
+    pressure: DirectedEvolutionSnapshot['selectionPressures'][number] | null,
+    protocol: DirectedEvolutionSnapshot['selectionProtocols'][number] | null
   ): EvolutionMetricDefinition[] {
-    const ids = new Set([...(pressure?.metricIds ?? [])]);
+    const ids = new Set([
+      ...episode.metricDefinitionIds,
+      ...(pressure?.metricIds ?? []),
+      ...(protocol?.metricIds ?? [])
+    ]);
     const directMatches = (snapshot?.metricDefinitions ?? []).filter(
       (metric) => metric.episodeId === episode.id || ids.has(metric.id)
     );
@@ -328,8 +373,60 @@
     );
   }
 
+  function variantMutation(variant: EvolutionVariant): EvolutionMutation | null {
+    return (
+      (snapshot?.mutations ?? []).find((mutation) => mutation.id === variant.mutationId) ??
+      (snapshot?.mutations ?? []).find((mutation) => mutation.variantId === variant.id) ??
+      null
+    );
+  }
+
   function variantMeasurements(variant: EvolutionVariant) {
     return (snapshot?.measurements ?? []).filter((measurement) => measurement.variantId === variant.id);
+  }
+
+  function variantTrials(variant: EvolutionVariant) {
+    return (snapshot?.trials ?? []).filter((trial) => trial.variantId === variant.id);
+  }
+
+  function variantStageResults(variant: EvolutionVariant) {
+    return stageResults.filter((result) => result.variantId === variant.id);
+  }
+
+  function directionEpisodes(direction: EvolutionDirection) {
+    return (snapshot?.episodes ?? []).filter(
+      (episode) => episode.directionId === direction.id || episode.id === direction.episodeId
+    );
+  }
+
+  function directionStatus(direction: EvolutionDirection): string {
+    const episodes = directionEpisodes(direction);
+    if (episodes.some((episode) => ['Running', 'Selecting', 'Promoting'].includes(episode.status))) {
+      return 'active';
+    }
+    if (episodes.some((episode) => episode.status === 'Completed')) return 'completed';
+    if (direction.status === 'Dismissed') return 'dismissed';
+    return direction.status || 'suggested';
+  }
+
+  function directionAutonomyLabel(direction: EvolutionDirection): string {
+    const episode = directionEpisodes(direction)[0];
+    return episode?.autonomyLane || direction.autonomyLane || 'human-gated';
+  }
+
+  function prettyJsonList(raw: string, fallback = 'None recorded'): string[] {
+    if (!raw) return [fallback];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) =>
+          typeof item === 'string' ? item : JSON.stringify(item)
+        );
+      }
+      return [typeof parsed === 'string' ? parsed : JSON.stringify(parsed)];
+    } catch {
+      return [raw];
+    }
   }
 
   function directionPressureSummary(direction: EvolutionDirection): string {
@@ -416,8 +513,6 @@
   />
 
   <section class="grid gap-3 px-3 py-3 lg:px-4 xl:px-5">
-    <div class="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.55fr)]">
-      <div class="grid min-w-0 gap-3">
         <section class="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white">
           <div class="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-3 py-3 sm:px-4">
             <div class="min-w-0">
@@ -437,7 +532,13 @@
               <Badge tone={loading ? 'warning' : 'neutral'} pixel={!loading}>
                 {loading ? 'Syncing' : 'Live state'}
               </Badge>
-              <Button size="icon" title="Refresh evolution state" onclick={() => void refreshAll()} disabled={loading}>
+              <Button
+                size="icon"
+                title="Refresh evolution state"
+                aria-label="Refresh evolution state"
+                onclick={() => void refreshAll()}
+                disabled={loading}
+              >
                 <RefreshCw size={13} class={loading ? 'animate-spin' : ''} />
               </Button>
             </div>
@@ -465,21 +566,133 @@
           {/if}
 
           <div class="grid gap-3 p-3 sm:p-4">
-            <div class="min-w-0">
-              <div class="grid gap-2 sm:grid-cols-3 xl:grid-cols-8">
-                <MetricTile label="Directions" value={activeDirections.length} />
-                <MetricTile label="Start Requests" value={snapshot?.episodeStartRequests.length ?? 0} />
-                <MetricTile label="Episodes" value={activeEpisodes.length} />
-                <MetricTile label="Variants" value={episodeVariants.length} />
-                <MetricTile label="Promotions" value={promotions.length} />
-                <MetricTile label="Materialized" value={promotions.filter((item) => item.materialized).length} />
-                <MetricTile label="Materializing" value={pendingMaterializations.length} />
-                <MetricTile label="Failed Installs" value={failedMaterializations.length} />
-                <MetricTile label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
-              </div>
+            <div class="flex flex-wrap items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-1">
+              {#each evolutionViews as item (item.id)}
+                <button
+                  type="button"
+                  class={`inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-[var(--radius-xs)] px-3 py-2 text-[12px] font-semibold transition-colors sm:flex-none ${
+                    activeView === item.id
+                      ? 'bg-white text-[var(--color-ink)] shadow-[var(--shadow-xs)]'
+                      : 'text-[var(--color-muted)] hover:bg-white/65 hover:text-[var(--color-ink)]'
+                  }`}
+                  onclick={() => (activeView = item.id)}
+                >
+                  <svelte:component this={item.icon} size={14} />
+                  {item.label}
+                </button>
+              {/each}
+            </div>
 
+            <div class="min-w-0">
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-9">
+                <MetricTile compact label="Directions" value={activeDirections.length} />
+                <MetricTile compact label="Plans" value={snapshot?.simulatedUserPlans.length ?? 0} />
+                <MetricTile compact label="Episodes" value={activeEpisodes.length} />
+                <MetricTile compact label="Variants" value={episodeVariants.length} />
+                <MetricTile compact label="Promotions" value={promotions.length} />
+                <MetricTile compact label="Materialized" value={promotions.filter((item) => item.materialized).length} />
+                <MetricTile compact label="Materializing" value={pendingMaterializations.length} />
+                <MetricTile compact label="Failed Installs" value={failedMaterializations.length} />
+                <MetricTile compact label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
+              </div>
+            </div>
+
+            {#if activeView === 'directions'}
+              <section class="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3">
+                  <PanelTitle icon={Compass} title="Directions View" />
+                  <p class="mt-2 max-w-[78ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
+                    Suggested, active, completed, dismissed, auto-started, and human-gated directions. Each card shows what fed it and whether it is allowed to move without human approval.
+                  </p>
+                  <div class="mt-3 grid gap-2">
+                    {#each activeDirections as direction (direction.id)}
+                      {@const episodesForDirection = directionEpisodes(direction)}
+                      {@const pressuresForDirection = directionPressures(direction)}
+                      {@const signalsForDirection = directionSignals(direction)}
+                      {@const evidenceForDirection = directionEvidence(direction)}
+                      <button
+                        type="button"
+                        class={`min-w-0 rounded-[var(--radius-sm)] border bg-white p-3 text-left transition-colors ${
+                          selectedDirection?.id === direction.id
+                            ? 'border-[var(--color-primary)]/35 shadow-[var(--shadow-xs)]'
+                            : 'border-[var(--color-border-soft)] hover:border-[var(--color-primary)]/25'
+                        }`}
+                        onclick={() => selectDirection(direction)}
+                      >
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <Badge tone={statusTone(directionStatus(direction))}>{directionStatus(direction)}</Badge>
+                          <Badge tone={directionAutonomyLabel(direction).includes('auto') ? 'warning' : 'primary'}>
+                            {directionAutonomyLabel(direction)}
+                          </Badge>
+                          <Badge tone="neutral">{direction.pressureClass || 'pressure pending'}</Badge>
+                        </div>
+                        <h3 class="mt-2 text-[14px] font-semibold tracking-tight text-[var(--color-ink)]">
+                          {direction.title || direction.proposedAdaptationGoal || shortId(direction.id)}
+                        </h3>
+                        <p class="mt-1 line-clamp-3 text-[12px] leading-relaxed text-[var(--color-muted)]">
+                          {directionPressureSummary(direction) || direction.summary || 'No direction rationale recorded yet.'}
+                        </p>
+                        <div class="mt-3 grid grid-cols-4 gap-1.5 text-center font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                          <span class="rounded-[var(--radius-xs)] bg-[var(--color-surface-soft)] px-2 py-1">{pressuresForDirection.length} pressures</span>
+                          <span class="rounded-[var(--radius-xs)] bg-[var(--color-surface-soft)] px-2 py-1">{signalsForDirection.length} signals</span>
+                          <span class="rounded-[var(--radius-xs)] bg-[var(--color-surface-soft)] px-2 py-1">{evidenceForDirection.length} evidence</span>
+                          <span class="rounded-[var(--radius-xs)] bg-[var(--color-surface-soft)] px-2 py-1">{episodesForDirection.length} episodes</span>
+                        </div>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="grid gap-3">
+                  <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+                    <PanelTitle icon={Activity} title="Basis Drill-In" />
+                    {#if selectedDirection}
+                      {@const pressuresForDirection = directionPressures(selectedDirection)}
+                      {@const signalsForDirection = directionSignals(selectedDirection)}
+                      {@const evidenceForDirection = directionEvidence(selectedDirection)}
+                      <h3 class="mt-3 text-[16px] font-semibold tracking-tight text-[var(--color-ink)]">
+                        {selectedDirection.title || shortId(selectedDirection.id)}
+                      </h3>
+                      <p class="mt-1 text-[12px] leading-relaxed text-[var(--color-muted)]">
+                        {selectedDirection.proposedAdaptationGoal || selectedDirection.summary || 'No proposed Adaptation Goal recorded.'}
+                      </p>
+                      <div class="mt-3 grid gap-2 md:grid-cols-3">
+                        <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] p-2">
+                          <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Signals</p>
+                          {#each signalsForDirection.slice(0, 4) as signal (signal.id)}
+                            <p class="mt-1 line-clamp-2 text-[11px] text-[var(--color-ink-soft)]">{signal.summary}</p>
+                          {:else}
+                            <p class="mt-1 text-[11px] text-[var(--color-faint)]">No linked signals.</p>
+                          {/each}
+                        </div>
+                        <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] p-2">
+                          <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Pressures</p>
+                          {#each pressuresForDirection.slice(0, 4) as pressure (pressure.id)}
+                            <p class="mt-1 line-clamp-2 text-[11px] text-[var(--color-ink-soft)]">{pressure.summary}</p>
+                          {:else}
+                            <p class="mt-1 text-[11px] text-[var(--color-faint)]">No linked pressures.</p>
+                          {/each}
+                        </div>
+                        <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] p-2">
+                          <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Evidence</p>
+                          {#each evidenceForDirection.slice(0, 4) as artifact (artifact.id)}
+                            <p class="mt-1 line-clamp-2 text-[11px] text-[var(--color-ink-soft)]">{artifact.summary || artifact.interpretation || artifact.uri}</p>
+                          {:else}
+                            <p class="mt-1 text-[11px] text-[var(--color-faint)]">No evidence summaries.</p>
+                          {/each}
+                        </div>
+                      </div>
+                    {:else}
+                      <p class="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-3 py-3 text-[12px] text-[var(--color-muted)]">
+                        No direction is available in this tenant yet.
+                      </p>
+                    {/if}
+                  </section>
+                </div>
+              </section>
+            {:else if activeView === 'detail'}
               {#if activeEpisodes.length > 1}
-                <div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
+                <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2">
                   <div class="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
                     <PanelTitle icon={GitCompareArrows} title="Episode Track" />
                     <span class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
@@ -497,7 +710,7 @@
                             ? 'border-[var(--color-primary)]/30 bg-white shadow-[var(--shadow-xs)]'
                             : 'border-[var(--color-border-soft)] bg-white/70 hover:border-[var(--color-primary)]/24 hover:bg-white'
                         }`}
-                        onclick={() => (selectedEpisodeId = episode.id)}
+                        onclick={() => selectEpisode(episode.id)}
                       >
                         <div class="flex flex-wrap items-center gap-1.5">
                           <Badge tone={statusTone(episode.status)}>{episode.status}</Badge>
@@ -517,6 +730,39 @@
                 </div>
               {/if}
 
+              <section class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.42fr)]">
+                <div class="grid gap-3">
+                  <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <PanelTitle icon={FileDiff} title="Protocol And Lab" />
+                      <Badge tone={currentSimulatedUserPlan ? 'success' : 'warning'}>
+                        {currentSimulatedUserPlan
+                          ? `${currentSimulatedUserPlan.usersPerVariant} personas × ${currentSimulatedUserPlan.runsPerPersona} runs`
+                          : 'sim plan missing'}
+                      </Badge>
+                    </div>
+                    <div class="mt-3 grid gap-2 md:grid-cols-3">
+                      <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-2">
+                        <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Selection protocol</p>
+                        <p class="mt-1 line-clamp-3 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
+                          {currentSelectionProtocol?.selectionStatement || currentSelectionPressure?.selectionStatement || 'No selection protocol linked.'}
+                        </p>
+                      </div>
+                      <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-2">
+                        <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Evaluator lineage</p>
+                        <p class="mt-1 line-clamp-3 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
+                          {currentSelectionProtocol?.evaluatorRef || selectedEpisode?.evaluatorRef || 'No frozen evaluator ref recorded.'}
+                        </p>
+                      </div>
+                      <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-2">
+                        <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Simulated-user lab</p>
+                        <p class="mt-1 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
+                          {episodeTrials.length} trial rows · {episodeTrials.filter((trial) => trial.status === 'Observed').length} observed · {episodeTrials.filter((trial) => trial.status === 'Blocked').length} blocked
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
               <EvolutionEpisodePanel
                 {selectedEpisode}
                 {selectedDirection}
@@ -528,7 +774,6 @@
                 {stageResults}
                 {episodeVariants}
                 {constraints}
-                startRequest={selectedStartRequest}
                 metricDefinitions={metrics}
                 {eliminationRules}
                 {scoringRules}
@@ -555,76 +800,96 @@
                 onInspectVariant={(id) => (inspectedVariantId = id)}
                 onToggleCompare={toggleCompare}
               />
-            </div>
+                </div>
 
-            <EvolutionLineagePolicy
-              {organism}
-              {currentParentVersion}
-              {organismVersions}
-              {lineageEdges}
-              episodes={activeEpisodes}
-              directions={activeDirections}
-              {promotions}
-              variants={snapshot?.variants ?? []}
-              {activePolicy}
-              {shortId}
-              {statusTone}
-              {jsonEntries}
-            />
+                <aside class="grid gap-3">
+                  {#if inspectedVariant}
+                    <VariantInspectCard
+                      variant={inspectedVariant}
+                      mutation={variantMutation(inspectedVariant)}
+                      measurements={variantMeasurements(inspectedVariant)}
+                      evidence={variantEvidence(inspectedVariant)}
+                      reason={variantReason(inspectedVariant)}
+                      shortId={shortId}
+                      statusTone={statusTone}
+                    />
+                    <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+                      <PanelTitle icon={Activity} title="Variant Lab Runs" />
+                      <div class="mt-2 grid gap-1.5">
+                        {#each variantTrials(inspectedVariant).slice(0, 6) as trial (trial.id)}
+                          <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5">
+                            <div class="flex items-center justify-between gap-2">
+                              <Badge tone={statusTone(trial.status)}>{trial.status}</Badge>
+                              <span class="font-mono text-[10px] text-[var(--color-faint)]">{shortId(trial.simulatedUserId, 16)}</span>
+                            </div>
+                            <p class="mt-1 line-clamp-2 text-[11px] text-[var(--color-muted)]">
+                              {trial.summary || trial.blocker || trial.goal}
+                            </p>
+                          </div>
+                        {:else}
+                          <p class="text-[12px] text-[var(--color-muted)]">No simulated-user trials recorded for this variant.</p>
+                        {/each}
+                      </div>
+                    </section>
+                  {/if}
+                  <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+                    <PanelTitle icon={Activity} title="Recent Brain Work" />
+                    <div class="mt-2 grid gap-1.5">
+                      {#each recentWorkItems.slice(0, 5) as item (item.id)}
+                        <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5 text-[11px]">
+                          <div class="flex items-center justify-between gap-2">
+                            <Badge tone={statusTone(item.status)}>{item.status}</Badge>
+                            <span class="font-mono text-[10px] text-[var(--color-faint)]">{item.role}</span>
+                          </div>
+                          <p class="mt-1 line-clamp-2 text-[var(--color-muted)]">{item.summary || item.failureReason || shortId(item.targetEntityId)}</p>
+                        </div>
+                      {/each}
+                    </div>
+                  </section>
+                </aside>
+              </section>
+
+              {#if comparedVariants.length}
+                <section class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3 sm:p-4">
+                  <div class="flex items-center justify-between gap-2">
+                    <PanelTitle icon={GitCompareArrows} title="Variant Compare" />
+                    <Button size="xs" onclick={() => (comparedVariantIds = [])}>
+                      <X size={11} />
+                      Clear
+                    </Button>
+                  </div>
+                  <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {#each comparedVariants as variant (variant.id)}
+                      <VariantInspectCard
+                        variant={variant}
+                        mutation={variantMutation(variant)}
+                        measurements={variantMeasurements(variant)}
+                        evidence={variantEvidence(variant)}
+                        reason={variantReason(variant)}
+                        shortId={shortId}
+                        statusTone={statusTone}
+                      />
+                    {/each}
+                  </div>
+                </section>
+              {/if}
+            {:else}
+              <EvolutionLineagePolicy
+                {organism}
+                {currentParentVersion}
+                {organismVersions}
+                {lineageEdges}
+                episodes={activeEpisodes}
+                directions={activeDirections}
+                {promotions}
+                variants={snapshot?.variants ?? []}
+                {activePolicy}
+                {shortId}
+                {statusTone}
+                {jsonEntries}
+              />
+            {/if}
           </div>
         </section>
-
-        {#if comparedVariants.length}
-          <section class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3 sm:p-4">
-            <div class="flex items-center justify-between gap-2">
-              <PanelTitle icon={GitCompareArrows} title="Variant Compare" />
-              <Button size="xs" onclick={() => (comparedVariantIds = [])}>
-                <X size={11} />
-                Clear
-              </Button>
-            </div>
-            <div class="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {#each comparedVariants as variant (variant.id)}
-                <VariantInspectCard
-                  variant={variant}
-                  measurements={variantMeasurements(variant)}
-                  evidence={variantEvidence(variant)}
-                  reason={variantReason(variant)}
-                  shortId={shortId}
-                  statusTone={statusTone}
-                />
-              {/each}
-            </div>
-          </section>
-        {/if}
-      </div>
-
-      <EvolutionSideRail
-        {activeDirections}
-        signals={snapshot?.signals ?? []}
-        pressures={snapshot?.pressures ?? []}
-        evidenceArtifacts={snapshot?.evidenceArtifacts ?? []}
-        brainRuns={snapshot?.brainRuns ?? []}
-        {inspectedVariant}
-        {recentWorkItems}
-        {recentBrainRuns}
-        {actionBusy}
-        {shortId}
-        {statusTone}
-        {jsonEntries}
-        {directionPressureSummary}
-        {directionPressures}
-        {directionSignals}
-        {directionEvidence}
-        {directionBrainRun}
-        {variantMeasurements}
-        {variantEvidence}
-        {variantReason}
-        onDismissDirection={(direction) =>
-          void runControl(`dismiss-${direction.id}`, () =>
-            dismissDirection(direction.id, 'Dismissed from Genesis Mission Control', directedEvolutionTenantId)
-          )}
-      />
-    </div>
   </section>
 </main>

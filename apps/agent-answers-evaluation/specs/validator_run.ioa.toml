@@ -32,7 +32,17 @@ name = "Configure"
 kind = "input"
 from = ["Created"]
 to = "Running"
+effect = [{ type = "trigger", name = "validator_configured" }]
 params = ["trial_suite_id", "candidate_id", "scenario_id", "validator_kind"]
+
+[[action.triggers]]
+name = "validator_configured"
+kind = "wasm"
+module = "agent_answers_state_verifier"
+
+[action.triggers.config]
+evaluator_ref = "genesis://nerdsane/agent-answers-evaluation@0.1.2"
+
 [[action]]
 name = "Pass"
 kind = "input"

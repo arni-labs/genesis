@@ -69,30 +69,8 @@ export type EvolutionDirection = EntityBase & {
   selectionNotes: string;
 };
 
-export type EvolutionEpisodeStartRequest = EntityBase & {
-  hasContract: boolean;
-  directionId: string;
-  organismId: string;
-  parentVersionId: string;
-  autonomyLane: string;
-  requestedBy: string;
-  adaptationGoal: string;
-  humanNotes: string;
-  viabilityConstraints: string[];
-  metrics: string[];
-  evaluationStages: string[];
-  eliminationRules: string[];
-  scoringRules: string[];
-  selectionStatement: string;
-  contractJson: string;
-  startedBy: string;
-  reason: string;
-  episodeId: string;
-  summary: string;
-  evidenceArtifactId: string;
-};
-
 export type EvolutionEpisode = EntityBase & {
+  hasSimulatedUserPlan: boolean;
   directionId: string;
   organismId: string;
   parentVersionId: string;
@@ -100,9 +78,15 @@ export type EvolutionEpisode = EntityBase & {
   adaptationGoalId: string;
   selectionPressureId: string;
   viabilityConstraintIds: string[];
+  metricDefinitionIds: string[];
   evaluationStageIds: string[];
   eliminationRuleIds: string[];
   scoringRuleIds: string[];
+  simulatedUserPlanId: string;
+  selectionProtocolId: string;
+  evaluatorRef: string;
+  plannedBy: string;
+  planSummary: string;
   generationCount: number;
   startedBy: string;
   reason: string;
@@ -185,6 +169,19 @@ export type EvolutionSelectionPressure = EntityBase & {
   createdByBrainRunId: string;
 };
 
+export type EvolutionSelectionProtocol = EntityBase & {
+  episodeId: string;
+  selectionStatement: string;
+  metricIds: string[];
+  eliminationRuleIds: string[];
+  scoringRuleIds: string[];
+  evaluatorRef: string;
+  decisionPolicy: string;
+  createdByBrainRunId: string;
+  frozenBy: string;
+  reason: string;
+};
+
 export type EvolutionEliminationRule = EntityBase & {
   episodeId: string;
   ruleStatement: string;
@@ -210,6 +207,10 @@ export type EvolutionEvaluationStage = EntityBase & {
   sequenceIndex: number;
   requiredEvidence: string[];
   executorKind: string;
+  measurementProvenance: string;
+  evaluatorRef: string;
+  evaluatorModule: string;
+  decisionAuthority: string;
 };
 
 export type EvolutionStageResult = EntityBase & {
@@ -222,7 +223,23 @@ export type EvolutionStageResult = EntityBase & {
   evidenceArtifactId: string;
   summary: string;
   failureReason: string;
+  evaluatorRole: string;
+  provenanceKind: string;
+  decisionBasisJson: string;
+  inputsJson: string;
   eliminationRuleId: string;
+  reason: string;
+};
+
+export type EvolutionSimulatedUserPlan = EntityBase & {
+  episodeId: string;
+  usersPerVariant: number;
+  runsPerPersona: number;
+  personasJson: string;
+  goalsJson: string;
+  createdBy: string;
+  humanDecisionSummary: string;
+  frozenBy: string;
   reason: string;
 };
 
@@ -235,6 +252,11 @@ export type EvolutionMetricDefinition = EntityBase & {
   desiredDirection: string;
   higherIsBetter: string;
   description: string;
+  provenanceKind: string;
+  evaluatorRef: string;
+  evaluatorModule: string;
+  interpretation: string;
+  hardConstraint: string;
 };
 
 export type EvolutionMeasurement = EntityBase & {
@@ -245,6 +267,20 @@ export type EvolutionMeasurement = EntityBase & {
   value: string;
   unit: string;
   evidenceArtifactId: string;
+  provenanceKind: string;
+  measurementKind: string;
+  sourceRunId: string;
+  computedByRef: string;
+  interpretation: string;
+};
+
+export type EvolutionMutation = EntityBase & {
+  variantId: string;
+  summary: string;
+  changedFiles: string[];
+  diffRef: string;
+  brainRunId: string;
+  reason: string;
 };
 
 export type EvolutionEvidenceArtifact = EntityBase & {
@@ -253,6 +289,12 @@ export type EvolutionEvidenceArtifact = EntityBase & {
   summary: string;
   correlationJson: string;
   digest: string;
+  query: string;
+  timeWindow: string;
+  resultCount: string;
+  interpretation: string;
+  zeroResultMeaning: string;
+  evidenceProvenance: string;
   targetEntityType: string;
   targetEntityId: string;
 };
@@ -261,10 +303,21 @@ export type EvolutionTrial = EntityBase & {
   episodeId: string;
   generationId: string;
   variantId: string;
-  simulatedUserBrainRunId: string;
-  runtimeRef: string;
-  goalJson: string;
-  resultJson: string;
+  evaluationStageId: string;
+  stageResultId: string;
+  simulatedUserPlanId: string;
+  simulatedUserId: string;
+  personaJson: string;
+  goal: string;
+  workItemId: string;
+  journeyJson: string;
+  observationJson: string;
+  intentSatisfied: string;
+  frictionJson: string;
+  blocker: string;
+  summary: string;
+  measurementsJson: string;
+  failureReason: string;
   evidenceArtifactId: string;
 };
 
@@ -309,7 +362,6 @@ export type DirectedEvolutionSnapshot = {
   signals: EvolutionSignal[];
   pressures: EvolutionPressure[];
   directions: EvolutionDirection[];
-  episodeStartRequests: EvolutionEpisodeStartRequest[];
   episodes: EvolutionEpisode[];
   generations: EvolutionGeneration[];
   variants: EvolutionVariant[];
@@ -317,12 +369,15 @@ export type DirectedEvolutionSnapshot = {
   adaptationGoals: EvolutionAdaptationGoal[];
   viabilityConstraints: EvolutionViabilityConstraint[];
   selectionPressures: EvolutionSelectionPressure[];
+  selectionProtocols: EvolutionSelectionProtocol[];
   eliminationRules: EvolutionEliminationRule[];
   scoringRules: EvolutionScoringRule[];
   evaluationStages: EvolutionEvaluationStage[];
   stageResults: EvolutionStageResult[];
+  simulatedUserPlans: EvolutionSimulatedUserPlan[];
   metricDefinitions: EvolutionMetricDefinition[];
   measurements: EvolutionMeasurement[];
+  mutations: EvolutionMutation[];
   evidenceArtifacts: EvolutionEvidenceArtifact[];
   trials: EvolutionTrial[];
   autonomyPolicies: EvolutionAutonomyPolicy[];
