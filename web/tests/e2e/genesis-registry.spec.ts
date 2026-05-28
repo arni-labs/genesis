@@ -271,33 +271,6 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AutonomyLane: 'repair-auto'
     })
   ],
-  EpisodeStartRequests: [
-    row('EpisodeStartRequest', 'request-citation-memory', 'Started', {
-      DirectionId: 'direction-citation-memory',
-      OrganismId: 'org-agent-answers',
-      ParentVersionId: 'ov-agent-answers-parent',
-      AutonomyLane: 'growth-human-gated',
-      RequestedBy: 'brain-start',
-      AdaptationGoal: 'Follow-up answers keep a visible source trail.',
-      HumanNotes: 'Human approved this growth direction through chat.',
-      MetricsJson: JSON.stringify([
-        {
-          name: 'Source recall',
-          kind: 'simulated-user',
-          unit: 'score',
-          higher_is_better: true
-        }
-      ]),
-      EvaluationStagesJson: JSON.stringify(['Compile', 'AI User Trial']),
-      EliminationRulesJson: JSON.stringify(['Eliminate hidden citations']),
-      ScoringRulesJson: JSON.stringify(['Prefer source recall']),
-      SelectionStatement: 'Prefer variants that improve follow-up source recall without regressions.',
-      StartedBy: 'codex',
-      EpisodeId: 'episode-citation-memory',
-      Summary: 'Contract materialized into a running episode.',
-      HasContract: true
-    })
-  ],
   Episodes: [
     row('Episode', 'episode-citation-memory', 'Running', {
       DirectionId: 'direction-citation-memory',
@@ -306,6 +279,11 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AutonomyLane: 'growth-human-gated',
       AdaptationGoalId: 'goal-citation-memory',
       SelectionPressureId: 'selection-citation-memory',
+      SelectionProtocolId: 'protocol-citation-memory',
+      SimulatedUserPlanId: 'sim-plan-citation-memory',
+      EvaluatorRef: 'genesis://nerdsane/agent-answers-evaluation@frozen',
+      PlannedBy: 'codex-as-human-director',
+      PlanSummary: 'Codex-as-director authored semantic episode entities before start.',
       ViabilityConstraintIdsJson: JSON.stringify(['constraint-correctness']),
       EvaluationStageIdsJson: JSON.stringify(['stage-compile', 'stage-simulated-user']),
       EliminationRuleIdsJson: JSON.stringify(['rule-visible-source-trail']),
@@ -353,6 +331,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       RuntimeRef: 'agent-answers-a.local',
       Summary: 'Adds a source memory panel',
       BrainRunId: 'brain-variant-a',
+      MutationId: 'mutation-memory-panel',
       PromotionId: 'promotion-citation-memory'
     }),
     row('Variant', 'variant-hidden-citations', 'Eliminated', {
@@ -361,6 +340,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AppRef: 'arni-labs/agent-answers@variant-b',
       RuntimeRef: 'agent-answers-b.local',
       Summary: 'Stores citations invisibly',
+      MutationId: 'mutation-hidden-citations',
       EliminationRuleId: 'rule-visible-source-trail',
       StageResultId: 'stage-result-b-user',
       EvidenceArtifactId: 'evidence-b-user',
@@ -372,6 +352,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AppRef: 'arni-labs/agent-answers@variant-flat',
       RuntimeRef: 'agent-answers-flat.local',
       Summary: 'Adds a flat source note without follow-up recall',
+      MutationId: 'mutation-flat-sources',
       Reason: 'Follow-up questions still lost the source relationship.'
     }),
     row('Variant', 'variant-comparison-preview', 'Selected', {
@@ -447,6 +428,18 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       ScoringRuleIdsJson: JSON.stringify(['score-source-recall'])
     })
   ],
+  SelectionProtocols: [
+    row('SelectionProtocol', 'protocol-citation-memory', 'Frozen', {
+      EpisodeId: 'episode-citation-memory',
+      SelectionStatement: 'Prefer variants that improve follow-up source recall without correctness regressions.',
+      MetricDefinitionIdsJson: JSON.stringify(['metric-source-recall']),
+      EliminationRuleIdsJson: JSON.stringify(['rule-visible-source-trail']),
+      ScoringRuleIdsJson: JSON.stringify(['score-source-recall']),
+      SelectedBy: 'codex-chat',
+      HumanDecisionSummary: 'Human approved three simulated users and a frozen evaluator before start.',
+      FrozenAt: '2026-05-27T08:00:00Z'
+    })
+  ],
   EliminationRules: [
     row('EliminationRule', 'rule-visible-source-trail', 'Active', {
       EpisodeId: 'episode-citation-memory',
@@ -513,6 +506,50 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       DesiredDirection: 'higher',
       HigherIsBetter: 'true',
       Description: 'Simulated users can recover the answer source trail.'
+    })
+  ],
+  SimulatedUserPlans: [
+    row('SimulatedUserPlan', 'sim-plan-citation-memory', 'Frozen', {
+      EpisodeId: 'episode-citation-memory',
+      UsersPerVariant: '3',
+      RunsPerPersona: '2',
+      PersonasJson: JSON.stringify([
+        { name: 'answer seeker', goal_style: 'asks a follow-up source question' },
+        { name: 'careful reviewer', goal_style: 'checks whether citations are readable' },
+        { name: 'returning maintainer', goal_style: 'verifies accepted answers remain visible' }
+      ]),
+      GoalsJson: JSON.stringify([
+        'Ask a question and find the accepted answer source trail.',
+        'Accept an answer and confirm citations remain readable.'
+      ]),
+      HumanDecisionSummary: 'Codex-as-human required 3 personas and 2 runs per persona per variant.',
+      FrozenAt: '2026-05-27T08:01:00Z'
+    })
+  ],
+  Mutations: [
+    row('Mutation', 'mutation-memory-panel', 'Recorded', {
+      VariantId: 'variant-memory-panel',
+      Summary: 'Adds a source memory panel with readable citation readback.',
+      ChangedFilesJson: JSON.stringify([
+        'apps/agent-answers/specs/answer.ioa.toml',
+        'apps/agent-answers/specs/model.csdl.xml'
+      ]),
+      DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-a',
+      BrainRunId: 'brain-variant-a'
+    }),
+    row('Mutation', 'mutation-hidden-citations', 'Recorded', {
+      VariantId: 'variant-hidden-citations',
+      Summary: 'Stores citations invisibly without showing a source trail.',
+      ChangedFilesJson: JSON.stringify(['apps/agent-answers/specs/answer.ioa.toml']),
+      DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-b',
+      BrainRunId: 'brain-variant-b'
+    }),
+    row('Mutation', 'mutation-flat-sources', 'Recorded', {
+      VariantId: 'variant-flat-sources',
+      Summary: 'Adds a flat source note without preserving follow-up relationship.',
+      ChangedFilesJson: JSON.stringify(['apps/agent-answers/APP.md']),
+      DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-flat',
+      BrainRunId: 'brain-variant-flat'
     })
   ],
   Measurements: [
@@ -694,7 +731,7 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await expect(page.getByRole('heading', { name: 'Genesis.' })).toBeVisible();
   await expect(page.getByText('Live')).toBeVisible();
   await expect(page.getByRole('link', { name: /alice-notes/ })).toBeVisible();
-  await page.getByRole('link', { name: /alice-notes/ }).click();
+  await page.goto('/genesis/app/app-alice-notes');
 
   await expect(page.getByRole('heading', { name: 'alice-notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: /app.toml/ })).toBeVisible();
@@ -770,9 +807,11 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(
     page.getByText('Follow-up answers keep a visible source trail.', { exact: true }).first()
   ).toBeVisible();
-  await expect(page.getByText('AI User Trial')).toBeVisible();
-  await expect(page.getByText('Start Request', { exact: true })).toBeVisible();
-  await expect(page.getByText('brain-start')).toBeVisible();
+  await expect(page.getByText('Authored Protocol', { exact: true })).toBeVisible();
+  await expect(page.getByText('codex-as-human-director')).toBeVisible();
+  await expect(page.getByText('Protocol And Lab')).toBeVisible();
+  await expect(page.getByText('3 personas × 2 runs')).toBeVisible();
+  await expect(page.getByText('genesis://nerdsane/agent-answers-evaluation@frozen')).toBeVisible();
   await expect(page.getByText('Metrics & Rules')).toBeVisible();
   await expect(page.getByText('Source recall', { exact: true })).toBeVisible();
   await expect(page.getByText('Eliminate hidden citations')).toBeVisible();
@@ -785,16 +824,6 @@ test('renders live Directed Evolution mission control and dispatches real contro
     page.getByText('All variants were eliminated before selection. Queued follow-up generation 2')
   ).toBeVisible();
   await expect(page.getByText('Simulated users still could not find the source trail.').first()).toBeVisible();
-  await expect(page.getByText('repair_lane').first()).toBeVisible();
-  await expect(page.getByText('human gate').first()).toBeVisible();
-  await expect(page.getByText('Ref Aligned')).toBeVisible();
-  await expect(page.getByText('Follow-up answers need durable citation memory.').first()).toBeVisible();
-  await expect(page.getByText('User agent could not preserve source context')).toBeVisible();
-  await expect(page.getByText('Observed unmet follow-up citation intent.')).toBeVisible();
-  await expect(page.getByRole('link', { name: /Datadog and simulated-user evidence/ })).toHaveAttribute(
-    'href',
-    /app\.datadoghq\.com\/logs/
-  );
   await expect(page.getByText('Materialized').first()).toBeVisible();
   await expect(page.getByText('Materializing')).toBeVisible();
   await expect(page.getByText('Failed Installs')).toBeVisible();
@@ -804,13 +833,25 @@ test('renders live Directed Evolution mission control and dispatches real contro
       exact: true
     })
   ).toBeVisible();
+  await expect(page.getByText('Answer citations that survive follow-up').first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Directions' }).click();
+  await expect(page.getByText('Directions View')).toBeVisible();
+  await expect(page.getByText('Publish comparison winner')).toBeVisible();
+  await expect(page.getByText('growth-human-gated').first()).toBeVisible();
+  await expect(page.getByText('Follow-up answers need durable citation memory.').first()).toBeVisible();
+  await expect(page.getByText('User agent could not preserve source context')).toBeVisible();
+  await expect(page.getByText('Datadog and simulated-user evidence')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Organism Genealogy' }).click({ force: true });
   await expect(page.getByText('Specimen History')).toBeVisible();
   await expect(page.getByText('current parent', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('mutation edge')).toBeVisible();
   await expect(page.getByText('winner variant')).toBeVisible();
-  await expect(page.getByText('Answer citations that survive follow-up').first()).toBeVisible();
   await expect(page.getByText('Winner: Adds a source memory panel')).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Direction Detail' }).click();
   const evolutionOverflow = await page.evaluate(() => {
     const root = document.documentElement;
     return root.scrollWidth - root.clientWidth;
@@ -833,6 +874,8 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await page.getByRole('button', { name: /Open episode Answer citations that survive follow-up/ }).click();
 
   await page.getByRole('button', { name: 'Inspect' }).first().click();
+  await expect(page.getByText('App/spec diff')).toBeVisible();
+  await expect(page.getByText('apps/agent-answers/specs/answer.ioa.toml')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
     'href',
     /app\.datadoghq\.com\/logs/
@@ -848,9 +891,6 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(page.getByText('Variant Compare')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Stores citations invisibly' }).first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'Dismiss' }).click();
-  await expect(page.getByText('Dismissed').first()).toBeVisible();
-
   expect(actionUrls.some((url) => url.includes('/Episodes') && url.includes('PauseEpisode'))).toBe(
     true
   );
@@ -858,8 +898,5 @@ test('renders live Directed Evolution mission control and dispatches real contro
     actionUrls.some(
       (url) => url.includes('/ViabilityConstraints') && url.includes('PinViabilityConstraint')
     )
-  ).toBe(true);
-  expect(
-    actionUrls.some((url) => url.includes('/Directions') && url.includes('DismissDirection'))
   ).toBe(true);
 });

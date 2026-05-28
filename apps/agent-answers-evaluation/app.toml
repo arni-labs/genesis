@@ -1,4 +1,10 @@
 name = "agent-answers-evaluation"
 description = "Frozen trial and measurement bundle for evaluating agent-answers evolution candidates."
-version = "0.1.1"
+version = "0.1.2"
 dependencies = []
+
+[[wasm_modules]]
+name = "agent_answers_state_verifier"
+target = "wasm32-unknown-unknown"
+criticality = "app-required"
+startup_loading = "lazy"

@@ -4,6 +4,7 @@
   import type {
     EvolutionEvidenceArtifact,
     EvolutionMeasurement,
+    EvolutionMutation,
     EvolutionVariant
   } from '$lib/directedEvolution';
 
@@ -13,6 +14,7 @@
     variant: EvolutionVariant;
     measurements: EvolutionMeasurement[];
     evidence: EvolutionEvidenceArtifact[];
+    mutation?: EvolutionMutation | null;
     reason: string;
     shortId: (value: string, length?: number) => string;
     statusTone: (status: string) => StatusTone;
@@ -22,6 +24,7 @@
     variant,
     measurements,
     evidence,
+    mutation = null,
     reason,
     shortId,
     statusTone
@@ -94,6 +97,7 @@
   function evidenceSummary(artifact: EvolutionEvidenceArtifact): string {
     const scope = evidenceScopes(artifact)[0];
     return (
+      artifact.interpretation ||
       scope?.result_summary ||
       scope?.resultSummary ||
       artifact.summary ||
@@ -107,17 +111,17 @@
   }
 
   function evidenceQuery(artifact: EvolutionEvidenceArtifact): string {
-    return evidenceScopes(artifact)[0]?.query || '';
+    return artifact.query || evidenceScopes(artifact)[0]?.query || '';
   }
 </script>
 
-<div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+<div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
   <div class="flex items-start justify-between gap-2">
     <div class="min-w-0">
       <p class="truncate font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
         {shortId(variant.id, 12)}
       </p>
-      <h3 class="mt-1 text-[13px] font-semibold tracking-tight text-[var(--color-ink)]">
+      <h3 class="mt-1 line-clamp-4 text-[13px] font-semibold leading-snug tracking-tight text-[var(--color-ink)]">
         {variant.summary || variant.appRef || 'Variant'}
       </h3>
     </div>
@@ -126,6 +130,28 @@
   <p class="mt-2 text-[12px] leading-relaxed text-[var(--color-muted)]">
     {reason}
   </p>
+  {#if mutation}
+    <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-2">
+      <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+        App/spec diff
+      </p>
+      <p class="mt-1 line-clamp-2 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
+        {mutation.summary || mutation.diffRef || 'Mutation recorded without a summary.'}
+      </p>
+      {#if mutation.changedFiles.length}
+        <div class="mt-2 flex flex-wrap gap-1">
+          {#each mutation.changedFiles.slice(0, 5) as file (file)}
+            <span class="max-w-full truncate rounded-[var(--radius-xs)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-muted)]">
+              {file}
+            </span>
+          {/each}
+        </div>
+      {/if}
+      {#if mutation.diffRef}
+        <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-faint)]">{mutation.diffRef}</p>
+      {/if}
+    </div>
+  {/if}
   <div class="mt-3 grid grid-cols-2 gap-1.5 text-[11px]">
     <div class="rounded-[var(--radius-xs)] bg-[var(--color-surface-soft)] px-2 py-1.5">
       <p class="font-mono uppercase tracking-[0.08em] text-[var(--color-muted)]">App Ref</p>
@@ -174,6 +200,11 @@
           {#if query}
             <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-faint)]">
               {query}
+            </p>
+          {/if}
+          {#if artifact.resultCount || artifact.zeroResultMeaning}
+            <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
+              results {artifact.resultCount || 'n/a'} · zero={artifact.zeroResultMeaning || 'unspecified'}
             </p>
           {/if}
         </div>

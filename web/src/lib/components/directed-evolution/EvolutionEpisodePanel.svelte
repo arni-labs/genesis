@@ -17,7 +17,6 @@
     EvolutionDirection,
     EvolutionEliminationRule,
     EvolutionEpisode,
-    EvolutionEpisodeStartRequest,
     EvolutionEvaluationStage,
     EvolutionGeneration,
     EvolutionMetricDefinition,
@@ -33,7 +32,7 @@
   import MetricTile from './MetricTile.svelte';
   import MetricsRulesCard from './MetricsRulesCard.svelte';
   import PanelTitle from './PanelTitle.svelte';
-  import StartRequestCard from './StartRequestCard.svelte';
+  import EpisodeProtocolCard from './EpisodeProtocolCard.svelte';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
@@ -48,7 +47,6 @@
     stageResults: EvolutionStageResult[];
     episodeVariants: EvolutionVariant[];
     constraints: EvolutionViabilityConstraint[];
-    startRequest: EvolutionEpisodeStartRequest | null;
     metricDefinitions: EvolutionMetricDefinition[];
     eliminationRules: EvolutionEliminationRule[];
     scoringRules: EvolutionScoringRule[];
@@ -75,7 +73,6 @@
     stageResults,
     episodeVariants,
     constraints,
-    startRequest,
     metricDefinitions,
     eliminationRules,
     scoringRules,
@@ -159,17 +156,22 @@
 
 </script>
 
-<div class="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
+<div class="mt-3 min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]">
   <div class="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border)] bg-white px-3 py-2">
     <div class="min-w-0">
       <p class="v-eyebrow">Current Episode</p>
-      <h3 class="mt-1 truncate font-sans text-[14px] font-semibold tracking-tight text-[var(--color-ink)]">
+      <h3 class="mt-1 line-clamp-2 font-sans text-[14px] font-semibold leading-snug tracking-tight text-[var(--color-ink)]">
         {selectedDirection?.title || selectedEpisode?.id || 'No episode selected'}
       </h3>
     </div>
     {#if selectedEpisode}
       <div class="flex flex-wrap items-center gap-1.5">
         <Badge tone={statusTone(selectedEpisode.status)}>{selectedEpisode.status}</Badge>
+        {#if selectedPromotion}
+          <Badge tone={promotionMaterializationTone(selectedPromotion)}>
+            {promotionMaterializationLabel(selectedPromotion)}
+          </Badge>
+        {/if}
         {#if canPause(selectedEpisode)}
           <Button
             size="xs"
@@ -205,9 +207,9 @@
   </div>
 
   {#if selectedEpisode}
-    <div class="grid gap-3 p-3">
-      <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.42fr)]">
-        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+    <div class="grid min-w-0 gap-3 p-3">
+      <div class="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.42fr)]">
+        <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
           <p class="v-eyebrow">Adaptation Goal</p>
           <p class="mt-1 text-[13px] leading-relaxed text-[var(--color-ink)]">
             {currentGoal?.goalStatement ||
@@ -222,7 +224,7 @@
           {/if}
         </div>
 
-        <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
+        <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
           <p class="v-eyebrow">Generation State</p>
           <div class="mt-2 grid grid-cols-3 gap-2">
             <MetricTile label="Stage Results" value={stageResults.length} />
@@ -302,8 +304,8 @@
         </div>
       </div>
 
-      <div class="grid gap-3 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)]">
-        <StartRequestCard {selectedEpisode} {startRequest} {shortId} {statusTone} />
+      <div class="grid min-w-0 gap-3 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)]">
+        <EpisodeProtocolCard {selectedEpisode} {shortId} {statusTone} />
         <MetricsRulesCard {metricDefinitions} {eliminationRules} {scoringRules} {shortId} />
       </div>
 
@@ -338,7 +340,88 @@
         </div>
       </aside>
 
-      <div class="overflow-x-auto v-scrollbar">
+      <div class="grid gap-2 lg:hidden">
+        <PanelTitle icon={GitCompareArrows} title="Evaluation Ladder" />
+        {#if episodeVariants.length}
+          {#each episodeVariants as variant (variant.id)}
+            {@const results = stages.map((stage) => ({ stage, result: variantStageResult(variant, stage) }))}
+            <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-2.5">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <Badge tone={statusTone(variant.status)}>{variant.status}</Badge>
+                    <span class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
+                      {shortId(variant.id, 12)}
+                    </span>
+                  </div>
+                  <p class="mt-1 line-clamp-2 text-[12px] font-semibold leading-snug text-[var(--color-ink)]">
+                    {variant.summary || variant.appRef || shortId(variant.id)}
+                  </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5 sm:shrink-0">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)]"
+                    onclick={() => onInspectVariant(variant.id)}
+                  >
+                    <Eye size={10} />
+                    Inspect
+                  </button>
+                  <button
+                    type="button"
+                    class={`inline-flex items-center gap-1 rounded-[var(--radius-xs)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] ${
+                      comparedVariantIds.includes(variant.id)
+                        ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
+                        : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-soft)]'
+                    }`}
+                    onclick={() => onToggleCompare(variant)}
+                  >
+                    <GitCompareArrows size={10} />
+                    Compare
+                  </button>
+                </div>
+              </div>
+
+              <div class="mt-2 grid gap-1.5">
+                {#if stages.length}
+                  {#each results as item (item.stage.id)}
+                    <button
+                      type="button"
+                      class="grid min-w-0 grid-cols-[8px_minmax(0,1fr)] gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-2 text-left"
+                      onclick={() => onInspectVariant(variant.id)}
+                    >
+                      <span class={`mt-1 h-2 w-2 rounded-[2px] ${resultColor(item.result?.status ?? 'Waiting')}`}></span>
+                      <span class="min-w-0">
+                        <span class="flex flex-wrap items-center gap-1.5">
+                          <span class="truncate font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-ink-soft)]">
+                            {item.stage.stageName || item.stage.stageKind || shortId(item.stage.id)}
+                          </span>
+                          <Badge tone={statusTone(item.result?.status ?? 'Waiting')}>
+                            {item.result?.status ?? 'Waiting'}
+                          </Badge>
+                        </span>
+                        <span class="mt-1 line-clamp-2 block text-[11px] leading-snug text-[var(--color-muted)]">
+                          {stageResultLabel(item.result)}
+                        </span>
+                      </span>
+                    </button>
+                  {/each}
+                {:else}
+                  <p class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-2 text-[11px] text-[var(--color-muted)]">
+                    Stage ladder pending.
+                  </p>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        {:else}
+          <p class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-muted)]">
+            No variants have been generated for this episode yet.
+          </p>
+        {/if}
+      </div>
+
+      <div class="hidden overflow-x-auto v-scrollbar lg:block">
         <div class="min-w-[760px] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
           <div
             class="grid border-b border-[var(--color-border)] bg-[var(--color-surface-soft)]"
