@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ExternalLink } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui';
+  import UnifiedDiff from '$lib/components/UnifiedDiff.svelte';
   import type {
     EvolutionEvidenceArtifact,
     EvolutionMeasurement,
@@ -33,8 +34,12 @@
   type EvidenceScope = {
     surface?: string;
     query?: string;
+    result_count?: string | number;
+    resultCount?: string | number;
     result_summary?: string;
     resultSummary?: string;
+    zero_result_meaning?: string;
+    zeroResultMeaning?: string;
     datadog_url?: string;
     datadogUrl?: string;
   };
@@ -113,6 +118,40 @@
   function evidenceQuery(artifact: EvolutionEvidenceArtifact): string {
     return artifact.query || evidenceScopes(artifact)[0]?.query || '';
   }
+
+  function evidenceResultCount(artifact: EvolutionEvidenceArtifact): string {
+    const scope = evidenceScopes(artifact)[0];
+    const scoped = scope?.result_count ?? scope?.resultCount;
+    if (scoped === undefined || scoped === null || scoped === '') return artifact.resultCount;
+    return String(scoped);
+  }
+
+  function evidenceZeroResultMeaning(artifact: EvolutionEvidenceArtifact): string {
+    const scope = evidenceScopes(artifact)[0];
+    return (
+      artifact.zeroResultMeaning ||
+      scope?.zero_result_meaning ||
+      scope?.zeroResultMeaning ||
+      ''
+    );
+  }
+
+  function evidenceRank(artifact: EvolutionEvidenceArtifact): number {
+    const provenance = artifact.evidenceProvenance;
+    if (provenance === 'datadog-measured' || datadogHref(artifact)) return 0;
+    if (provenance === 'state-verified' || evidenceSurface(artifact).toLowerCase() === 'state') return 1;
+    if (provenance === 'brain-judged') return 2;
+    return 3;
+  }
+
+  function visibleEvidence(): EvolutionEvidenceArtifact[] {
+    return [...evidence].sort((left, right) => evidenceRank(left) - evidenceRank(right)).slice(0, 5);
+  }
+
+  function variantStatusLabel(status: string): string {
+    if (status === 'NotSelected') return 'Selection-eliminated';
+    return status;
+  }
 </script>
 
 <div class="min-w-0 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
@@ -125,7 +164,7 @@
         {variant.summary || variant.appRef || 'Variant'}
       </h3>
     </div>
-    <Badge tone={statusTone(variant.status)}>{variant.status}</Badge>
+    <Badge tone={statusTone(variant.status)}>{variantStatusLabel(variant.status)}</Badge>
   </div>
   <p class="mt-2 text-[12px] leading-relaxed text-[var(--color-muted)]">
     {reason}
@@ -149,6 +188,11 @@
       {/if}
       {#if mutation.diffRef}
         <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-faint)]">{mutation.diffRef}</p>
+      {/if}
+      {#if mutation.diffPatch}
+        <div class="mt-2">
+          <UnifiedDiff patch={mutation.diffPatch} maxFiles={3} maxLinesPerFile={16} />
+        </div>
       {/if}
     </div>
   {/if}
@@ -174,9 +218,11 @@
   {/if}
   {#if evidence.length}
     <div class="mt-3 border-t border-[var(--color-border)] pt-2">
-      {#each evidence.slice(0, 3) as artifact (artifact.id)}
+      {#each visibleEvidence() as artifact (artifact.id)}
         {@const href = datadogHref(artifact)}
         {@const query = evidenceQuery(artifact)}
+        {@const resultCount = evidenceResultCount(artifact)}
+        {@const zeroResultMeaning = evidenceZeroResultMeaning(artifact)}
         <div class="mb-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5 last:mb-0">
           <div class="flex items-center justify-between gap-2">
             <p class="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
@@ -202,9 +248,9 @@
               {query}
             </p>
           {/if}
-          {#if artifact.resultCount || artifact.zeroResultMeaning}
+          {#if resultCount || zeroResultMeaning}
             <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
-              results {artifact.resultCount || 'n/a'} · zero={artifact.zeroResultMeaning || 'unspecified'}
+              results {resultCount || 'n/a'} · zero={zeroResultMeaning || 'unspecified'}
             </p>
           {/if}
         </div>

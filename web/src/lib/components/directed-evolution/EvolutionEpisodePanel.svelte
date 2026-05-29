@@ -20,6 +20,7 @@
     EvolutionEvaluationStage,
     EvolutionGeneration,
     EvolutionMetricDefinition,
+    EvolutionMutation,
     EvolutionPromotion,
     EvolutionScoringRule,
     EvolutionSelectionPressure,
@@ -33,6 +34,7 @@
   import MetricsRulesCard from './MetricsRulesCard.svelte';
   import PanelTitle from './PanelTitle.svelte';
   import EpisodeProtocolCard from './EpisodeProtocolCard.svelte';
+  import UnifiedDiff from '$lib/components/UnifiedDiff.svelte';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
@@ -46,6 +48,7 @@
     stages: EvolutionEvaluationStage[];
     stageResults: EvolutionStageResult[];
     episodeVariants: EvolutionVariant[];
+    mutations: EvolutionMutation[];
     constraints: EvolutionViabilityConstraint[];
     metricDefinitions: EvolutionMetricDefinition[];
     eliminationRules: EvolutionEliminationRule[];
@@ -72,6 +75,7 @@
     stages,
     stageResults,
     episodeVariants,
+    mutations,
     constraints,
     metricDefinitions,
     eliminationRules,
@@ -87,6 +91,8 @@
     onInspectVariant,
     onToggleCompare
   }: Props = $props();
+
+  const promotedMutation = $derived(winningMutation(selectedPromotion));
 
   const terminalEpisodeStatuses = new Set(['Completed', 'Stopped', 'Failed']);
 
@@ -146,6 +152,17 @@
       return 'The canonical app ref has been published and installed; the episode can be considered complete.';
     }
     return 'Winner selected. Promoter is publishing the canonical app ref and hot-loading it before episode completion.';
+  }
+
+  function winningMutation(promotion: EvolutionPromotion | null): EvolutionMutation | null {
+    const winningVariantId = promotion?.winningVariantId || selectedEpisode?.winningVariantId || '';
+    if (!winningVariantId) return null;
+    const variant = episodeVariants.find((item) => item.id === winningVariantId);
+    return (
+      mutations.find((mutation) => mutation.variantId === winningVariantId) ??
+      mutations.find((mutation) => mutation.id === variant?.mutationId) ??
+      null
+    );
   }
 
   function materializationStepClass(isComplete: boolean, isFailed = false): string {
@@ -230,7 +247,7 @@
             <MetricTile label="Stage Results" value={stageResults.length} />
             <MetricTile
               label="Survivors"
-              value={episodeVariants.filter((variant) => variant.status !== 'Eliminated' && variant.status !== 'Failed').length}
+              value={episodeVariants.filter((variant) => ['Active', 'Selected', 'Promoted'].includes(variant.status)).length}
             />
             <MetricTile label="Winner" value={selectedEpisode.winningVariantId ? 1 : 0} />
           </div>
@@ -289,6 +306,14 @@
               <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]">
                 {selectedPromotion.runtimeRef || selectedPromotion.productionTenant || 'runtime pending'}
               </p>
+              {#if promotedMutation?.diffPatch}
+                <div class="mt-2">
+                  <p class="mb-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+                    Promoted Diff
+                  </p>
+                  <UnifiedDiff patch={promotedMutation.diffPatch} maxFiles={2} maxLinesPerFile={12} />
+                </div>
+              {/if}
             </div>
           {:else if selectedEpisode.status === 'Promoting'}
             <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-warning)]/30 bg-[rgba(214,166,0,0.10)] p-2 text-[#735900]">

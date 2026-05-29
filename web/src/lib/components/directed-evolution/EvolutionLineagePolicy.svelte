@@ -6,12 +6,14 @@
     EvolutionDirection,
     EvolutionEpisode,
     EvolutionLineageEdge,
+    EvolutionMutation,
     EvolutionOrganism,
     EvolutionOrganismVersion,
     EvolutionPromotion,
     EvolutionVariant
   } from '$lib/directedEvolution';
   import PanelTitle from './PanelTitle.svelte';
+  import UnifiedDiff from '$lib/components/UnifiedDiff.svelte';
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
@@ -24,6 +26,7 @@
     directions: EvolutionDirection[];
     promotions: EvolutionPromotion[];
     variants: EvolutionVariant[];
+    mutations: EvolutionMutation[];
     activePolicy: EvolutionAutonomyPolicy | null;
     shortId: (value: string, length?: number) => string;
     statusTone: (status: string) => StatusTone;
@@ -39,6 +42,7 @@
     directions,
     promotions,
     variants,
+    mutations,
     activePolicy,
     shortId,
     statusTone,
@@ -121,6 +125,15 @@
     const promotion = edgePromotion(edge);
     const winnerIds = [promotion?.winningVariantId, episode?.winningVariantId].filter(Boolean);
     return variants.find((variant) => winnerIds.includes(variant.id)) ?? null;
+  }
+
+  function winnerMutation(winner: EvolutionVariant | null): EvolutionMutation | null {
+    if (!winner) return null;
+    return (
+      mutations.find((mutation) => mutation.variantId === winner.id) ??
+      mutations.find((mutation) => mutation.id === winner.mutationId) ??
+      null
+    );
   }
 
   function versionLabel(versionId: string): string {
@@ -310,9 +323,10 @@
                 </div>
 
                 {#if edge}
+                  {@const mutation = winnerMutation(winner)}
                   <div class="mt-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5">
                     <div class="flex flex-wrap items-center gap-1.5">
-                      <Badge tone="primary">mutation edge</Badge>
+                      <Badge tone="primary">promoted change</Badge>
                       {#if direction}
                         <Badge tone={statusTone(direction.status)}>{direction.pressureClass || direction.status}</Badge>
                       {/if}
@@ -335,6 +349,11 @@
                       <p class="mt-1 break-all font-mono text-[10px] leading-snug text-[var(--color-muted)]">
                         Runtime: {promotion.runtimeRef}
                       </p>
+                    {/if}
+                    {#if mutation?.diffPatch}
+                      <div class="mt-2">
+                        <UnifiedDiff patch={mutation.diffPatch} maxFiles={2} maxLinesPerFile={10} />
+                      </div>
                     {/if}
                     <details class="mt-1.5">
                       <summary class="cursor-pointer font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">

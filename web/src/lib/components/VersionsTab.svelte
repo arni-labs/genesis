@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Copy, GitCommitHorizontal, PackageCheck } from '@lucide/svelte';
   import { IconButton } from '$lib/components/ui';
-  import type { GitCommit, RegistryApp } from '$lib/types';
+  import type { CommitDiff, GitCommit, RegistryApp } from '$lib/types';
 
   type VersionInstallCommands = {
     appRef: string;
@@ -13,6 +13,7 @@
   type VersionsTabProps = {
     app: RegistryApp;
     versions: GitCommit[];
+    diffs: CommitDiff[];
     selectedHash: string;
     loading: boolean;
     error: string;
@@ -26,6 +27,7 @@
   let {
     app,
     versions,
+    diffs,
     selectedHash,
     loading,
     error,
@@ -38,6 +40,9 @@
 
   const selectedVersion = $derived(
     versions.find((version) => version.id === selectedHash) ?? versions[0] ?? null
+  );
+  const selectedDiff = $derived(
+    diffs.find((diff) => diff.commitHash === selectedVersion?.id) ?? null
   );
 
   function parents(commit: GitCommit): string[] {
@@ -169,34 +174,73 @@
       {/if}
     </div>
 
-    <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-3">
-      <div class="flex items-center justify-between gap-2">
-        <p class="v-eyebrow">Install Selected</p>
-        <PackageCheck size={13} class="text-[var(--color-primary)]" />
-      </div>
-      <p class="mt-1 truncate font-sans text-[12.5px] font-semibold tracking-tight text-[var(--color-ink)]">
-        {selectedVersion ? subject(selectedVersion) : app.name}
-      </p>
-      <div class="mt-2 grid gap-2">
-        {#each installCards(installCommands) as card (card.title)}
-          <div
-            class="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] py-1 pl-2.5 pr-1"
-          >
-            <div class="min-w-0">
-              <p class="v-eyebrow">{card.title}</p>
-              <code class="block truncate font-mono text-[10.5px] text-[var(--color-ink-soft)]">
-                {card.value}
-              </code>
-            </div>
-            <IconButton
-              aria-label={`Copy ${card.label}`}
-              class="h-6 w-6 shrink-0"
-              onclick={() => onCopy(card.value, card.label)}
-            >
-              <Copy size={11} />
-            </IconButton>
+    <div class="grid gap-3">
+      <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-3">
+        <div class="flex items-center justify-between gap-2">
+          <p class="v-eyebrow">Commit Changes</p>
+          <span class="font-mono text-[10px] text-[var(--color-muted)]">
+            {selectedDiff?.files.length ?? 0} files
+          </span>
+        </div>
+        {#if selectedDiff?.files.length}
+          <div class="mt-2 grid gap-2">
+            {#each selectedDiff.files.slice(0, 5) as file (file.path)}
+              <div class="overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border-soft)]">
+                <div class="flex items-center justify-between gap-2 bg-[var(--color-surface-soft)] px-2 py-1.5">
+                  <code class="truncate font-mono text-[10.5px] font-semibold text-[var(--color-ink-soft)]">{file.path}</code>
+                  <span class="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">
+                    {file.status} · +{file.additions} -{file.deletions}
+                  </span>
+                </div>
+                <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[10.5px] leading-relaxed"><code>{#each file.lines.slice(0, 22) as line}<span class={[
+                    'block px-2',
+                    line.kind === 'addition'
+                      ? 'bg-[#e8f7ee] text-[#176236]'
+                      : line.kind === 'deletion'
+                        ? 'bg-[#fdecef] text-[#8b1e35]'
+                        : line.kind === 'meta'
+                          ? 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
+                          : 'text-[var(--color-ink-soft)]'
+                  ].join(' ')}>{line.text || ' '}</span>{/each}</code></pre>
+              </div>
+            {/each}
           </div>
-        {/each}
+        {:else}
+          <p class="mt-2 text-[12px] text-[var(--color-muted)]">
+            No file changes are available for this commit.
+          </p>
+        {/if}
+      </div>
+
+      <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-3">
+        <div class="flex items-center justify-between gap-2">
+          <p class="v-eyebrow">Install Selected</p>
+          <PackageCheck size={13} class="text-[var(--color-primary)]" />
+        </div>
+        <p class="mt-1 truncate font-sans text-[12.5px] font-semibold tracking-tight text-[var(--color-ink)]">
+          {selectedVersion ? subject(selectedVersion) : app.name}
+        </p>
+        <div class="mt-2 grid gap-2">
+          {#each installCards(installCommands) as card (card.title)}
+            <div
+              class="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] py-1 pl-2.5 pr-1"
+            >
+              <div class="min-w-0">
+                <p class="v-eyebrow">{card.title}</p>
+                <code class="block truncate font-mono text-[10.5px] text-[var(--color-ink-soft)]">
+                  {card.value}
+                </code>
+              </div>
+              <IconButton
+                aria-label={`Copy ${card.label}`}
+                class="h-6 w-6 shrink-0"
+                onclick={() => onCopy(card.value, card.label)}
+              >
+                <Copy size={11} />
+              </IconButton>
+            </div>
+          {/each}
+        </div>
       </div>
     </div>
   </div>
