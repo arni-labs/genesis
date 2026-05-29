@@ -535,6 +535,8 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
         'apps/agent-answers/specs/model.csdl.xml'
       ]),
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-a',
+      DiffPatch:
+        'diff --git a/apps/agent-answers/specs/answer.ioa.toml b/apps/agent-answers/specs/answer.ioa.toml\n@@ source memory @@\n+state = \"SourceMemoryPanel\"\n',
       BrainRunId: 'brain-variant-a'
     }),
     row('Mutation', 'mutation-hidden-citations', 'Recorded', {
@@ -542,6 +544,8 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       Summary: 'Stores citations invisibly without showing a source trail.',
       ChangedFilesJson: JSON.stringify(['apps/agent-answers/specs/answer.ioa.toml']),
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-b',
+      DiffPatch:
+        'diff --git a/apps/agent-answers/specs/answer.ioa.toml b/apps/agent-answers/specs/answer.ioa.toml\n@@ hidden citations @@\n+state = \"HiddenCitationStore\"\n',
       BrainRunId: 'brain-variant-b'
     }),
     row('Mutation', 'mutation-flat-sources', 'Recorded', {
@@ -549,6 +553,8 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       Summary: 'Adds a flat source note without preserving follow-up relationship.',
       ChangedFilesJson: JSON.stringify(['apps/agent-answers/APP.md']),
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-flat',
+      DiffPatch:
+        'diff --git a/apps/agent-answers/APP.md b/apps/agent-answers/APP.md\n@@ flat sources @@\n+Flat source note\n',
       BrainRunId: 'brain-variant-flat'
     })
   ],
@@ -736,11 +742,13 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await expect(page.getByRole('heading', { name: 'alice-notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: /app.toml/ })).toBeVisible();
   await page.getByRole('button', { name: /app.toml/ }).click();
-  await expect(page.getByText('name = "alice-notes"')).toBeVisible();
+  await expect(page.getByText('name = "alice-notes"', { exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Versions' }).click();
   const versionsPanel = page.getByRole('tabpanel', { name: 'Versions' });
   await expect(page.getByText('Version Chain')).toBeVisible();
+  await expect(page.getByText('Commit Changes')).toBeVisible();
+  await expect(versionsPanel.getByText('+name = "alice-notes"')).toBeVisible();
   await expect(page.getByRole('button', { name: /add notes app/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /initial notes app/ })).toBeVisible();
   await expect(versionsPanel.getByText(`alice/alice-notes@${childHash}`, { exact: true })).toBeVisible();
@@ -801,6 +809,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await page.goto('/genesis/evolution');
 
   await expect(page.getByRole('heading', { name: 'Agent Answers' })).toBeVisible();
+  await page.getByRole('button', { name: /Open episode Answer citations that survive follow-up/ }).click();
   await expect(
     page.getByRole('heading', { name: 'Answer citations that survive follow-up' }).first()
   ).toBeVisible();
@@ -828,6 +837,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(page.getByText('Materializing')).toBeVisible();
   await expect(page.getByText('Failed Installs')).toBeVisible();
   await expect(page.getByText('Hot-loaded').first()).toBeVisible();
+  await expect(page.getByText('+state = "SourceMemoryPanel"').first()).toBeVisible();
   await expect(
     page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner', {
       exact: true
@@ -846,9 +856,10 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await page.getByRole('button', { name: 'Organism Genealogy' }).click({ force: true });
   await expect(page.getByText('Specimen History')).toBeVisible();
   await expect(page.getByText('current parent', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('mutation edge')).toBeVisible();
+  await expect(page.getByText('promoted change')).toBeVisible();
   await expect(page.getByText('winner variant')).toBeVisible();
   await expect(page.getByText('Winner: Adds a source memory panel')).toBeVisible();
+  await expect(page.getByText('+state = "SourceMemoryPanel"').first()).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
 
   await page.getByRole('button', { name: 'Direction Detail' }).click();
@@ -875,7 +886,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
 
   await page.getByRole('button', { name: 'Inspect' }).first().click();
   await expect(page.getByText('App/spec diff')).toBeVisible();
-  await expect(page.getByText('apps/agent-answers/specs/answer.ioa.toml')).toBeVisible();
+  await expect(page.getByText('apps/agent-answers/specs/answer.ioa.toml').first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
     'href',
     /app\.datadoghq\.com\/logs/

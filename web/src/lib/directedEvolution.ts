@@ -403,6 +403,8 @@ function normalizeVariant(row: EntityRow): EvolutionVariant {
     branchRef: stringField(row, 'BranchRef'),
     runtimeRef: stringField(row, 'RuntimeRef'),
     summary: stringField(row, 'Summary'),
+    changedFiles: parseJsonList(stringField(row, 'ChangedFilesJson')),
+    diffPatch: stringField(row, 'DiffPatch'),
     brainRunId: stringField(row, 'BrainRunId'),
     workItemId: stringField(row, 'WorkItemId'),
     eliminationRuleId: stringField(row, 'EliminationRuleId'),
@@ -469,11 +471,12 @@ function normalizeSelectionPressure(row: EntityRow): EvolutionSelectionPressure 
 }
 
 function normalizeSelectionProtocol(row: EntityRow): EvolutionSelectionProtocol {
+  const metricIdsJson = stringField(row, 'MetricIdsJson') || stringField(row, 'MetricDefinitionIdsJson');
   return {
     ...base(row),
     episodeId: stringField(row, 'EpisodeId'),
     selectionStatement: stringField(row, 'SelectionStatement'),
-    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    metricIds: parseJsonList(metricIdsJson),
     eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
     scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
     evaluatorRef: stringField(row, 'EvaluatorRef'),
@@ -604,6 +607,7 @@ function normalizeMutation(row: EntityRow): EvolutionMutation {
     summary: stringField(row, 'Summary'),
     changedFiles: parseJsonList(stringField(row, 'ChangedFilesJson')),
     diffRef: stringField(row, 'DiffRef'),
+    diffPatch: stringField(row, 'DiffPatch'),
     brainRunId: stringField(row, 'BrainRunId'),
     reason: stringField(row, 'Reason')
   };

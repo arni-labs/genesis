@@ -149,6 +149,12 @@
   $: episodeTrials = selectedEpisode
     ? (snapshot?.trials ?? []).filter((trial) => trial.episodeId === selectedEpisode.id)
     : [];
+  $: completedEpisodeTrials = episodeTrials.filter((trial) =>
+    ['Succeeded', 'Passed', 'Observed'].includes(trial.status)
+  );
+  $: blockedEpisodeTrials = episodeTrials.filter(
+    (trial) => trial.blocker || ['Failed', 'Blocked', 'Eliminated'].includes(trial.status)
+  );
   $: inspectedVariant =
     episodeVariants.find((variant) => variant.id === inspectedVariantId) ??
     episodeVariants.find((variant) => variant.id === selectedEpisode?.winningVariantId) ??
@@ -243,7 +249,7 @@
     if (['Queued', 'Draft', 'Negotiating', 'Planned', 'Generating', 'Evaluating', 'Selecting', 'Promoting', 'Paused', 'Claimed'].includes(status)) {
       return 'warning';
     }
-    if (['Failed', 'Stopped', 'Eliminated', 'Dismissed', 'Cancelled'].includes(status)) {
+    if (['Failed', 'Stopped', 'Eliminated', 'NotSelected', 'Dismissed', 'Cancelled'].includes(status)) {
       return 'danger';
     }
     if (['Proposed', 'Framed', 'Linked', 'Pinned'].includes(status)) {
@@ -377,7 +383,20 @@
     return (
       (snapshot?.mutations ?? []).find((mutation) => mutation.id === variant.mutationId) ??
       (snapshot?.mutations ?? []).find((mutation) => mutation.variantId === variant.id) ??
-      null
+      (variant.changedFiles.length || variant.diffPatch
+        ? {
+            id: `${variant.id}:inline-mutation`,
+            status: variant.status,
+            variantId: variant.id,
+            summary: variant.summary,
+            changedFiles: variant.changedFiles,
+            diffRef: variant.branchRef || variant.appRef,
+            diffPatch: variant.diffPatch,
+            brainRunId: variant.brainRunId,
+            reason: variant.reason,
+            raw: variant.raw
+          }
+        : null)
     );
   }
 
@@ -590,7 +609,7 @@
                 <MetricTile compact label="Episodes" value={activeEpisodes.length} />
                 <MetricTile compact label="Variants" value={episodeVariants.length} />
                 <MetricTile compact label="Promotions" value={promotions.length} />
-                <MetricTile compact label="Materialized" value={promotions.filter((item) => item.materialized).length} />
+                <MetricTile compact label="Materialized" value={promotions.filter((item) => promotionHotLoaded(item)).length} />
                 <MetricTile compact label="Materializing" value={pendingMaterializations.length} />
                 <MetricTile compact label="Failed Installs" value={failedMaterializations.length} />
                 <MetricTile compact label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
@@ -757,7 +776,7 @@
                       <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-2">
                         <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Simulated-user lab</p>
                         <p class="mt-1 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
-                          {episodeTrials.length} trial rows · {episodeTrials.filter((trial) => trial.status === 'Observed').length} observed · {episodeTrials.filter((trial) => trial.status === 'Blocked').length} blocked
+                          {episodeTrials.length} trial rows · {completedEpisodeTrials.length} completed · {blockedEpisodeTrials.length} blockers
                         </p>
                       </div>
                     </div>
@@ -773,6 +792,7 @@
                 {stages}
                 {stageResults}
                 {episodeVariants}
+                mutations={snapshot?.mutations ?? []}
                 {constraints}
                 metricDefinitions={metrics}
                 {eliminationRules}
@@ -883,6 +903,7 @@
                 directions={activeDirections}
                 {promotions}
                 variants={snapshot?.variants ?? []}
+                mutations={snapshot?.mutations ?? []}
                 {activePolicy}
                 {shortId}
                 {statusTone}
