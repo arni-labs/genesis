@@ -117,6 +117,8 @@ export type EvolutionVariant = EntityBase & {
   branchRef: string;
   runtimeRef: string;
   summary: string;
+  changedFiles: string[];
+  diffPatch: string;
   brainRunId: string;
   workItemId: string;
   eliminationRuleId: string;
@@ -279,6 +281,7 @@ export type EvolutionMutation = EntityBase & {
   summary: string;
   changedFiles: string[];
   diffRef: string;
+  diffPatch: string;
   brainRunId: string;
   reason: string;
 };

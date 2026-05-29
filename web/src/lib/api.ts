@@ -2,6 +2,7 @@ import type {
   AppFilesSnapshot,
   ClaimOwnerInput,
   Closure,
+  CommitDiff,
   EntityRow,
   GitBlob,
   GitCommit,
@@ -9,6 +10,7 @@ import type {
   Lineage,
   LoadWarning,
   Owner,
+  RepositoryFileDiff,
   RepositoryFile,
   RegistryApp,
   RegistrySnapshot
@@ -214,7 +216,8 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
       commitHash: app.latestVersionHash,
       commit: null,
       versions: [],
-      files: []
+      files: [],
+      diffs: []
     };
   }
 
@@ -236,6 +239,9 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     commits.find((item) => item.id === app.latestVersionHash) ??
     commits.find((item) => item.treeSha) ??
     null;
+  const filesByCommit = new Map(
+    commits.map((item) => [item.id, buildRepositoryFiles(item.treeSha, trees, blobs)])
+  );
 
   return {
     appId: app.id,
@@ -243,7 +249,8 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     commitHash: app.latestVersionHash,
     commit,
     versions,
-    files: commit ? buildRepositoryFiles(commit.treeSha, trees, blobs) : []
+    files: commit ? (filesByCommit.get(commit.id) ?? []) : [],
+    diffs: buildCommitDiffs(versions, filesByCommit)
   };
 }
 
@@ -514,6 +521,79 @@ function buildRepositoryFiles(
 
   walk(rootTreeSha, '');
   return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function buildCommitDiffs(
+  versions: GitCommit[],
+  filesByCommit: Map<string, RepositoryFile[]>
+): CommitDiff[] {
+  return versions.map((commit) => {
+    const parentHash = parseParentShas(commit.parentShas)[0] ?? '';
+    const current = filesByCommit.get(commit.id) ?? [];
+    const parent = parentHash ? (filesByCommit.get(parentHash) ?? []) : [];
+    return {
+      commitHash: commit.id,
+      parentHash,
+      files: diffRepositoryFiles(parent, current)
+    };
+  });
+}
+
+function diffRepositoryFiles(
+  previousFiles: RepositoryFile[],
+  nextFiles: RepositoryFile[]
+): RepositoryFileDiff[] {
+  const previous = new Map(previousFiles.filter((file) => file.kind !== 'directory').map((file) => [file.path, file]));
+  const next = new Map(nextFiles.filter((file) => file.kind !== 'directory').map((file) => [file.path, file]));
+  const paths = [...new Set([...previous.keys(), ...next.keys()])].sort((a, b) => a.localeCompare(b));
+  const diffs: RepositoryFileDiff[] = [];
+
+  for (const path of paths) {
+    const before = previous.get(path);
+    const after = next.get(path);
+    if (before?.objectSha === after?.objectSha) continue;
+    const status = before && after ? 'modified' : before ? 'deleted' : 'added';
+    const beforeLines = before && !before.isBinary ? before.preview.split('\n') : [];
+    const afterLines = after && !after.isBinary ? after.preview.split('\n') : [];
+    const lines = fileDiffLines(beforeLines, afterLines, status);
+    diffs.push({
+      path,
+      status,
+      additions: lines.filter((line) => line.kind === 'addition').length,
+      deletions: lines.filter((line) => line.kind === 'deletion').length,
+      lines
+    });
+  }
+
+  return diffs;
+}
+
+function fileDiffLines(
+  beforeLines: string[],
+  afterLines: string[],
+  status: RepositoryFileDiff['status']
+): RepositoryFileDiff['lines'] {
+  const lines: RepositoryFileDiff['lines'] = [
+    { kind: 'meta', text: `@@ ${status} @@` }
+  ];
+  if (status === 'added') {
+    return [...lines, ...afterLines.map((text) => ({ kind: 'addition' as const, text: `+${text}` }))];
+  }
+  if (status === 'deleted') {
+    return [...lines, ...beforeLines.map((text) => ({ kind: 'deletion' as const, text: `-${text}` }))];
+  }
+  const max = Math.max(beforeLines.length, afterLines.length);
+  for (let index = 0; index < max; index += 1) {
+    const before = beforeLines[index];
+    const after = afterLines[index];
+    if (before === after && before !== undefined) {
+      lines.push({ kind: 'context', text: ` ${before}` });
+    } else {
+      if (before !== undefined) lines.push({ kind: 'deletion', text: `-${before}` });
+      if (after !== undefined) lines.push({ kind: 'addition', text: `+${after}` });
+    }
+  }
+  return lines;
 }
 
 function parseCanonicalTree(

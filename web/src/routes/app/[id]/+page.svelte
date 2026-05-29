@@ -407,6 +407,7 @@
             <VersionsTab
               app={selectedApp}
               versions={versionEntries}
+              diffs={fileSnapshot?.diffs ?? []}
               selectedHash={selectedVersionHash || selectedApp.latestVersionHash}
               loading={filesLoading}
               error={filesError}
