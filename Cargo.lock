@@ -92,6 +92,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gen_variant"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -187,6 +195,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "merge_variant"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -215,6 +231,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "run_stage_caller"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "scm_ingest_pack"
 version = "0.0.1"
 dependencies = [
@@ -225,6 +249,14 @@ dependencies = [
  "sha2",
  "temper-wasm-sdk",
  "tg-wire",
+]
+
+[[package]]
+name = "select_winner"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "temper-wasm-sdk",
 ]
 
 [[package]]

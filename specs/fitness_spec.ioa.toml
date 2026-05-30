@@ -1,0 +1,31 @@
+# FitnessSpec Entity — I/O Automaton Specification
+#
+# The settable, multi-stage / multi-objective fitness function — as DATA.
+# `stages` is a JSON array of {stage_id, evaluator, kind, gate_predicates,
+# score_objectives, on_fail}; the engine walks it. Editing the data (SetStages)
+# does NOT change this FSM — that is the whole point (see genesis ADR-0011).
+# Snapshot-on-Observe: each Evolution copies the FitnessSpec it runs under.
+
+[automaton]
+name = "FitnessSpec"
+states = ["Draft", "Active"]
+initial = "Draft"
+allow_indefinite_states = ["Draft", "Active"]
+
+# --- Actions ---
+
+[[action]]
+name = "SetStages"
+kind = "input"
+from = ["Draft", "Active"]
+to = "Active"
+params = ["stages"]
+hint = "Set the ordered stage list (JSON). Compiled by Claude Code from NL requirements."
+
+[[action]]
+name = "SetPolicy"
+kind = "input"
+from = ["Draft", "Active"]
+to = "Active"
+params = ["selection_policy", "tie_break"]
+hint = "Set the selection policy (pareto|weighted|lexicographic) and tie-break key."

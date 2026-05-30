@@ -1,0 +1,14 @@
+# StageResult Entity — I/O Automaton Specification
+#
+# An append-only record of one (variant, stage) evaluation: the verdict, the
+# objective scores, and the evidence/counterexample. Created (via POST) in the
+# terminal `Recorded` state and never mutated — it is the fossil record that
+# the Evolution Studio renders as the elimination bracket + cause-of-death.
+# Data fields (variant_id, stage_id, evaluator, verdict, objective_scores,
+# evidence) live in the CSDL. See genesis ADR-0011.
+
+[automaton]
+name = "StageResult"
+states = ["Recorded"]
+initial = "Recorded"
+allow_indefinite_states = ["Recorded"]

@@ -1,0 +1,122 @@
+# Variant Entity — I/O Automaton Specification
+#
+# One candidate spec mutation. Its FSM IS the elimination path: it walks the
+# FitnessSpec stages (generic — NOT one state per stage), surviving all gates
+# or being killed at one (cause-of-death recorded). See genesis ADR-0011.
+
+[automaton]
+name = "Variant"
+states = ["Proposed", "Evaluating", "Survived", "Killed"]
+initial = "Proposed"
+allow_indefinite_states = ["Proposed", "Evaluating", "Survived", "Killed"]
+
+# --- State Variables ---
+
+[[state]]
+name = "current_stage"
+type = "counter"
+initial = "0"
+
+# --- Actions ---
+
+[[action]]
+name = "StartEval"
+kind = "Composite"
+from = ["Proposed"]
+to = "Evaluating"
+hint = "Begin walking the FitnessSpec stages. Composite: run_stage_caller POSTs /verify/stage and returns StageResult.Create + (RecordStageResult | Survive | Kill) sub_writes."
+record_parent_event = true
+
+[[action.triggers]]
+name = "run_stage_caller"
+kind = "wasm"
+module = "run_stage_caller"
+
+[action.triggers.config]
+max_response_bytes = "16777216"
+
+[[action.sub_writes]]
+target_entity = "StageResult"
+action = "Create"
+generated_from = "stage_verdict"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "RecordStageResult"
+generated_from = "stage_verdict"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "Survive"
+generated_from = "stage_verdict"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "Kill"
+generated_from = "stage_verdict"
+
+[[action]]
+name = "RecordStageResult"
+kind = "Composite"
+from = ["Evaluating"]
+to = "Evaluating"
+effect = "increment current_stage"
+params = ["stage_id", "verdict", "objective_scores", "evidence"]
+hint = "Record one stage's verdict and advance to the next stage. Composite: re-triggers run_stage_caller for stage N+1; the wasm returns the next StageResult.Create + (RecordStageResult | Survive | Kill) sub_writes."
+record_parent_event = true
+
+[[action.triggers]]
+name = "run_stage_caller"
+kind = "wasm"
+module = "run_stage_caller"
+
+[action.triggers.config]
+max_response_bytes = "16777216"
+
+[[action.sub_writes]]
+target_entity = "StageResult"
+action = "Create"
+generated_from = "stage_verdict"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "RecordStageResult"
+generated_from = "stage_verdict"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "Survive"
+generated_from = "stage_verdict"
+
+[[action.sub_writes]]
+target_entity = "Variant"
+action = "Kill"
+generated_from = "stage_verdict"
+
+[[action]]
+name = "Survive"
+kind = "internal"
+from = ["Evaluating"]
+to = "Survived"
+hint = "Passed every gate; eligible for selection."
+
+[[action]]
+name = "Kill"
+kind = "input"
+from = ["Proposed", "Evaluating"]
+to = "Killed"
+params = ["stage_id", "counterexample"]
+hint = "Failed a gate (or generation). Terminal — cause-of-death is recorded."
+
+# --- Safety Invariants ---
+
+# A killed variant can never be revived (hence can never be selected).
+[[invariant]]
+name = "KilledIsFinal"
+when = ["Killed"]
+assert = "no_further_transitions"
+
+[[invariant]]
+name = "SurvivedIsFinal"
+when = ["Survived"]
+assert = "no_further_transitions"
