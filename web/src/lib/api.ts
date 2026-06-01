@@ -573,15 +573,111 @@ function fileDiffLines(
   afterLines: string[],
   status: RepositoryFileDiff['status']
 ): RepositoryFileDiff['lines'] {
-  const lines: RepositoryFileDiff['lines'] = [
-    { kind: 'meta', text: `@@ ${status} @@` }
-  ];
   if (status === 'added') {
-    return [...lines, ...afterLines.map((text) => ({ kind: 'addition' as const, text: `+${text}` }))];
+    return [
+      { kind: 'meta', text: '@@ added file @@' },
+      ...afterLines.map((text) => ({ kind: 'addition' as const, text: `+${text}` }))
+    ];
   }
   if (status === 'deleted') {
-    return [...lines, ...beforeLines.map((text) => ({ kind: 'deletion' as const, text: `-${text}` }))];
+    return [
+      { kind: 'meta', text: '@@ deleted file @@' },
+      ...beforeLines.map((text) => ({ kind: 'deletion' as const, text: `-${text}` }))
+    ];
   }
+  return modifiedFileDiffLines(beforeLines, afterLines);
+}
+
+function modifiedFileDiffLines(
+  beforeLines: string[],
+  afterLines: string[]
+): RepositoryFileDiff['lines'] {
+  const sequence = alignedLineDiff(beforeLines, afterLines);
+  const changedIndexes = sequence
+    .map((line, index) => (line.kind === 'context' ? -1 : index))
+    .filter((index) => index >= 0);
+
+  if (!changedIndexes.length) {
+    return [{ kind: 'meta', text: '@@ unchanged @@' }];
+  }
+
+  const contextBudget = 3;
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const index of changedIndexes) {
+    const start = Math.max(0, index - contextBudget);
+    const end = Math.min(sequence.length - 1, index + contextBudget);
+    const previous = ranges[ranges.length - 1];
+    if (previous && start <= previous.end + 1) {
+      previous.end = Math.max(previous.end, end);
+    } else {
+      ranges.push({ start, end });
+    }
+  }
+
+  const lines: RepositoryFileDiff['lines'] = [];
+  for (const [index, range] of ranges.entries()) {
+    lines.push({ kind: 'meta', text: `@@ change ${index + 1} @@` });
+    lines.push(...sequence.slice(range.start, range.end + 1));
+  }
+  return lines;
+}
+
+function alignedLineDiff(
+  beforeLines: string[],
+  afterLines: string[]
+): RepositoryFileDiff['lines'] {
+  const cellBudget = beforeLines.length * afterLines.length;
+  if (cellBudget > 1_000_000) {
+    return positionalLineDiff(beforeLines, afterLines);
+  }
+
+  const table = Array.from(
+    { length: beforeLines.length + 1 },
+    () => new Uint32Array(afterLines.length + 1)
+  );
+
+  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
+    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
+      table[beforeIndex][afterIndex] =
+        beforeLines[beforeIndex] === afterLines[afterIndex]
+          ? table[beforeIndex + 1][afterIndex + 1] + 1
+          : Math.max(table[beforeIndex + 1][afterIndex], table[beforeIndex][afterIndex + 1]);
+    }
+  }
+
+  const lines: RepositoryFileDiff['lines'] = [];
+  let beforeIndex = 0;
+  let afterIndex = 0;
+  while (beforeIndex < beforeLines.length && afterIndex < afterLines.length) {
+    if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
+      lines.push({ kind: 'context', text: ` ${beforeLines[beforeIndex]}` });
+      beforeIndex += 1;
+      afterIndex += 1;
+    } else if (table[beforeIndex + 1][afterIndex] >= table[beforeIndex][afterIndex + 1]) {
+      lines.push({ kind: 'deletion', text: `-${beforeLines[beforeIndex]}` });
+      beforeIndex += 1;
+    } else {
+      lines.push({ kind: 'addition', text: `+${afterLines[afterIndex]}` });
+      afterIndex += 1;
+    }
+  }
+
+  while (beforeIndex < beforeLines.length) {
+    lines.push({ kind: 'deletion', text: `-${beforeLines[beforeIndex]}` });
+    beforeIndex += 1;
+  }
+  while (afterIndex < afterLines.length) {
+    lines.push({ kind: 'addition', text: `+${afterLines[afterIndex]}` });
+    afterIndex += 1;
+  }
+  return lines;
+}
+
+function positionalLineDiff(
+  beforeLines: string[],
+  afterLines: string[]
+): RepositoryFileDiff['lines'] {
+  const lines: RepositoryFileDiff['lines'] = [];
   const max = Math.max(beforeLines.length, afterLines.length);
   for (let index = 0; index < max; index += 1) {
     const before = beforeLines[index];
