@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Copy, GitCommitHorizontal, PackageCheck } from '@lucide/svelte';
   import { IconButton } from '$lib/components/ui';
-  import type { CommitDiff, GitCommit, RegistryApp } from '$lib/types';
+  import type { CommitDiff, GitCommit, RegistryApp, RepositoryFileDiff } from '$lib/types';
 
   type VersionInstallCommands = {
     appRef: string;
@@ -44,6 +44,9 @@
   const selectedDiff = $derived(
     diffs.find((diff) => diff.commitHash === selectedVersion?.id) ?? null
   );
+  const selectedFiles = $derived(rankedFiles(selectedDiff?.files ?? []));
+  const visibleFiles = $derived(selectedFiles.slice(0, 8));
+  const hiddenFileCount = $derived(Math.max(0, selectedFiles.length - visibleFiles.length));
 
   function parents(commit: GitCommit): string[] {
     const value = commit.parentShas.trim();
@@ -73,6 +76,29 @@
       { title: 'TemperPaw', value: commands.paw, label: 'Version TemperPaw install call' },
       { title: 'OData', value: commands.odata, label: 'Version OData install command' }
     ];
+  }
+
+  function rankedFiles(files: RepositoryFileDiff[]): RepositoryFileDiff[] {
+    return [...files].sort((left, right) => {
+      const rank = diffFileRank(left.path) - diffFileRank(right.path);
+      return rank || left.path.localeCompare(right.path);
+    });
+  }
+
+  function diffFileRank(path: string): number {
+    if (path.startsWith('specs/') || path.endsWith('.ioa.toml') || path.endsWith('.csdl.xml')) {
+      return 0;
+    }
+    if (path.endsWith('.regression.toml') || path === 'app.toml') {
+      return 1;
+    }
+    if (path.startsWith('policies/') || path.endsWith('.cedar')) {
+      return 2;
+    }
+    if (path === 'APP.md' || path.startsWith('adrs/')) {
+      return 3;
+    }
+    return 4;
   }
 </script>
 
@@ -179,12 +205,12 @@
         <div class="flex items-center justify-between gap-2">
           <p class="v-eyebrow">Commit Changes</p>
           <span class="font-mono text-[10px] text-[var(--color-muted)]">
-            {selectedDiff?.files.length ?? 0} files
+            {selectedFiles.length} files
           </span>
         </div>
-        {#if selectedDiff?.files.length}
+        {#if selectedFiles.length}
           <div class="mt-2 grid gap-2">
-            {#each selectedDiff.files.slice(0, 5) as file (file.path)}
+            {#each visibleFiles as file (file.path)}
               <div class="overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border-soft)]">
                 <div class="flex items-center justify-between gap-2 bg-[var(--color-surface-soft)] px-2 py-1.5">
                   <code class="truncate font-mono text-[10.5px] font-semibold text-[var(--color-ink-soft)]">{file.path}</code>
@@ -204,6 +230,11 @@
                   ].join(' ')}>{line.text || ' '}</span>{/each}</code></pre>
               </div>
             {/each}
+            {#if hiddenFileCount}
+              <p class="rounded-[var(--radius-sm)] bg-[var(--color-surface-soft)] px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                {hiddenFileCount} more changed file{hiddenFileCount === 1 ? '' : 's'} in this commit
+              </p>
+            {/if}
           </div>
         {:else}
           <p class="mt-2 text-[12px] text-[var(--color-muted)]">

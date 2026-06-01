@@ -352,7 +352,7 @@
                     {/if}
                     {#if mutation?.diffPatch}
                       <div class="mt-2">
-                        <UnifiedDiff patch={mutation.diffPatch} maxFiles={2} maxLinesPerFile={10} />
+                        <UnifiedDiff patch={mutation.diffPatch} maxFiles={5} maxLinesPerFile={22} />
                       </div>
                     {/if}
                     <details class="mt-1.5">

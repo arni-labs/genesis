@@ -179,7 +179,7 @@
       </p>
       {#if mutation.changedFiles.length}
         <div class="mt-2 flex flex-wrap gap-1">
-          {#each mutation.changedFiles.slice(0, 5) as file (file)}
+          {#each mutation.changedFiles as file (file)}
             <span class="max-w-full truncate rounded-[var(--radius-xs)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-muted)]">
               {file}
             </span>
@@ -191,7 +191,7 @@
       {/if}
       {#if mutation.diffPatch}
         <div class="mt-2">
-          <UnifiedDiff patch={mutation.diffPatch} maxFiles={3} maxLinesPerFile={16} />
+          <UnifiedDiff patch={mutation.diffPatch} maxFiles={7} maxLinesPerFile={28} />
         </div>
       {/if}
     </div>

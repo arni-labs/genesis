@@ -14,6 +14,7 @@ const childTreeHash = '4444444444444444444444444444444444444444';
 const oldChildTreeHash = '6666666666666666666666666666666666666666';
 const readmeBlobHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const manifestBlobHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const oldManifestBlobHash = 'cccccccccccccccccccccccccccccccccccccccc';
 
 function row(entityType: string, id: string, status: string, fields: Record<string, unknown>): EntityRow {
   return {
@@ -160,7 +161,8 @@ const trees = [
   row('Tree', oldChildTreeHash, 'Durable', {
     RepositoryId: 'rp-alice-notes',
     CanonicalBytes: treeCanonical([
-      { mode: '100644', name: 'README.md', sha: readmeBlobHash }
+      { mode: '100644', name: 'README.md', sha: readmeBlobHash },
+      { mode: '100644', name: 'app.toml', sha: oldManifestBlobHash }
     ])
   })
 ];
@@ -173,8 +175,13 @@ const blobs = [
   }),
   row('Blob', manifestBlobHash, 'Durable', {
     RepositoryId: 'rp-alice-notes',
-    Content: base64('name = "alice-notes"\n'),
+    Content: base64('name = "alice-notes"\nkind = "temper-native"\n'),
     Size: 21
+  }),
+  row('Blob', oldManifestBlobHash, 'Durable', {
+    RepositoryId: 'rp-alice-notes',
+    Content: base64('name = "old-notes"\n'),
+    Size: 19
   })
 ];
 
@@ -748,7 +755,9 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   const versionsPanel = page.getByRole('tabpanel', { name: 'Versions' });
   await expect(page.getByText('Version Chain')).toBeVisible();
   await expect(page.getByText('Commit Changes')).toBeVisible();
+  await expect(versionsPanel.getByText('@@ change 1 @@')).toBeVisible();
   await expect(versionsPanel.getByText('+name = "alice-notes"')).toBeVisible();
+  await expect(versionsPanel.getByText('+kind = "temper-native"')).toBeVisible();
   await expect(page.getByRole('button', { name: /add notes app/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /initial notes app/ })).toBeVisible();
   await expect(versionsPanel.getByText(`alice/alice-notes@${childHash}`, { exact: true })).toBeVisible();

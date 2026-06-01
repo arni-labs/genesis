@@ -15,11 +15,21 @@
     patch: string;
     maxFiles?: number;
     maxLinesPerFile?: number;
+    prioritizeAppSpecs?: boolean;
   };
 
-  let { patch, maxFiles = 4, maxLinesPerFile = 18 }: UnifiedDiffProps = $props();
+  let {
+    patch,
+    maxFiles = 4,
+    maxLinesPerFile = 18,
+    prioritizeAppSpecs = true
+  }: UnifiedDiffProps = $props();
 
-  const files = $derived(parsePatch(patch).slice(0, maxFiles));
+  const parsedFiles = $derived(parsePatch(patch));
+  const visibleFiles = $derived(
+    (prioritizeAppSpecs ? rankedDiffFiles(parsedFiles) : parsedFiles).slice(0, maxFiles)
+  );
+  const hiddenFileCount = $derived(Math.max(0, parsedFiles.length - visibleFiles.length));
 
   function parsePatch(value: string): DiffFile[] {
     const parsed: DiffFile[] = [];
@@ -55,15 +65,38 @@
     return parsed.filter((file) => file.lines.length > 0);
   }
 
+  function rankedDiffFiles(files: DiffFile[]): DiffFile[] {
+    return [...files].sort((left, right) => {
+      const rank = diffFileRank(left.path) - diffFileRank(right.path);
+      return rank || left.path.localeCompare(right.path);
+    });
+  }
+
+  function diffFileRank(path: string): number {
+    if (path.startsWith('specs/') || path.endsWith('.ioa.toml') || path.endsWith('.csdl.xml')) {
+      return 0;
+    }
+    if (path.endsWith('.regression.toml') || path === 'app.toml') {
+      return 1;
+    }
+    if (path.startsWith('policies/') || path.endsWith('.cedar')) {
+      return 2;
+    }
+    if (path === 'APP.md' || path.startsWith('adrs/')) {
+      return 3;
+    }
+    return 4;
+  }
+
   function filePathFromDiffHeader(header: string): string {
     const match = header.match(/^diff --git a\/(.+?) b\/(.+)$/);
     return match?.[2] ?? header.replace(/^diff --git\s+/, '');
   }
 </script>
 
-{#if files.length}
+{#if visibleFiles.length}
   <div class="grid gap-2">
-    {#each files as file (file.path)}
+    {#each visibleFiles as file (file.path)}
       <div class="overflow-hidden rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white">
         <div class="flex items-center justify-between gap-2 border-b border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5">
           <code class="truncate font-mono text-[10.5px] font-semibold text-[var(--color-ink-soft)]">{file.path}</code>
@@ -83,5 +116,10 @@
             ].join(' ')}>{line.text || ' '}</span>{/each}</code></pre>
       </div>
     {/each}
+    {#if hiddenFileCount}
+      <p class="rounded-[var(--radius-xs)] bg-[var(--color-surface-soft)] px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+        {hiddenFileCount} more changed file{hiddenFileCount === 1 ? '' : 's'} in this patch
+      </p>
+    {/if}
   </div>
 {/if}
