@@ -1,0 +1,43 @@
+[automaton]
+name = "WorkerRun"
+states = ["Queued", "Running", "Succeeded", "Failed", "Cancelled"]
+initial = "Queued"
+allow_indefinite_states = ["Queued", "Running"]
+
+[[state]]
+name = "started"
+type = "bool"
+initial = "false"
+
+[[action]]
+name = "StartWorkerRun"
+kind = "input"
+from = ["Queued"]
+to = "Running"
+effect = "set started true"
+params = ["Role", "WorkItemId", "WorkerId", "ProviderId", "AgentKind", "Model", "SessionId", "ParentSessionId", "CorrelationJson"]
+hint = "Start a bounded worker execution attempt."
+
+[[action]]
+name = "SucceedWorkerRun"
+kind = "input"
+from = ["Running"]
+to = "Succeeded"
+params = ["OutputJson", "EvidenceArtifactId", "Summary"]
+hint = "Record a successful worker run."
+
+[[action]]
+name = "FailWorkerRun"
+kind = "input"
+from = ["Running"]
+to = "Failed"
+params = ["FailureReason", "EvidenceArtifactId"]
+hint = "Record a failed worker run."
+
+[[action]]
+name = "CancelWorkerRun"
+kind = "input"
+from = ["Queued", "Running"]
+to = "Cancelled"
+params = ["Reason"]
+hint = "Cancel a worker run."

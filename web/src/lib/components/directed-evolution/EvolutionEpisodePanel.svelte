@@ -246,8 +246,8 @@
           <div class="mt-2 grid grid-cols-3 gap-2">
             <MetricTile label="Stage Results" value={stageResults.length} />
             <MetricTile
-              label="Survivors"
-              value={episodeVariants.filter((variant) => ['Active', 'Selected', 'Promoted'].includes(variant.status)).length}
+              label="Viable"
+              value={episodeVariants.filter((variant) => !['Eliminated', 'Failed'].includes(variant.status)).length}
             />
             <MetricTile label="Winner" value={selectedEpisode.winningVariantId ? 1 : 0} />
           </div>
