@@ -120,7 +120,11 @@ fn fetch_refs_for_repo(
     repository_id: &str,
     api_base: &str,
 ) -> Result<Vec<RefRow>, String> {
-    let url = format!("{api_base}/tdata/Refs");
+    let filter = format!("RepositoryId eq '{}'", repository_id.replace('\'', "''"));
+    let url = format!(
+        "{api_base}/tdata/Refs?$filter={}&$top=500",
+        urlencode(&filter)
+    );
     let resp = ctx
         .http_call("GET", &url, &principal.outbound_headers(), "")
         .map_err(|e| format!("fetch refs: {e}"))?;
@@ -181,6 +185,20 @@ fn fetch_refs_for_repo(
         }
     });
     Ok(rows)
+}
+
+fn urlencode(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            b' ' => out.push_str("%20"),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 fn fetch_repository_default_branch(

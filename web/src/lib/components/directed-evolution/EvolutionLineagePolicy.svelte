@@ -163,6 +163,10 @@
     return organism.appRef === currentParentVersion.appRef;
   }
 
+  function currentParentAppRef(): string {
+    return currentParentVersion?.appRef || organism?.appRef || '';
+  }
+
   function isCurrentVersion(version: EvolutionOrganismVersion): boolean {
     if (!organism) return false;
     const currentId = organism.organismVersionId || organism.parentVersionId;
@@ -232,19 +236,19 @@
             <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
               Current Parent
             </p>
-            <Badge tone={parentRefAligned() === false ? 'danger' : parentRefAligned() ? 'success' : 'neutral'}>
-              {parentRefAligned() === false ? 'Ref Mismatch' : parentRefAligned() ? 'Ref Aligned' : 'Ref Pending'}
+            <Badge tone={currentParentVersion?.appRef ? 'success' : parentRefAligned() === false ? 'warning' : 'neutral'}>
+              {currentParentVersion?.appRef ? 'Version Ref' : parentRefAligned() === false ? 'Entity Ref Differs' : 'Ref Pending'}
             </Badge>
           </div>
           <p class="mt-1 break-all text-[12px] font-semibold leading-snug tracking-tight text-[var(--color-ink)]">
-            {organism.appRef || 'organism app ref pending'}
+            {currentParentAppRef() || 'organism app ref pending'}
           </p>
           <p class="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]">
             version {shortId(organism.organismVersionId || organism.parentVersionId, 16)}
           </p>
           {#if currentParentVersion?.appRef && currentParentVersion.appRef !== organism.appRef}
-            <p class="mt-1 truncate text-[11px] text-[var(--color-error)]">
-              Parent version reports {currentParentVersion.appRef}
+            <p class="mt-1 truncate text-[11px] text-[var(--color-muted)]">
+              Organism entity still reports {organism.appRef || 'no app ref'}
             </p>
           {/if}
           {#if organism.summary}

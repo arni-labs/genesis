@@ -95,6 +95,12 @@
       promotions.find((promotion) => promotion.winningVariantId === selectedEpisode.winningVariantId) ??
       null
     : null;
+  $: organismHeaderAppRef =
+    currentParentVersion?.appRef ||
+    selectedPromotion?.canonicalAppRef ||
+    selectedPromotion?.appRef ||
+    organism?.appRef ||
+    '';
   $: currentGoal = selectedEpisode
     ? snapshot?.adaptationGoals.find((goal) => goal.id === selectedEpisode.adaptationGoalId) ?? null
     : null;
@@ -166,7 +172,7 @@
   $: comparedVariants = comparedVariantIds
     .map((id) => episodeVariants.find((variant) => variant.id === id))
     .filter((variant): variant is EvolutionVariant => Boolean(variant));
-  $: recentBrainRuns = (snapshot?.brainRuns ?? []).slice(-8).reverse();
+  $: recentWorkerRuns = (snapshot?.workerRuns ?? []).slice(-8).reverse();
   $: recentWorkItems = (snapshot?.workItems ?? []).slice(-8).reverse();
   $: totalWarnings = snapshot?.warnings ?? [];
 
@@ -392,7 +398,7 @@
             changedFiles: variant.changedFiles,
             diffRef: variant.branchRef || variant.appRef,
             diffPatch: variant.diffPatch,
-            brainRunId: variant.brainRunId,
+            workerRunId: variant.workerRunId,
             reason: variant.reason,
             raw: variant.raw
           }
@@ -490,12 +496,12 @@
     );
   }
 
-  function directionBrainRun(direction: EvolutionDirection) {
+  function directionWorkerRun(direction: EvolutionDirection) {
     const pressures = directionPressures(direction);
-    const brainRunIds = [direction.brainRunId, ...pressures.map((pressure) => pressure.brainRunId)].filter(
+    const workerRunIds = [direction.workerRunId, ...pressures.map((pressure) => pressure.workerRunId)].filter(
       Boolean
     );
-    return (snapshot?.brainRuns ?? []).find((run) => brainRunIds.includes(run.id)) ?? null;
+    return (snapshot?.workerRuns ?? []).find((run) => workerRunIds.includes(run.id)) ?? null;
   }
 
   function resolveDirectedEvolutionTenant(): string {
@@ -540,7 +546,7 @@
                 {organism?.name || 'No organism online'}
               </h2>
               <p class="mt-1 max-w-[78ch] text-[12.5px] leading-relaxed text-[var(--color-muted)]">
-                {organism?.appRef ||
+                {organismHeaderAppRef ||
                   'Install and activate the Directed Evolution app to stream live organism, episode, variant, and evidence state here.'}
               </p>
               <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
@@ -612,7 +618,7 @@
                 <MetricTile compact label="Materialized" value={promotions.filter((item) => promotionHotLoaded(item)).length} />
                 <MetricTile compact label="Materializing" value={pendingMaterializations.length} />
                 <MetricTile compact label="Failed Installs" value={failedMaterializations.length} />
-                <MetricTile compact label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
+                <MetricTile compact label="Worker Runs" value={snapshot?.workerRuns.length ?? 0} />
               </div>
             </div>
 
@@ -853,7 +859,7 @@
                     </section>
                   {/if}
                   <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
-                    <PanelTitle icon={Activity} title="Recent Brain Work" />
+                    <PanelTitle icon={Activity} title="Recent Worker Work" />
                     <div class="mt-2 grid gap-1.5">
                       {#each recentWorkItems.slice(0, 5) as item (item.id)}
                         <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5 text-[11px]">

@@ -239,7 +239,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       SignalIdsJson: JSON.stringify(['sig-unmet-citation']),
       EvidenceArtifactId: 'evidence-signal-citation',
       DirectionId: 'direction-citation-memory',
-      BrainRunId: 'brain-observer'
+      WorkerRunId: 'worker-observer'
     })
   ],
   Directions: [
@@ -251,13 +251,13 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       Summary: 'Add citation memory so generated answers retain source context across follow-up turns.',
       ProvenanceJson: JSON.stringify({
         signal: 'sig-unmet-citation',
-        observer: 'brain-observer',
+        observer: 'worker-observer',
         basis: 'simulated users repeatedly asked where the answer came from'
       }),
       AutonomyLane: 'growth-human-gated',
       ProposedAdaptationGoal: 'Follow-up answers keep a visible source trail.',
       ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness']),
-      BrainRunId: 'brain-observer'
+      WorkerRunId: 'worker-observer'
     }),
     row('Direction', 'direction-comparison-preview', 'Approved', {
       OrganismId: 'org-agent-answers',
@@ -337,7 +337,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AppRef: 'arni-labs/agent-answers@variant-a',
       RuntimeRef: 'agent-answers-a.local',
       Summary: 'Adds a source memory panel',
-      BrainRunId: 'brain-variant-a',
+      WorkerRunId: 'worker-variant-a',
       MutationId: 'mutation-memory-panel',
       PromotionId: 'promotion-citation-memory'
     }),
@@ -416,7 +416,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
     row('AdaptationGoal', 'goal-citation-memory', 'Active', {
       EpisodeId: 'episode-citation-memory',
       GoalStatement: 'Follow-up answers keep a visible source trail.',
-      CreatedByBrainRunId: 'brain-direction'
+      CreatedByWorkerRunId: 'worker-direction'
     })
   ],
   ViabilityConstraints: [
@@ -544,7 +544,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-a',
       DiffPatch:
         'diff --git a/apps/agent-answers/specs/answer.ioa.toml b/apps/agent-answers/specs/answer.ioa.toml\n@@ source memory @@\n+state = \"SourceMemoryPanel\"\n',
-      BrainRunId: 'brain-variant-a'
+      WorkerRunId: 'worker-variant-a'
     }),
     row('Mutation', 'mutation-hidden-citations', 'Recorded', {
       VariantId: 'variant-hidden-citations',
@@ -553,7 +553,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-b',
       DiffPatch:
         'diff --git a/apps/agent-answers/specs/answer.ioa.toml b/apps/agent-answers/specs/answer.ioa.toml\n@@ hidden citations @@\n+state = \"HiddenCitationStore\"\n',
-      BrainRunId: 'brain-variant-b'
+      WorkerRunId: 'worker-variant-b'
     }),
     row('Mutation', 'mutation-flat-sources', 'Recorded', {
       VariantId: 'variant-flat-sources',
@@ -562,7 +562,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-flat',
       DiffPatch:
         'diff --git a/apps/agent-answers/APP.md b/apps/agent-answers/APP.md\n@@ flat sources @@\n+Flat source note\n',
-      BrainRunId: 'brain-variant-flat'
+      WorkerRunId: 'worker-variant-flat'
     })
   ],
   Measurements: [
@@ -608,7 +608,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       EpisodeId: 'episode-citation-memory',
       GenerationId: 'generation-citation-memory-1',
       VariantId: 'variant-memory-panel',
-      SimulatedUserBrainRunId: 'brain-sim-user-a',
+      SimulatedUserWorkerRunId: 'worker-sim-user-a',
       RuntimeRef: 'agent-answers-a.local',
       GoalJson: JSON.stringify({ goal: 'ask follow-up source question' })
     })
@@ -631,8 +631,8 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       TargetEntityId: 'generation-citation-memory-1'
     })
   ],
-  BrainRuns: [
-    row('BrainRun', 'brain-observer', 'Succeeded', {
+  WorkerRuns: [
+    row('WorkerRun', 'worker-observer', 'Succeeded', {
       Role: 'observer',
       WorkItemId: 'work-observer',
       AgentKind: 'codex',
