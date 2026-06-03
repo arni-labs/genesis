@@ -605,13 +605,22 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
     row('EvidenceArtifact', 'evidence-live-proof-datadog', 'Linked', {
       ArtifactKind: 'datadog_measurement',
       Uri: 'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory',
-      Summary: 'Datadog measured the Agent Answers runtime request stream for this Directed Evolution episode.',
+      Summary: 'Datadog observer measured the Agent Answers runtime request stream for this Directed Evolution episode.',
       CorrelationJson: JSON.stringify({
         episode_id: 'episode-citation-memory',
+        role: 'observer',
+        datadog: {
+          role: 'observer',
+          join_fields: {
+            episode_id: 'episode-citation-memory',
+            role: 'observer'
+          }
+        },
         output: {
           evidence_scope: [
             {
               surface: 'logs',
+              role: 'observer',
               query:
                 'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory',
               time_window: 'now-15m to now',
@@ -630,9 +639,55 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       TimeWindow: 'now-15m to now',
       ResultCount: '3',
       Interpretation:
-        'Runtime request logs were present for the Agent Answers Directed Evolution episode.',
+        'Observer runtime request logs were present for the Agent Answers Directed Evolution episode.',
       ZeroResultMeaning: 'failure',
       EvidenceProvenance: 'datadog-measured',
+      Role: 'observer',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-telemetry-evaluator', 'Linked', {
+      ArtifactKind: 'datadog_measurement',
+      Uri: 'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory%20role%3Atelemetry_evaluator',
+      Summary:
+        'Datadog telemetry evaluator measured Directed Evolution proof-run events for the Agent Answers episode.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        datadog: {
+          role: 'telemetry_evaluator',
+          join_fields: {
+            episode_id: 'episode-citation-memory',
+            role: 'telemetry_evaluator'
+          }
+        },
+        output: {
+          evaluator_role: 'telemetry_evaluator',
+          evidence_scope: [
+            {
+              surface: 'logs',
+              role: 'telemetry_evaluator',
+              query:
+                'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator',
+              time_window: 'now-15m to now',
+              result_count: 2,
+              interpretation:
+                'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.',
+              zero_result_meaning: 'failure',
+              datadog_url:
+                'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory%20role%3Atelemetry_evaluator'
+            }
+          ]
+        }
+      }),
+      Query:
+        'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator',
+      TimeWindow: 'now-15m to now',
+      ResultCount: '2',
+      Interpretation:
+        'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.',
+      ZeroResultMeaning: 'failure',
+      EvidenceProvenance: 'datadog-measured',
+      Role: 'telemetry_evaluator',
       TargetEntityType: 'Episode',
       TargetEntityId: 'episode-citation-memory'
     }),
@@ -921,19 +976,33 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(liveProofGate.getByText('Agent Answers Proof Gate')).toBeVisible();
   await expect(liveProofGate.getByText('directed-evolution-agent-answers-live-proof.sh')).toBeVisible();
   await expect(liveProofGate.getByText('Datadog measured evidence')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog observer evidence')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog telemetry evaluator evidence')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog observer', { exact: true })).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog telemetry evaluator', { exact: true })).toBeVisible();
   await expect(
-    liveProofGate.getByText('Runtime request logs were present for the Agent Answers Directed Evolution episode.')
+    liveProofGate.getByText('Observer runtime request logs were present for the Agent Answers Directed Evolution episode.')
+  ).toBeVisible();
+  await expect(
+    liveProofGate.getByText(
+      'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.'
+    )
   ).toBeVisible();
   await expect(
     liveProofGate.getByText(
       'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory'
     )
   ).toBeVisible();
+  await expect(
+    liveProofGate.getByText(
+      'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator'
+    )
+  ).toBeVisible();
   await expect(liveProofGate.getByText('No-mutation precheck', { exact: true }).first()).toBeVisible();
   await expect(
     liveProofGate.getByText('No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.')
   ).toBeVisible();
-  await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toBeVisible();
+  await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toHaveCount(2);
   const terminalSuccessGate = liveProofGate.locator('div').filter({ hasText: 'Terminal success' }).first();
   await expect(terminalSuccessGate.getByText('Terminal success')).toBeVisible();
   await expect(terminalSuccessGate.getByText('pending', { exact: true })).toBeVisible();
