@@ -179,6 +179,12 @@
   $: selectedEpisodeWorkerRuns = selectedEpisode ? workerRunsForEpisode(selectedEpisode) : [];
   $: selectedEpisodeEvidence = selectedEpisode ? evidenceForEpisode(selectedEpisode) : [];
   $: selectedEpisodeDatadogEvidence = selectedEpisodeEvidence.filter(isStructuredDatadogEvidence);
+  $: selectedEpisodeDatadogObserverEvidence = selectedEpisodeDatadogEvidence.filter((artifact) =>
+    datadogEvidenceRoleMatches(artifact, 'observer')
+  );
+  $: selectedEpisodeDatadogTelemetryEvaluatorEvidence = selectedEpisodeDatadogEvidence.filter((artifact) =>
+    datadogEvidenceRoleMatches(artifact, 'telemetry_evaluator')
+  );
   $: selectedEpisodePrecheckEvidence = selectedEpisodeEvidence.filter(isNoMutationPrecheckEvidence);
   $: selectedEpisodeProofGates = selectedEpisode
     ? proofGatesForEpisode(
@@ -187,6 +193,8 @@
         selectedEpisodeWorkerRuns.length,
         selectedEpisodeEvidence.length,
         selectedEpisodeDatadogEvidence.length,
+        selectedEpisodeDatadogObserverEvidence.length,
+        selectedEpisodeDatadogTelemetryEvaluatorEvidence.length,
         selectedEpisodePrecheckEvidence.length
       )
     : [];
@@ -636,6 +644,20 @@
     return typeof url === 'string' ? url : '';
   }
 
+  function evidenceScopeItems(raw: string): Record<string, unknown>[] {
+    const correlation = parsedRecord(raw);
+    const directOutput = correlation.output;
+    const scope =
+      directOutput && typeof directOutput === 'object' && !Array.isArray(directOutput)
+        ? ((directOutput as Record<string, unknown>).evidence_scope ??
+            (directOutput as Record<string, unknown>).evidenceScope)
+        : undefined;
+    if (Array.isArray(scope)) {
+      return scope.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+    }
+    return scope && typeof scope === 'object' && !Array.isArray(scope) ? [scope as Record<string, unknown>] : [];
+  }
+
   function isStructuredDatadogEvidence(artifact: EvolutionEvidenceArtifact): boolean {
     const datadogUrl = artifact.uri.startsWith('https://app.') ? artifact.uri : evidenceScopeDatadogUrl(artifact.correlationJson);
     return (
@@ -647,6 +669,28 @@
       Boolean(artifact.zeroResultMeaning) &&
       Boolean(datadogUrl)
     );
+  }
+
+  function datadogEvidenceRoleMatches(artifact: EvolutionEvidenceArtifact, role: string): boolean {
+    const correlation = parsedRecord(artifact.correlationJson);
+    const rawRecord = artifact.raw ?? {};
+    const roleCandidates = [
+      nestedString(rawRecord, ['Role']),
+      nestedString(rawRecord, ['role']),
+      nestedString(rawRecord, ['fields', 'Role']),
+      nestedString(rawRecord, ['fields', 'role']),
+      nestedString(correlation, ['role']),
+      nestedString(correlation, ['datadog', 'role']),
+      nestedString(correlation, ['datadog', 'join_fields', 'role']),
+      nestedString(correlation, ['output', 'role']),
+      nestedString(correlation, ['output', 'evaluator_role']),
+      nestedString(correlation, ['output', 'evaluatorRole']),
+      ...evidenceScopeItems(artifact.correlationJson).map((item) => {
+        const scopedRole = item.role ?? item.Role ?? item.evaluator_role ?? item.evaluatorRole;
+        return typeof scopedRole === 'string' ? scopedRole : '';
+      })
+    ];
+    return roleCandidates.includes(role);
   }
 
   function isNoMutationPrecheckEvidence(artifact: EvolutionEvidenceArtifact): boolean {
@@ -677,6 +721,8 @@
     workerRunCount: number,
     evidenceCount: number,
     datadogEvidenceCount: number,
+    datadogObserverEvidenceCount: number,
+    datadogTelemetryEvaluatorEvidenceCount: number,
     precheckEvidenceCount: number
   ): { label: string; value: string; tone: StatusTone }[] {
     const terminalSuccess = ['Completed', 'Complete', 'Succeeded', 'Promoted', 'NoPromotion'].includes(episode.status);
@@ -701,6 +747,16 @@
         label: 'Datadog measured evidence',
         value: `${datadogEvidenceCount}`,
         tone: datadogEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'Datadog observer evidence',
+        value: `${datadogObserverEvidenceCount}`,
+        tone: datadogObserverEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'Datadog telemetry evaluator evidence',
+        value: `${datadogTelemetryEvaluatorEvidenceCount}`,
+        tone: datadogTelemetryEvaluatorEvidenceCount ? 'success' : 'danger'
       },
       {
         label: 'No-mutation precheck',
@@ -1093,19 +1149,30 @@
                           </div>
                         {/each}
                       </div>
-                      {#if selectedEpisodeDatadogEvidence[0]}
-                        <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
-                          <p class="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--color-ink-soft)]">
-                            {selectedEpisodeDatadogEvidence[0].interpretation || selectedEpisodeDatadogEvidence[0].summary}
-                          </p>
-                          <p class="mt-1 line-clamp-2 font-mono text-[10px] text-[var(--color-muted)]">
-                            {selectedEpisodeDatadogEvidence[0].query}
-                          </p>
-                          <p class="mt-1 text-[10px] text-[var(--color-faint)]">
-                            {selectedEpisodeDatadogEvidence[0].timeWindow} · zero means {selectedEpisodeDatadogEvidence[0].zeroResultMeaning}
-                          </p>
-                        </div>
-                      {/if}
+                      <div class="mt-3 grid gap-2">
+                        {#each [
+                          { label: 'Datadog observer', artifact: selectedEpisodeDatadogObserverEvidence[0] },
+                          { label: 'Datadog telemetry evaluator', artifact: selectedEpisodeDatadogTelemetryEvaluatorEvidence[0] }
+                        ] as item (item.label)}
+                          {#if item.artifact}
+                            <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+                              <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-[11px] font-semibold text-[var(--color-ink-soft)]">{item.label}</p>
+                                <Badge tone="success">datadog-measured</Badge>
+                              </div>
+                              <p class="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-[var(--color-ink-soft)]">
+                                {item.artifact.interpretation || item.artifact.summary}
+                              </p>
+                              <p class="mt-1 line-clamp-2 font-mono text-[10px] text-[var(--color-muted)]">
+                                {item.artifact.query}
+                              </p>
+                              <p class="mt-1 text-[10px] text-[var(--color-faint)]">
+                                {item.artifact.timeWindow} · zero means {item.artifact.zeroResultMeaning}
+                              </p>
+                            </div>
+                          {/if}
+                        {/each}
+                      </div>
                       {#if selectedEpisodePrecheckEvidence[0]}
                         <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
                           <div class="flex flex-wrap items-center justify-between gap-2">
