@@ -707,6 +707,8 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
         },
         evidence_requirements: {
           mandatory_datadog_evidence: true,
+          mandatory_datadog_observer_evidence: true,
+          mandatory_datadog_telemetry_evaluator_evidence: true,
           mandatory_terminal_success: true,
           production_datadog_query_secrets_confirmed: true
         }
@@ -1002,6 +1004,10 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(
     liveProofGate.getByText('No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.')
   ).toBeVisible();
+  await expect(liveProofGate.getByText('Observer evidence required')).toBeVisible();
+  await expect(liveProofGate.getByText('Telemetry evaluator required')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog evidence required')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog query secrets confirmed')).toBeVisible();
   await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toHaveCount(2);
   const terminalSuccessGate = liveProofGate.locator('div').filter({ hasText: 'Terminal success' }).first();
   await expect(terminalSuccessGate.getByText('Terminal success')).toBeVisible();
