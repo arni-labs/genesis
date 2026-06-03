@@ -44,11 +44,52 @@
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
   type EvolutionView = 'directions' | 'detail' | 'genealogy';
+  type PrecheckRequirement = {
+    label: string;
+    snakeName: string;
+    camelName: string;
+    value?: string;
+    requiredForReady: boolean;
+  };
   const evolutionViews = [
     { id: 'directions', label: 'Directions', icon: Compass },
     { id: 'detail', label: 'Direction Detail', icon: ListChecks },
     { id: 'genealogy', label: 'Organism Genealogy', icon: Dna }
   ] satisfies { id: EvolutionView; label: string; icon: typeof Compass }[];
+  const precheckRequirements = [
+    {
+      label: 'Observer evidence required',
+      snakeName: 'mandatory_datadog_observer_evidence',
+      camelName: 'mandatoryDatadogObserverEvidence',
+      requiredForReady: true
+    },
+    {
+      label: 'Telemetry evaluator required',
+      snakeName: 'mandatory_datadog_telemetry_evaluator_evidence',
+      camelName: 'mandatoryDatadogTelemetryEvaluatorEvidence',
+      requiredForReady: true
+    },
+    {
+      label: 'Datadog evidence required',
+      snakeName: 'mandatory_datadog_evidence',
+      camelName: 'mandatoryDatadogEvidence',
+      requiredForReady: true
+    },
+    {
+      label: 'Terminal success required',
+      snakeName: 'mandatory_terminal_success',
+      camelName: 'mandatoryTerminalSuccess',
+      value: 'required',
+      requiredForReady: true
+    },
+    {
+      label: 'Datadog query secrets confirmed',
+      snakeName: 'production_datadog_query_secrets_confirmed',
+      camelName: 'productionDatadogQuerySecretsConfirmed',
+      value: 'confirmed',
+      requiredForReady: true
+    }
+  ] satisfies PrecheckRequirement[];
 
   let snapshot: DirectedEvolutionSnapshot | null = null;
   let loading = false;
@@ -715,7 +756,8 @@
       artifact.artifactKind.toLowerCase().includes('precheck') &&
       status === 'ready' &&
       noMutation &&
-      wouldCreateLiveEpisode
+      wouldCreateLiveEpisode &&
+      hasMandatoryPrecheckRequirements(correlation)
     );
   }
 
@@ -728,39 +770,19 @@
     );
   }
 
+  function hasMandatoryPrecheckRequirements(correlation: Record<string, unknown>): boolean {
+    return precheckRequirements
+      .filter((requirement) => requirement.requiredForReady)
+      .every((requirement) =>
+        precheckRequirementEnabled(correlation, requirement.snakeName, requirement.camelName)
+      );
+  }
+
   function precheckRequirementBadges(
     artifact: EvolutionEvidenceArtifact
   ): { label: string; value: string; tone: StatusTone }[] {
     const correlation = parsedRecord(artifact.correlationJson);
-    return [
-      {
-        label: 'Observer evidence required',
-        snakeName: 'mandatory_datadog_observer_evidence',
-        camelName: 'mandatoryDatadogObserverEvidence'
-      },
-      {
-        label: 'Telemetry evaluator required',
-        snakeName: 'mandatory_datadog_telemetry_evaluator_evidence',
-        camelName: 'mandatoryDatadogTelemetryEvaluatorEvidence'
-      },
-      {
-        label: 'Datadog evidence required',
-        snakeName: 'mandatory_datadog_evidence',
-        camelName: 'mandatoryDatadogEvidence'
-      },
-      {
-        label: 'Terminal success required',
-        snakeName: 'mandatory_terminal_success',
-        camelName: 'mandatoryTerminalSuccess',
-        value: 'required'
-      },
-      {
-        label: 'Datadog query secrets confirmed',
-        snakeName: 'production_datadog_query_secrets_confirmed',
-        camelName: 'productionDatadogQuerySecretsConfirmed',
-        value: 'confirmed'
-      }
-    ]
+    return precheckRequirements
       .filter((requirement) =>
         precheckRequirementEnabled(correlation, requirement.snakeName, requirement.camelName)
       )
