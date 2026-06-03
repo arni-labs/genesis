@@ -601,6 +601,40 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       }),
       TargetEntityType: 'Variant',
       TargetEntityId: 'variant-hidden-citations'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-datadog', 'Linked', {
+      ArtifactKind: 'datadog_measurement',
+      Uri: 'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory',
+      Summary: 'Datadog measured the Agent Answers runtime request stream for this Directed Evolution episode.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        output: {
+          evidence_scope: [
+            {
+              surface: 'logs',
+              query:
+                'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory',
+              time_window: 'now-15m to now',
+              result_count: 3,
+              interpretation:
+                'Runtime request logs were present for the Agent Answers Directed Evolution episode.',
+              zero_result_meaning: 'failure',
+              datadog_url:
+                'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory'
+            }
+          ]
+        }
+      }),
+      Query:
+        'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory',
+      TimeWindow: 'now-15m to now',
+      ResultCount: '3',
+      Interpretation:
+        'Runtime request logs were present for the Agent Answers Directed Evolution episode.',
+      ZeroResultMeaning: 'failure',
+      EvidenceProvenance: 'datadog-measured',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
     })
   ],
   Trials: [
@@ -638,6 +672,13 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AgentKind: 'codex',
       Model: 'codex-cli',
       Summary: 'Observed unmet follow-up citation intent.'
+    }),
+    row('WorkerRun', 'worker-variant-a', 'Succeeded', {
+      Role: 'variant_generator',
+      WorkItemId: 'work-variant-a',
+      AgentKind: 'codex',
+      Model: 'codex-cli',
+      Summary: 'Generated Agent Answers citation-memory variant.'
     })
   ]
 };
@@ -852,6 +893,22 @@ test('renders live Directed Evolution mission control and dispatches real contro
       exact: true
     })
   ).toBeVisible();
+  const liveProofGate = page.getByLabel('Agent Answers live proof gate');
+  await expect(liveProofGate.getByText('Agent Answers Proof Gate')).toBeVisible();
+  await expect(liveProofGate.getByText('directed-evolution-agent-answers-live-proof.sh')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog measured evidence')).toBeVisible();
+  await expect(
+    liveProofGate.getByText('Runtime request logs were present for the Agent Answers Directed Evolution episode.')
+  ).toBeVisible();
+  await expect(
+    liveProofGate.getByText(
+      'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory'
+    )
+  ).toBeVisible();
+  await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toBeVisible();
+  const terminalSuccessGate = liveProofGate.locator('div').filter({ hasText: 'Terminal success' }).first();
+  await expect(terminalSuccessGate.getByText('Terminal success')).toBeVisible();
+  await expect(terminalSuccessGate.getByText('pending', { exact: true })).toBeVisible();
   await expect(page.getByText('Answer citations that survive follow-up').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Directions' }).click();

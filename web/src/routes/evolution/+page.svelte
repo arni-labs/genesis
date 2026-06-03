@@ -10,6 +10,7 @@
     GitCompareArrows,
     ListChecks,
     RefreshCw,
+    ShieldCheck,
     X
   } from '@lucide/svelte';
   import Topbar from '$lib/components/Topbar.svelte';
@@ -174,6 +175,20 @@
     .filter((variant): variant is EvolutionVariant => Boolean(variant));
   $: recentWorkerRuns = (snapshot?.workerRuns ?? []).slice(-8).reverse();
   $: recentWorkItems = (snapshot?.workItems ?? []).slice(-8).reverse();
+  $: selectedEpisodeWorkItems = selectedEpisode ? workItemsForEpisode(selectedEpisode) : [];
+  $: selectedEpisodeWorkerRuns = selectedEpisode ? workerRunsForEpisode(selectedEpisode) : [];
+  $: selectedEpisodeEvidence = selectedEpisode ? evidenceForEpisode(selectedEpisode) : [];
+  $: selectedEpisodeDatadogEvidence = selectedEpisodeEvidence.filter(isStructuredDatadogEvidence);
+  $: selectedEpisodeProofGates = selectedEpisode
+    ? proofGatesForEpisode(
+        selectedEpisode,
+        selectedEpisodeWorkItems.length,
+        selectedEpisodeWorkerRuns.length,
+        selectedEpisodeEvidence.length,
+        selectedEpisodeDatadogEvidence.length
+      )
+    : [];
+  $: selectedEpisodeProofReady = selectedEpisodeProofGates.every((gate) => gate.tone === 'success');
   $: totalWarnings = snapshot?.warnings ?? [];
 
   const terminalEpisodeStatuses = new Set(['Completed', 'Stopped', 'Failed']);
@@ -502,6 +517,163 @@
       Boolean
     );
     return (snapshot?.workerRuns ?? []).find((run) => workerRunIds.includes(run.id)) ?? null;
+  }
+
+  function selectedEpisodeEntityIds(episode: EvolutionEpisode): Set<string> {
+    const ids = new Set([
+      episode.id,
+      episode.directionId,
+      episode.promotionId,
+      episode.winningVariantId,
+      ...((snapshot?.generations ?? [])
+        .filter((generation) => generation.episodeId === episode.id)
+        .map((generation) => generation.id)),
+      ...((snapshot?.variants ?? [])
+        .filter((variant) => variant.episodeId === episode.id)
+        .flatMap((variant) => [variant.id, variant.generationId, variant.mutationId, variant.workItemId])),
+      ...((snapshot?.stageResults ?? [])
+        .filter((result) => result.episodeId === episode.id)
+        .flatMap((result) => [result.id, result.workItemId, result.evidenceArtifactId])),
+      ...((snapshot?.trials ?? [])
+        .filter((trial) => trial.episodeId === episode.id)
+        .flatMap((trial) => [trial.id, trial.workItemId, trial.evidenceArtifactId]))
+    ].filter(Boolean));
+    return ids;
+  }
+
+  function parsedRecord(raw: string): Record<string, unknown> {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function nestedString(record: Record<string, unknown>, path: string[]): string {
+    let current: unknown = record;
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return '';
+      current = (current as Record<string, unknown>)[key];
+    }
+    return typeof current === 'string' ? current : '';
+  }
+
+  function correlationEpisodeId(raw: string): string {
+    const correlation = parsedRecord(raw);
+    return (
+      nestedString(correlation, ['episode_id']) ||
+      nestedString(correlation, ['episodeId']) ||
+      nestedString(correlation, ['datadog', 'join_fields', 'episode_id']) ||
+      nestedString(correlation, ['output', 'episode_id']) ||
+      nestedString(correlation, ['output', 'episodeId'])
+    );
+  }
+
+  function workItemsForEpisode(episode: EvolutionEpisode) {
+    const ids = selectedEpisodeEntityIds(episode);
+    return (snapshot?.workItems ?? []).filter(
+      (item) => ids.has(item.targetEntityId) || correlationEpisodeId(item.correlationJson) === episode.id
+    );
+  }
+
+  function workerRunsForEpisode(episode: EvolutionEpisode) {
+    const workItemIds = new Set(workItemsForEpisode(episode).map((item) => item.id));
+    return (snapshot?.workerRuns ?? []).filter(
+      (run) =>
+        workItemIds.has(run.workItemId) ||
+        correlationEpisodeId(run.correlationJson) === episode.id ||
+        run.summary.includes(episode.id)
+    );
+  }
+
+  function evidenceForEpisode(episode: EvolutionEpisode) {
+    const ids = selectedEpisodeEntityIds(episode);
+    return (snapshot?.evidenceArtifacts ?? []).filter(
+      (artifact) =>
+        (artifact.targetEntityType === 'Episode' && artifact.targetEntityId === episode.id) ||
+        ids.has(artifact.targetEntityId) ||
+        ids.has(artifact.id) ||
+        correlationEpisodeId(artifact.correlationJson) === episode.id
+    );
+  }
+
+  function evidenceScopeDatadogUrl(raw: string): string {
+    const correlation = parsedRecord(raw);
+    const directOutput = correlation.output;
+    const scope =
+      directOutput && typeof directOutput === 'object' && !Array.isArray(directOutput)
+        ? ((directOutput as Record<string, unknown>).evidence_scope ??
+            (directOutput as Record<string, unknown>).evidenceScope)
+        : undefined;
+    if (!Array.isArray(scope)) return '';
+    const first = scope.find((item) => {
+      const url =
+        item && typeof item === 'object'
+          ? ((item as Record<string, unknown>).datadog_url ??
+              (item as Record<string, unknown>).datadogUrl)
+          : '';
+      return typeof url === 'string' && url.startsWith('https://app.');
+    });
+    if (!first || typeof first !== 'object') return '';
+    const url =
+      (first as Record<string, unknown>).datadog_url ??
+      (first as Record<string, unknown>).datadogUrl;
+    return typeof url === 'string' ? url : '';
+  }
+
+  function isStructuredDatadogEvidence(artifact: EvolutionEvidenceArtifact): boolean {
+    const datadogUrl = artifact.uri.startsWith('https://app.') ? artifact.uri : evidenceScopeDatadogUrl(artifact.correlationJson);
+    return (
+      artifact.evidenceProvenance === 'datadog-measured' &&
+      Boolean(artifact.query) &&
+      Boolean(artifact.timeWindow) &&
+      artifact.resultCount !== '' &&
+      Boolean(artifact.interpretation) &&
+      Boolean(artifact.zeroResultMeaning) &&
+      Boolean(datadogUrl)
+    );
+  }
+
+  function proofGatesForEpisode(
+    episode: EvolutionEpisode,
+    workItemCount: number,
+    workerRunCount: number,
+    evidenceCount: number,
+    datadogEvidenceCount: number
+  ): { label: string; value: string; tone: StatusTone }[] {
+    const terminalSuccess = ['Completed', 'Complete', 'Succeeded', 'Promoted', 'NoPromotion'].includes(episode.status);
+    const terminalFailure = ['Failed', 'Stopped', 'Cancelled', 'Abandoned'].includes(episode.status);
+    return [
+      {
+        label: 'WorkItems',
+        value: `${workItemCount}`,
+        tone: workItemCount ? 'success' : 'warning'
+      },
+      {
+        label: 'WorkerRuns',
+        value: `${workerRunCount}`,
+        tone: workerRunCount ? 'success' : 'warning'
+      },
+      {
+        label: 'EvidenceArtifacts',
+        value: `${evidenceCount}`,
+        tone: evidenceCount ? 'success' : 'warning'
+      },
+      {
+        label: 'Datadog measured evidence',
+        value: `${datadogEvidenceCount}`,
+        tone: datadogEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'Terminal success',
+        value: terminalSuccess ? episode.status : terminalFailure ? episode.status : 'pending',
+        tone: terminalSuccess ? 'success' : terminalFailure ? 'danger' : 'warning'
+      }
+    ];
   }
 
   function resolveDirectedEvolutionTenant(): string {
@@ -856,6 +1028,45 @@
                           <p class="text-[12px] text-[var(--color-muted)]">No simulated-user trials recorded for this variant.</p>
                         {/each}
                       </div>
+                    </section>
+                  {/if}
+                  {#if selectedEpisode}
+                    <section
+                      aria-label="Agent Answers live proof gate"
+                      class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3"
+                    >
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <PanelTitle icon={ShieldCheck} title="Agent Answers Proof Gate" />
+                        <Badge tone={selectedEpisodeProofReady ? 'success' : 'warning'}>
+                          {selectedEpisodeProofReady ? 'ready' : 'pending'}
+                        </Badge>
+                      </div>
+                      <p class="mt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
+                        directed-evolution-agent-answers-live-proof.sh
+                      </p>
+                      <div class="mt-3 grid gap-1.5">
+                        {#each selectedEpisodeProofGates as gate (gate.label)}
+                          <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5">
+                            <span class="truncate text-[11px] font-medium text-[var(--color-ink-soft)]">
+                              {gate.label}
+                            </span>
+                            <Badge tone={gate.tone}>{gate.value}</Badge>
+                          </div>
+                        {/each}
+                      </div>
+                      {#if selectedEpisodeDatadogEvidence[0]}
+                        <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+                          <p class="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--color-ink-soft)]">
+                            {selectedEpisodeDatadogEvidence[0].interpretation || selectedEpisodeDatadogEvidence[0].summary}
+                          </p>
+                          <p class="mt-1 line-clamp-2 font-mono text-[10px] text-[var(--color-muted)]">
+                            {selectedEpisodeDatadogEvidence[0].query}
+                          </p>
+                          <p class="mt-1 text-[10px] text-[var(--color-faint)]">
+                            {selectedEpisodeDatadogEvidence[0].timeWindow} · zero means {selectedEpisodeDatadogEvidence[0].zeroResultMeaning}
+                          </p>
+                        </div>
+                      {/if}
                     </section>
                   {/if}
                   <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
