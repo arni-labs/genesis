@@ -179,13 +179,15 @@
   $: selectedEpisodeWorkerRuns = selectedEpisode ? workerRunsForEpisode(selectedEpisode) : [];
   $: selectedEpisodeEvidence = selectedEpisode ? evidenceForEpisode(selectedEpisode) : [];
   $: selectedEpisodeDatadogEvidence = selectedEpisodeEvidence.filter(isStructuredDatadogEvidence);
+  $: selectedEpisodePrecheckEvidence = selectedEpisodeEvidence.filter(isNoMutationPrecheckEvidence);
   $: selectedEpisodeProofGates = selectedEpisode
     ? proofGatesForEpisode(
         selectedEpisode,
         selectedEpisodeWorkItems.length,
         selectedEpisodeWorkerRuns.length,
         selectedEpisodeEvidence.length,
-        selectedEpisodeDatadogEvidence.length
+        selectedEpisodeDatadogEvidence.length,
+        selectedEpisodePrecheckEvidence.length
       )
     : [];
   $: selectedEpisodeProofReady = selectedEpisodeProofGates.every((gate) => gate.tone === 'success');
@@ -562,6 +564,15 @@
     return typeof current === 'string' ? current : '';
   }
 
+  function nestedBoolean(record: Record<string, unknown>, path: string[]): boolean {
+    let current: unknown = record;
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
+      current = (current as Record<string, unknown>)[key];
+    }
+    return current === true || current === 'true';
+  }
+
   function correlationEpisodeId(raw: string): string {
     const correlation = parsedRecord(raw);
     return (
@@ -638,12 +649,35 @@
     );
   }
 
+  function isNoMutationPrecheckEvidence(artifact: EvolutionEvidenceArtifact): boolean {
+    const correlation = parsedRecord(artifact.correlationJson);
+    const status = nestedString(correlation, ['status']) || nestedString(correlation, ['output', 'status']);
+    const noMutation =
+      nestedBoolean(correlation, ['no_mutation']) ||
+      nestedBoolean(correlation, ['noMutation']) ||
+      nestedBoolean(correlation, ['output', 'no_mutation']) ||
+      nestedBoolean(correlation, ['output', 'noMutation']);
+    const wouldCreateLiveEpisode =
+      nestedBoolean(correlation, ['would_create_live_episode']) ||
+      nestedBoolean(correlation, ['wouldCreateLiveEpisode']) ||
+      nestedBoolean(correlation, ['output', 'would_create_live_episode']) ||
+      nestedBoolean(correlation, ['output', 'wouldCreateLiveEpisode']);
+    return (
+      artifact.evidenceProvenance === 'precheck-ready' &&
+      artifact.artifactKind.toLowerCase().includes('precheck') &&
+      status === 'ready' &&
+      noMutation &&
+      wouldCreateLiveEpisode
+    );
+  }
+
   function proofGatesForEpisode(
     episode: EvolutionEpisode,
     workItemCount: number,
     workerRunCount: number,
     evidenceCount: number,
-    datadogEvidenceCount: number
+    datadogEvidenceCount: number,
+    precheckEvidenceCount: number
   ): { label: string; value: string; tone: StatusTone }[] {
     const terminalSuccess = ['Completed', 'Complete', 'Succeeded', 'Promoted', 'NoPromotion'].includes(episode.status);
     const terminalFailure = ['Failed', 'Stopped', 'Cancelled', 'Abandoned'].includes(episode.status);
@@ -667,6 +701,11 @@
         label: 'Datadog measured evidence',
         value: `${datadogEvidenceCount}`,
         tone: datadogEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'No-mutation precheck',
+        value: precheckEvidenceCount ? 'ready' : 'missing',
+        tone: precheckEvidenceCount ? 'success' : 'warning'
       },
       {
         label: 'Terminal success',
@@ -1064,6 +1103,20 @@
                           </p>
                           <p class="mt-1 text-[10px] text-[var(--color-faint)]">
                             {selectedEpisodeDatadogEvidence[0].timeWindow} · zero means {selectedEpisodeDatadogEvidence[0].zeroResultMeaning}
+                          </p>
+                        </div>
+                      {/if}
+                      {#if selectedEpisodePrecheckEvidence[0]}
+                        <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <p class="text-[11px] font-semibold text-[var(--color-ink-soft)]">No-mutation precheck</p>
+                            <Badge tone="success">ready</Badge>
+                          </div>
+                          <p class="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--color-ink-soft)]">
+                            {selectedEpisodePrecheckEvidence[0].summary}
+                          </p>
+                          <p class="mt-1 font-mono text-[10px] text-[var(--color-muted)]">
+                            PRECHECK_ONLY=1 · no production mutation
                           </p>
                         </div>
                       {/if}
