@@ -26,6 +26,9 @@ The workflow checks:
 - Production web build.
 - Playwright E2E over Chromium desktop and mobile projects.
 
+The workflow uses current Node 24-backed GitHub action majors, and the web
+package declares Node 22 typings so `npm ci` checks match local diagnostics.
+
 The workflow does not yet enable `cargo clippy -- -D warnings` because existing
 canonical SHA-1 code triggers a lint unrelated to Directed Evolution closure.
 That can become a future tightening once the existing lint debt is handled.
