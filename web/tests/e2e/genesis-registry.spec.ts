@@ -691,6 +691,24 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       TargetEntityType: 'Episode',
       TargetEntityId: 'episode-citation-memory'
     }),
+    row('EvidenceArtifact', 'evidence-live-proof-precheck-legacy', 'Linked', {
+      ArtifactKind: 'proof_precheck',
+      Uri: 'https://github.com/nerdsane/temperpaw/actions/runs/26850000000',
+      Summary: 'Legacy aggregate-only precheck should not satisfy the Agent Answers proof gate.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        proof_kind: 'legacy Agent Answers Directed Evolution proof precheck',
+        status: 'ready',
+        no_mutation: true,
+        would_create_live_episode: true,
+        evidence_requirements: {
+          mandatory_datadog_evidence: true
+        }
+      }),
+      EvidenceProvenance: 'precheck-ready',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
+    }),
     row('EvidenceArtifact', 'evidence-live-proof-precheck', 'Linked', {
       ArtifactKind: 'proof_precheck',
       Uri: 'https://github.com/nerdsane/temperpaw/actions/runs/26861004390',
@@ -1004,6 +1022,9 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(
     liveProofGate.getByText('No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.')
   ).toBeVisible();
+  await expect(
+    liveProofGate.getByText('Legacy aggregate-only precheck should not satisfy the Agent Answers proof gate.')
+  ).toHaveCount(0);
   await expect(liveProofGate.getByText('Observer evidence required')).toBeVisible();
   await expect(liveProofGate.getByText('Telemetry evaluator required')).toBeVisible();
   await expect(liveProofGate.getByText('Datadog evidence required')).toBeVisible();
