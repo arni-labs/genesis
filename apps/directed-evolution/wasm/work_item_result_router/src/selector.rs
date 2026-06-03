@@ -60,7 +60,7 @@ fn route_selector(
             ],
         ),
         format!(
-            "Selector brain chose {} from {} surviving variant(s).",
+            "Selector worker chose {} from {} surviving variant(s).",
             winner_variant_id,
             survivor_ids.len()
         ),
@@ -467,6 +467,7 @@ fn route_promoter(
         }));
     }
 
+    let promotion_fields = state_fields(&promotion);
     let evidence_artifact_id = field_str(work_item_fields, &["EvidenceArtifactId"]);
     let status = lookup_string_deep(output, &["status", "Status"]);
     let succeeded = status.is_empty() || status.eq_ignore_ascii_case("succeeded");
@@ -476,8 +477,9 @@ fn route_promoter(
                 output,
                 &["canonical_app_ref", "CanonicalAppRef", "app_ref", "AppRef"],
             ),
-            field_str(&state_fields(&promotion), &["AppRef"]),
+            field_str(&promotion_fields, &["AppRef"]),
         );
+        let new_organism_version_id = field_str(&promotion_fields, &["NewOrganismVersionId"]);
         let production_tenant =
             lookup_string_deep(output, &["production_tenant", "ProductionTenant"]);
         let runtime_ref = lookup_string_deep(output, &["runtime_ref", "RuntimeRef"]);
@@ -510,6 +512,32 @@ fn route_promoter(
                 promotion_id,
             )?;
         }
+        if !new_organism_version_id.trim().is_empty() {
+            let organism_version = get_entity(
+                ctx,
+                base_url,
+                headers,
+                "OrganismVersions",
+                &new_organism_version_id,
+            )?;
+            let organism_id = field_str(&state_fields(&organism_version), &["OrganismId"]);
+            if !organism_id.trim().is_empty() {
+                post_directed_action(
+                    ctx,
+                    base_url,
+                    headers,
+                    "Organisms",
+                    &organism_id,
+                    "SyncOrganismParentRef",
+                    json!({
+                        "OrganismVersionId": new_organism_version_id,
+                        "PromotionId": promotion_id,
+                        "AppRef": canonical_app_ref,
+                        "Summary": summary,
+                    }),
+                )?;
+            }
+        }
         return Ok(json!({
             "routed": "promoter",
             "promotion_id": promotion_id,
@@ -533,6 +561,24 @@ fn route_promoter(
             "EvidenceArtifactId": evidence_artifact_id,
         }),
     )?;
+    let episode_id = field_str(&promotion_fields, &["EpisodeId"]);
+    if !episode_id.trim().is_empty() {
+        let episode = get_entity(ctx, base_url, headers, "Episodes", &episode_id)?;
+        if matches!(
+            entity_status(&episode).as_str(),
+            "Draft" | "Negotiating" | "Running" | "Paused" | "Selecting" | "Promoting"
+        ) {
+            post_directed_action(
+                ctx,
+                base_url,
+                headers,
+                "Episodes",
+                &episode_id,
+                "FailEpisode",
+                json!({ "FailureReason": failure_reason }),
+            )?;
+        }
+    }
     Ok(json!({
         "routed": "promoter",
         "promotion_id": promotion_id,

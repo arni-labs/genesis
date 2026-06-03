@@ -9,7 +9,7 @@ name = "InferPressure"
 kind = "input"
 from = ["Inferred"]
 params = ["OrganismId", "PressureClass", "Summary", "SignalIdsJson", "EvidenceArtifactId", "WorkerRunId"]
-hint = "Record a brain-interpreted reason to evolve."
+hint = "Record a worker-interpreted reason to evolve."
 
 [[action]]
 name = "FramePressureAsDirection"

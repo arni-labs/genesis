@@ -2,7 +2,7 @@
 //
 // v1 separates observation privileges from mutation privileges. Any caller may
 // read Mission Control state, but state changes require a platform system
-// principal, a worker brain, or a human/supervisor/codex agent acting through
+// principal, a worker process, or a human/supervisor/codex agent acting through
 // the Directed Evolution control plane. Promotion writes are represented as an
 // explicit action/resource matrix rather than a blanket entity permit.
 
@@ -27,6 +27,7 @@ permit(
     resource is Direction ||
     resource is EliminationRule ||
     resource is Episode ||
+    resource is EpisodeStartRequest ||
     resource is EvaluationStage ||
     resource is Generation ||
     resource is LineageEdge ||
@@ -73,8 +74,22 @@ permit(
 permit(
   principal is Agent,
   action in [
+    Action::"SubmitEpisodeStartRequest",
+    Action::"MarkEpisodeStartRequestStarted",
+    Action::"FailEpisodeStartRequest",
+    Action::"CancelEpisodeStartRequest"
+  ],
+  resource is EpisodeStartRequest
+) when {
+  ["system", "codex", "supervisor", "human"].contains(principal.agent_type)
+};
+
+permit(
+  principal is Agent,
+  action in [
     Action::"ActivateOrganism",
     Action::"RecordOrganismVersion",
+    Action::"SyncOrganismParentRef",
     Action::"ArchiveOrganism"
   ],
   resource is Organism
@@ -401,6 +416,6 @@ permit(
   action == Action::"http_call",
   resource is HttpEndpoint
 ) when {
-  ["signal_observer", "episode_orchestrator", "work_item_result_router"].contains(context.module) &&
+  ["signal_observer", "episode_orchestrator", "episode_start_requestor", "work_item_result_router"].contains(context.module) &&
   ["127.0.0.1", "localhost"].contains(context.domain)
 };

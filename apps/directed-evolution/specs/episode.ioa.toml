@@ -25,7 +25,7 @@ kind = "input"
 from = ["Draft"]
 to = "Negotiating"
 params = ["DirectionId", "OrganismId", "ParentVersionId", "AutonomyLane"]
-hint = "Begin human-brain negotiation for an episode."
+hint = "Begin director negotiation for an episode."
 
 [[action]]
 name = "RecordEpisodeContract"

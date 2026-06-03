@@ -32,6 +32,13 @@ params = ["OrganismVersionId", "PromotionId", "Summary"]
 hint = "Record that a promoted organism version belongs to this organism."
 
 [[action]]
+name = "SyncOrganismParentRef"
+kind = "input"
+from = ["Active"]
+params = ["OrganismVersionId", "PromotionId", "AppRef", "Summary"]
+hint = "Synchronize the organism's live parent reference after a promotion has materialized."
+
+[[action]]
 name = "ArchiveOrganism"
 kind = "input"
 from = ["Active"]
