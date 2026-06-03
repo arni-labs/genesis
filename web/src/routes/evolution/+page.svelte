@@ -186,6 +186,10 @@
     datadogEvidenceRoleMatches(artifact, 'telemetry_evaluator')
   );
   $: selectedEpisodePrecheckEvidence = selectedEpisodeEvidence.filter(isNoMutationPrecheckEvidence);
+  $: selectedEpisodePrecheckArtifact = selectedEpisodePrecheckEvidence[0] ?? null;
+  $: selectedEpisodePrecheckRequirements = selectedEpisodePrecheckArtifact
+    ? precheckRequirementBadges(selectedEpisodePrecheckArtifact)
+    : [];
   $: selectedEpisodeProofGates = selectedEpisode
     ? proofGatesForEpisode(
         selectedEpisode,
@@ -715,6 +719,58 @@
     );
   }
 
+  function precheckRequirementEnabled(correlation: Record<string, unknown>, snakeName: string, camelName: string): boolean {
+    return (
+      nestedBoolean(correlation, ['evidence_requirements', snakeName]) ||
+      nestedBoolean(correlation, ['evidenceRequirements', camelName]) ||
+      nestedBoolean(correlation, ['output', 'evidence_requirements', snakeName]) ||
+      nestedBoolean(correlation, ['output', 'evidenceRequirements', camelName])
+    );
+  }
+
+  function precheckRequirementBadges(
+    artifact: EvolutionEvidenceArtifact
+  ): { label: string; value: string; tone: StatusTone }[] {
+    const correlation = parsedRecord(artifact.correlationJson);
+    return [
+      {
+        label: 'Observer evidence required',
+        snakeName: 'mandatory_datadog_observer_evidence',
+        camelName: 'mandatoryDatadogObserverEvidence'
+      },
+      {
+        label: 'Telemetry evaluator required',
+        snakeName: 'mandatory_datadog_telemetry_evaluator_evidence',
+        camelName: 'mandatoryDatadogTelemetryEvaluatorEvidence'
+      },
+      {
+        label: 'Datadog evidence required',
+        snakeName: 'mandatory_datadog_evidence',
+        camelName: 'mandatoryDatadogEvidence'
+      },
+      {
+        label: 'Terminal success required',
+        snakeName: 'mandatory_terminal_success',
+        camelName: 'mandatoryTerminalSuccess',
+        value: 'required'
+      },
+      {
+        label: 'Datadog query secrets confirmed',
+        snakeName: 'production_datadog_query_secrets_confirmed',
+        camelName: 'productionDatadogQuerySecretsConfirmed',
+        value: 'confirmed'
+      }
+    ]
+      .filter((requirement) =>
+        precheckRequirementEnabled(correlation, requirement.snakeName, requirement.camelName)
+      )
+      .map((requirement) => ({
+        label: requirement.label,
+        value: requirement.value ?? 'required',
+        tone: 'success'
+      }));
+  }
+
   function proofGatesForEpisode(
     episode: EvolutionEpisode,
     workItemCount: number,
@@ -1185,6 +1241,18 @@
                           <p class="mt-1 font-mono text-[10px] text-[var(--color-muted)]">
                             PRECHECK_ONLY=1 · no production mutation
                           </p>
+                          {#if selectedEpisodePrecheckRequirements.length}
+                            <div class="mt-2 grid gap-1.5">
+                              {#each selectedEpisodePrecheckRequirements as requirement (requirement.label)}
+                                <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-1">
+                                  <span class="truncate text-[10px] font-medium text-[var(--color-ink-soft)]">
+                                    {requirement.label}
+                                  </span>
+                                  <Badge tone={requirement.tone}>{requirement.value}</Badge>
+                                </div>
+                              {/each}
+                            </div>
+                          {/if}
                         </div>
                       {/if}
                     </section>
