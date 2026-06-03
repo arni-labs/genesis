@@ -165,10 +165,25 @@ fn route_observer(
             "FramePressureAsDirection",
             json!({ "DirectionId": direction_id }),
         )?;
+        let episode_start_request_id = maybe_auto_start_repair_direction(
+            ctx,
+            base_url,
+            headers,
+            output,
+            &organism_id,
+            &organism_id,
+            &direction_id,
+            &pressure_class,
+            &autonomy_lane,
+            &proposed_adaptation_goal,
+            &proposed_constraints,
+            &worker_run_id,
+        )?;
         routed.push(json!({
             "pressure_id": pressure_id,
             "direction_id": direction_id,
             "title": title,
+            "episode_start_request_id": episode_start_request_id,
         }));
     }
 
@@ -194,4 +209,83 @@ fn observer_direction_candidates(output: &Value) -> Vec<Value> {
         }
     }
     vec![output.clone()]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn maybe_auto_start_repair_direction(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    observer_output: &Value,
+    organism_id: &str,
+    organism_lookup_id: &str,
+    direction_id: &str,
+    pressure_class: &str,
+    autonomy_lane: &str,
+    adaptation_goal: &str,
+    proposed_constraints_json: &str,
+    worker_run_id: &str,
+) -> Result<String, String> {
+    let pressure = pressure_class.to_ascii_lowercase();
+    let lane = autonomy_lane.to_ascii_lowercase();
+    if !pressure.contains("repair") || !lane.contains("auto") {
+        return Ok(String::new());
+    }
+
+    let organism = get_entity(ctx, base_url, headers, "Organisms", organism_lookup_id)?;
+    let organism_fields = state_fields(&organism);
+    let parent_version_id = nonempty(
+        field_str(&organism_fields, &["ParentVersionId"]),
+        field_str(&organism_fields, &["OrganismVersionId"]),
+    );
+    if parent_version_id.trim().is_empty() {
+        return Err(format!(
+            "repair auto-start for direction {direction_id} requires an active organism parent version"
+        ));
+    }
+
+    let request_id = create_entity(ctx, base_url, headers, "EpisodeStartRequests")?;
+    post_directed_action(
+        ctx,
+        base_url,
+        headers,
+        "EpisodeStartRequests",
+        &request_id,
+        "SubmitEpisodeStartRequest",
+        json!({
+            "DirectionId": direction_id,
+            "OrganismId": organism_id,
+            "ParentVersionId": parent_version_id,
+            "AutonomyLane": autonomy_lane,
+            "RequestedBy": nonempty(worker_run_id.to_string(), "observer-worker".to_string()),
+            "AdaptationGoal": adaptation_goal,
+            "HumanNotes": "Repair direction auto-started under the active autonomy policy.",
+            "ViabilityConstraintsJson": proposed_constraints_json,
+            "MetricsJson": lookup_value_deep(observer_output, &["metric_definitions", "metrics", "MetricDefinitions"])
+                .unwrap_or_else(|| json!([]))
+                .to_string(),
+            "EvaluationStagesJson": lookup_value_deep(observer_output, &["evaluation_stages", "EvaluationStages"])
+                .unwrap_or_else(|| json!([]))
+                .to_string(),
+            "EliminationRulesJson": lookup_value_deep(observer_output, &["elimination_rules", "EliminationRules"])
+                .unwrap_or_else(|| json!([]))
+                .to_string(),
+            "ScoringRulesJson": lookup_value_deep(observer_output, &["scoring_rules", "ScoringRules"])
+                .unwrap_or_else(|| json!([]))
+                .to_string(),
+            "SelectionStatement": nonempty(
+                lookup_string_deep(observer_output, &["selection_statement", "SelectionStatement"]),
+                "Select the repair variant that restores failing behavior without regressions.".to_string()
+            ),
+            "ContractJson": json!({
+                "source": "observer-worker",
+                "reason": "repair-auto",
+                "observer_output": observer_output,
+            }).to_string(),
+            "StartedBy": nonempty(worker_run_id.to_string(), "observer-worker".to_string()),
+            "Reason": "Auto-start repair episode under active autonomy policy.",
+        }),
+    )?;
+
+    Ok(request_id)
 }

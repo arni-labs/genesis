@@ -61,6 +61,14 @@ fn route_failed_work_item(
             &failure_reason,
             &evidence_artifact_id,
         ),
+        ("promoter", "Promotion") => route_failed_promoter(
+            ctx,
+            base_url,
+            headers,
+            target_entity_id,
+            &failure_reason,
+            &evidence_artifact_id,
+        ),
         _ => Ok(json!({
             "ignored": true,
             "reason": "failed work item has no router",
@@ -70,6 +78,62 @@ fn route_failed_work_item(
             "failure_reason": failure_reason,
         })),
     }
+}
+
+fn route_failed_promoter(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    promotion_id: &str,
+    failure_reason: &str,
+    evidence_artifact_id: &str,
+) -> Result<Value, String> {
+    let promotion = get_entity(ctx, base_url, headers, "Promotions", promotion_id)?;
+    if entity_status(&promotion) == "Promoted" {
+        post_directed_action(
+            ctx,
+            base_url,
+            headers,
+            "Promotions",
+            promotion_id,
+            "FailPromotionMaterialization",
+            json!({
+                "FailureReason": failure_reason,
+                "EvidenceArtifactId": evidence_artifact_id,
+            }),
+        )?;
+    }
+    link_evidence_if_present(
+        ctx,
+        base_url,
+        headers,
+        evidence_artifact_id,
+        "Promotion",
+        promotion_id,
+    )?;
+    let episode_id = field_str(&state_fields(&promotion), &["EpisodeId"]);
+    if !episode_id.trim().is_empty() {
+        let episode = get_entity(ctx, base_url, headers, "Episodes", &episode_id)?;
+        if matches!(
+            entity_status(&episode).as_str(),
+            "Draft" | "Negotiating" | "Running" | "Paused" | "Selecting" | "Promoting"
+        ) {
+            post_directed_action(
+                ctx,
+                base_url,
+                headers,
+                "Episodes",
+                &episode_id,
+                "FailEpisode",
+                json!({ "FailureReason": failure_reason }),
+            )?;
+        }
+    }
+    Ok(json!({
+        "routed": "promoter_failure",
+        "promotion_id": promotion_id,
+        "failure_reason": failure_reason,
+    }))
 }
 
 fn route_failed_simulated_user_trial(

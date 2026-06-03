@@ -7,7 +7,7 @@ eliminations, selection, promotion, and lineage.
 
 ## When To Use
 
-Use this app when real usage, observability, or agent-brain observation suggests
+Use this app when real usage, observability, or worker observation suggests
 that an app should repair itself or grow new capability.
 
 The app does not run Codex directly. It creates shared
