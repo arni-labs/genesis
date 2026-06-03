@@ -635,6 +635,30 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       EvidenceProvenance: 'datadog-measured',
       TargetEntityType: 'Episode',
       TargetEntityId: 'episode-citation-memory'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-precheck', 'Linked', {
+      ArtifactKind: 'proof_precheck',
+      Uri: 'https://github.com/nerdsane/temperpaw/actions/runs/26861004390',
+      Summary: 'No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        proof_kind: 'live Agent Answers Directed Evolution proof precheck',
+        status: 'ready',
+        no_mutation: true,
+        would_create_live_episode: true,
+        worker: {
+          start_local_worker: '0',
+          execution_enabled: '1'
+        },
+        evidence_requirements: {
+          mandatory_datadog_evidence: true,
+          mandatory_terminal_success: true,
+          production_datadog_query_secrets_confirmed: true
+        }
+      }),
+      EvidenceProvenance: 'precheck-ready',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
     })
   ],
   Trials: [
@@ -904,6 +928,10 @@ test('renders live Directed Evolution mission control and dispatches real contro
     liveProofGate.getByText(
       'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory'
     )
+  ).toBeVisible();
+  await expect(liveProofGate.getByText('No-mutation precheck', { exact: true }).first()).toBeVisible();
+  await expect(
+    liveProofGate.getByText('No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.')
   ).toBeVisible();
   await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toBeVisible();
   const terminalSuccessGate = liveProofGate.locator('div').filter({ hasText: 'Terminal success' }).first();
