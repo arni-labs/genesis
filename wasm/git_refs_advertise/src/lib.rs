@@ -120,7 +120,7 @@ fn fetch_refs_for_repo(
     repository_id: &str,
     api_base: &str,
 ) -> Result<Vec<RefRow>, String> {
-    let url = format!("{api_base}/tdata/Refs");
+    let url = refs_url_for_repo(api_base, repository_id);
     let resp = ctx
         .http_call("GET", &url, &principal.outbound_headers(), "")
         .map_err(|e| format!("fetch refs: {e}"))?;
@@ -181,6 +181,34 @@ fn fetch_refs_for_repo(
         }
     });
     Ok(rows)
+}
+
+fn refs_url_for_repo(api_base: &str, repository_id: &str) -> String {
+    let escaped_repository_id = repository_id.replace('\'', "''");
+    let filter = format!("RepositoryId eq '{escaped_repository_id}'");
+    format!(
+        "{}/tdata/Refs?$filter={}",
+        api_base.trim_end_matches('/'),
+        encode_query_component(&filter)
+    )
+}
+
+fn encode_query_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(HEX[(byte >> 4) as usize] as char);
+                out.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+    out
 }
 
 fn fetch_repository_default_branch(
@@ -323,6 +351,22 @@ mod tests {
         assert_eq!(
             repo_parts_from_http(&http),
             ("octo".to_string(), "hello".to_string())
+        );
+    }
+
+    #[test]
+    fn refs_url_filters_by_repository_id() {
+        assert_eq!(
+            refs_url_for_repo("https://genesis.example.test/", "rp-temperpaw-paw-agent"),
+            "https://genesis.example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-temperpaw-paw-agent%27"
+        );
+    }
+
+    #[test]
+    fn refs_url_escapes_odata_string_quotes_before_query_encoding() {
+        assert_eq!(
+            refs_url_for_repo("https://genesis.example.test", "rp-owner-o'hare"),
+            "https://genesis.example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-owner-o%27%27hare%27"
         );
     }
 }
