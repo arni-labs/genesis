@@ -9,7 +9,7 @@ import type {
   EntityBase,
   EvolutionAdaptationGoal,
   EvolutionAutonomyPolicy,
-  EvolutionBrainRun,
+  EvolutionWorkerRun,
   EvolutionDirection,
   EvolutionEliminationRule,
   EvolutionEpisode,
@@ -66,6 +66,23 @@ async function loadDirectedCollection<T>(
   }
 }
 
+async function loadWorkerRuns(tenantId?: string): Promise<CollectionResult<EvolutionWorkerRun>> {
+  const workerRuns = await loadDirectedCollection('WorkerRuns', normalizeWorkerRun, tenantId);
+  if (workerRuns.value.length || !workerRuns.warning) {
+    return workerRuns;
+  }
+  const legacyRuns = await loadDirectedCollection('BrainRuns', normalizeWorkerRun, tenantId);
+  return {
+    value: legacyRuns.value,
+    warning: legacyRuns.warning
+      ? workerRuns.warning
+      : {
+          collection: 'BrainRuns',
+          message: 'Loaded legacy BrainRuns because WorkerRuns were unavailable for this tenant.'
+        }
+  };
+}
+
 export async function loadDirectedEvolutionSnapshot(
   tenantId?: string
 ): Promise<DirectedEvolutionSnapshot> {
@@ -96,7 +113,7 @@ export async function loadDirectedEvolutionSnapshot(
     trials,
     autonomyPolicies,
     workItems,
-    brainRuns
+    workerRuns
   ] = await Promise.all([
     loadDirectedCollection('Organisms', normalizeOrganism, tenantId),
     loadDirectedCollection('OrganismVersions', normalizeOrganismVersion, tenantId),
@@ -124,7 +141,7 @@ export async function loadDirectedEvolutionSnapshot(
     loadDirectedCollection('Trials', normalizeTrial, tenantId),
     loadDirectedCollection('AutonomyPolicies', normalizeAutonomyPolicy, tenantId),
     loadDirectedCollection('WorkItems', normalizeWorkItem, tenantId),
-    loadDirectedCollection('BrainRuns', normalizeBrainRun, tenantId)
+    loadWorkerRuns(tenantId)
   ]);
 
   return {
@@ -154,7 +171,7 @@ export async function loadDirectedEvolutionSnapshot(
     trials: trials.value,
     autonomyPolicies: autonomyPolicies.value,
     workItems: workItems.value,
-    brainRuns: brainRuns.value,
+    workerRuns: workerRuns.value,
     warnings: [
       organisms.warning,
       organismVersions.warning,
@@ -182,7 +199,7 @@ export async function loadDirectedEvolutionSnapshot(
       trials.warning,
       autonomyPolicies.warning,
       workItems.warning,
-      brainRuns.warning
+      workerRuns.warning
     ].filter(Boolean) as LoadWarning[]
   };
 }
@@ -322,7 +339,7 @@ function normalizePressure(row: EntityRow): EvolutionPressure {
     summary: stringField(row, 'Summary'),
     signalIds: parseJsonList(stringField(row, 'SignalIdsJson')),
     evidenceArtifactId: stringField(row, 'EvidenceArtifactId'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    workerRunId: workerRunIdField(row),
     directionId: stringField(row, 'DirectionId')
   };
 }
@@ -341,7 +358,7 @@ function normalizeDirection(row: EntityRow): EvolutionDirection {
     proposedViabilityConstraints: parseJsonList(
       stringField(row, 'ProposedViabilityConstraintsJson')
     ),
-    brainRunId: stringField(row, 'BrainRunId'),
+    workerRunId: workerRunIdField(row),
     episodeId: stringField(row, 'EpisodeId'),
     selectionNotes: stringField(row, 'SelectionNotes')
   };
@@ -403,7 +420,9 @@ function normalizeVariant(row: EntityRow): EvolutionVariant {
     branchRef: stringField(row, 'BranchRef'),
     runtimeRef: stringField(row, 'RuntimeRef'),
     summary: stringField(row, 'Summary'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    changedFiles: parseJsonList(stringField(row, 'ChangedFilesJson')),
+    diffPatch: stringField(row, 'DiffPatch'),
+    workerRunId: workerRunIdField(row),
     workItemId: stringField(row, 'WorkItemId'),
     eliminationRuleId: stringField(row, 'EliminationRuleId'),
     stageResultId: stringField(row, 'StageResultId'),
@@ -440,7 +459,7 @@ function normalizeAdaptationGoal(row: EntityRow): EvolutionAdaptationGoal {
     ...base(row),
     episodeId: stringField(row, 'EpisodeId'),
     goalStatement: stringField(row, 'GoalStatement'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     humanNotes: stringField(row, 'HumanNotes')
   };
 }
@@ -451,7 +470,7 @@ function normalizeViabilityConstraint(row: EntityRow): EvolutionViabilityConstra
     episodeId: stringField(row, 'EpisodeId'),
     constraintStatement: stringField(row, 'ConstraintStatement'),
     constraintKind: stringField(row, 'ConstraintKind'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -464,21 +483,22 @@ function normalizeSelectionPressure(row: EntityRow): EvolutionSelectionPressure 
     metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
     eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
     scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId')
+    createdByWorkerRunId: createdByWorkerRunIdField(row)
   };
 }
 
 function normalizeSelectionProtocol(row: EntityRow): EvolutionSelectionProtocol {
+  const metricIdsJson = stringField(row, 'MetricIdsJson') || stringField(row, 'MetricDefinitionIdsJson');
   return {
     ...base(row),
     episodeId: stringField(row, 'EpisodeId'),
     selectionStatement: stringField(row, 'SelectionStatement'),
-    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    metricIds: parseJsonList(metricIdsJson),
     eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
     scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
     evaluatorRef: stringField(row, 'EvaluatorRef'),
     decisionPolicy: stringField(row, 'DecisionPolicy'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     frozenBy: stringField(row, 'FrozenBy'),
     reason: stringField(row, 'Reason')
   };
@@ -491,7 +511,7 @@ function normalizeEliminationRule(row: EntityRow): EvolutionEliminationRule {
     ruleStatement: stringField(row, 'RuleStatement'),
     metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
     thresholdJson: stringField(row, 'ThresholdJson'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -503,7 +523,7 @@ function normalizeScoringRule(row: EntityRow): EvolutionScoringRule {
     ruleStatement: stringField(row, 'RuleStatement'),
     metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
     weight: stringField(row, 'Weight'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -604,7 +624,8 @@ function normalizeMutation(row: EntityRow): EvolutionMutation {
     summary: stringField(row, 'Summary'),
     changedFiles: parseJsonList(stringField(row, 'ChangedFilesJson')),
     diffRef: stringField(row, 'DiffRef'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    diffPatch: stringField(row, 'DiffPatch'),
+    workerRunId: workerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -675,14 +696,14 @@ function normalizeWorkItem(row: EntityRow): EvolutionWorkItem {
     outputSchemaRef: stringField(row, 'OutputSchemaRef'),
     correlationJson: stringField(row, 'CorrelationJson'),
     workerId: stringField(row, 'WorkerId'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    workerRunId: workerRunIdField(row),
     resultJson: stringField(row, 'ResultJson'),
     summary: stringField(row, 'Summary'),
     failureReason: stringField(row, 'FailureReason')
   };
 }
 
-function normalizeBrainRun(row: EntityRow): EvolutionBrainRun {
+function normalizeWorkerRun(row: EntityRow): EvolutionWorkerRun {
   return {
     ...base(row),
     role: stringField(row, 'Role'),
@@ -694,6 +715,14 @@ function normalizeBrainRun(row: EntityRow): EvolutionBrainRun {
     failureReason: stringField(row, 'FailureReason'),
     correlationJson: stringField(row, 'CorrelationJson')
   };
+}
+
+function workerRunIdField(row: EntityRow): string {
+  return stringField(row, 'WorkerRunId') || stringField(row, 'BrainRunId');
+}
+
+function createdByWorkerRunIdField(row: EntityRow): string {
+  return stringField(row, 'CreatedByWorkerRunId') || stringField(row, 'CreatedByBrainRunId');
 }
 
 function numberField(row: EntityRow, ...keys: string[]): number {

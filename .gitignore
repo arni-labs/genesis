@@ -6,6 +6,7 @@ Cargo.lock.bak
 # WASM build artifacts
 wasm/*/target/
 crates/*/target/
+apps/**/target/
 
 # Frontend build artifacts
 web/.svelte-kit/

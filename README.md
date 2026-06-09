@@ -263,9 +263,17 @@ genesis-e2e/tiny-notes-rail133900@8ff05405d769eccbeeb7cab3b15cf96dc269abb8
   hashes those existing bytes, persists them, and caches them for execution.
   Roadmap: build and verify WASM artifacts once during Genesis publish with a
   pinned toolchain, store them with the app ref, and keep install deterministic.
-- TemperPaw still keeps local app directories for development and test fixtures,
-  but the normal agent-facing install/search/publish/update path is Genesis.
-  Fresh production bootstrap should be configured with pinned Genesis refs; warm
+- `apps/directed-evolution` and `apps/temperpaw/paw-orchestration` are now
+  authored in Genesis. The latter publishes as the registry app ref
+  `temperpaw/paw-orchestration`; its bundle-local Temper app namespace remains
+  `paw-orchestration`. Temper's repo-local app surface may still hold
+  bootstrap/dev/test fixtures, but it is not the production catalog and should
+  not regain copies of those bundles.
+- TemperPaw still has repo-local app directories while its remaining production
+  bundles are migrated, but those directories are bootstrap/dev/test fixtures,
+  not mirrors and not the production catalog. Normal agent-facing
+  install/search/publish/update goes through Genesis pinned refs. Fresh
+  production bootstrap should be configured with pinned Genesis refs; warm
   restart recovers already-installed app state from the Temper instance DB.
 
 ## Read Next

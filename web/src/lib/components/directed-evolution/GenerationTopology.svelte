@@ -39,14 +39,15 @@
     onToggleCompare
   }: Props = $props();
 
-  const deadStatuses = new Set(['Eliminated', 'Failed', 'Cancelled']);
+  const deadStatuses = new Set(['Eliminated', 'Failed', 'Cancelled', 'NotSelected']);
+  const viableStatuses = new Set(['Active', 'Selected', 'Promoted']);
 
   function generationVariants(generation: EvolutionGeneration): EvolutionVariant[] {
     return variants.filter((variant) => variant.generationId === generation.id);
   }
 
   function generationSurvivors(generation: EvolutionGeneration): EvolutionVariant[] {
-    return generationVariants(generation).filter((variant) => !deadStatuses.has(variant.status));
+    return generationVariants(generation).filter((variant) => viableStatuses.has(variant.status));
   }
 
   function generationWinner(generation: EvolutionGeneration): EvolutionVariant | null {
@@ -88,6 +89,7 @@
     const eliminated = results.filter((result) => result.status === 'Eliminated').length;
     const running = results.filter((result) => result.status === 'Running').length;
     if (eliminated) return `${eliminated} elimination signal${eliminated === 1 ? '' : 's'}`;
+    if (variant.status === 'NotSelected') return `selection-eliminated after ${passed}/${results.length} stages`;
     if (running) return `${running} stage${running === 1 ? '' : 's'} still running`;
     return `${passed}/${results.length} stages passed`;
   }
@@ -108,6 +110,11 @@
       variant.summary ||
       'No variant note recorded yet.'
     );
+  }
+
+  function variantStatusLabel(status: string): string {
+    if (status === 'NotSelected') return 'Selection-eliminated';
+    return status;
   }
 </script>
 
@@ -169,7 +176,7 @@
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-1.5">
-                      <Badge tone={statusTone(variant.status)}>{variant.status}</Badge>
+                      <Badge tone={statusTone(variant.status)}>{variantStatusLabel(variant.status)}</Badge>
                       {#if isWinner}
                         <span class="inline-flex items-center gap-1 rounded-[var(--radius-xs)] bg-[rgba(40,150,90,0.10)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-success)]">
                           <Trophy size={10} />

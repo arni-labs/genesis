@@ -23,9 +23,10 @@ four architectural gaps:
 ## Decision
 
 Genesis is the canonical source for Temper-native app bundles used by Directed
-Evolution. GitHub mirrors and platform repositories may keep fixtures,
-bootstrap copies, worker code, or install references, but the authoritative
-organism and evaluator app refs are Genesis refs.
+Evolution. GitHub and platform repositories are not app-source mirrors. They may
+keep fixtures, a tiny immutable first-boot seed, worker/platform code, docs, and
+pinned install references, but the authoritative organism and evaluator app refs
+are Genesis refs.
 
 Mission Control is split into three primary product views:
 
