@@ -404,6 +404,7 @@
         <Property Name="AppId"         Type="Edm.String" Nullable="false"/>
         <Property Name="AppRef"        Type="Edm.String" Nullable="false"/>
         <Property Name="VersionHash"   Type="Edm.String" Nullable="false"/>
+        <Property Name="FollowPolicy"  Type="Edm.String" Nullable="false"/>
         <Property Name="TargetTenant"  Type="Edm.String" Nullable="false"/>
         <Property Name="ClosureId"     Type="Edm.String"/>
         <Property Name="Installer"     Type="Edm.String"/>

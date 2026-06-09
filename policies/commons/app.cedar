@@ -40,8 +40,9 @@ forbid(
 };
 
 // Publishing, deprecating, deleting, and the publish composite's App.Update
-// sub-write are owner-scoped in commons mode. The base app.cedar stays
-// permissive for operator mode; these forbids are the commons overlay.
+// sub-write are owner-scoped in commons mode. Trusted Paw maintainers may be
+// granted explicit namespace scopes for app promotion without receiving broad
+// admin:repos rights.
 forbid(
   principal,
   action in [
@@ -54,5 +55,9 @@ forbid(
 ) when {
   !(resource.OwnerId == principal.accountId ||
     (principal has scopes &&
-     principal.scopes.contains("admin:repos")))
+     (principal.scopes.contains("admin:repos") ||
+      (resource.OwnerId == "katagami" &&
+       principal.scopes.contains("app:publish:katagami")) ||
+      (resource.OwnerId == "temperpaw" &&
+       principal.scopes.contains("app:publish:temperpaw")))))
 };
