@@ -29,3 +29,11 @@ The same review also found execution language drift. Mission Control showed "Bra
 - Reviewers inspect app history in Genesis and do not have to guess which repository copy is real.
 - Mission Control can explain concurrent worker activity and selector/promoter serialization using the same vocabulary as the platform.
 - Legacy tenants may still expose old entity names, so the UI can tolerate old fields while displaying the canonical labels.
+
+## Open Follow-Up
+
+- Complete the remaining Directed Evolution terminology migration from
+  `BrainRun` / `BrainRunId` / `CreatedByBrainRunId` to canonical
+  worker/provider/run language. This is schema and API debt, not a UI-only
+  rename: the old name still leaks through entity types, fields, action
+  parameters, router code, and historical records.

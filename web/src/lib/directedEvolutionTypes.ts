@@ -358,6 +358,12 @@ export type EvolutionWorkerRun = EntityBase & {
   correlationJson: string;
 };
 
+export type EvolutionWorkerAgent = EntityBase & {
+  capabilities: string;
+  lastSeenAt: string;
+  statusSummary: string;
+};
+
 export type DirectedEvolutionSnapshot = {
   organisms: EvolutionOrganism[];
   organismVersions: EvolutionOrganismVersion[];
@@ -386,5 +392,6 @@ export type DirectedEvolutionSnapshot = {
   autonomyPolicies: EvolutionAutonomyPolicy[];
   workItems: EvolutionWorkItem[];
   workerRuns: EvolutionWorkerRun[];
+  workerAgents: EvolutionWorkerAgent[];
   warnings: LoadWarning[];
 };

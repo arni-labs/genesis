@@ -45,7 +45,8 @@ mod tests {
 
         assert!(prompt.contains("VariantId: var-1"));
         assert!(prompt.contains("DirectionId: direction-1"));
-        assert!(prompt.contains("x-de-direction-id: direction-1"));
+        assert!(prompt.contains("X-Temper-Observe-Metadata:"));
+        assert!(prompt.contains("\"de.direction_id\":\"direction-1\""));
         assert!(prompt.contains("AdaptationGoal goal-1"));
         assert!(prompt.contains("Do not modify evaluators"));
     }
@@ -108,7 +109,7 @@ mod tests {
         assert!(!datadog_evidence_satisfies_required_contract(
             &json!({
                 "evidence_scope": [{
-                    "query": "@directed_evolution.episode_id:ep-1",
+                    "query": "service:temperpaw \"app usage:\" @observation_metadata:*de.episode_id* @observation_metadata:*ep-1*",
                     "time_window": "2026-05-28T00:00:00Z/2026-05-28T00:10:00Z",
                     "result_count": 1,
                     "interpretation": "runtime requests were observed",
@@ -121,7 +122,7 @@ mod tests {
         assert!(datadog_evidence_satisfies_required_contract(
             &json!({
                 "evidence_scope": [{
-                    "query": "@directed_evolution.episode_id:ep-1",
+                    "query": "service:temperpaw \"app usage:\" @observation_metadata:*de.episode_id* @observation_metadata:*ep-1*",
                     "time_window": "2026-05-28T00:00:00Z/2026-05-28T00:10:00Z",
                     "result_count": 0,
                     "interpretation": "no runtime errors were found",
@@ -134,7 +135,7 @@ mod tests {
         assert!(!datadog_evidence_satisfies_required_contract(
             &json!({
                 "evidence_scope": [{
-                    "query": "@directed_evolution.episode_id:ep-1",
+                    "query": "service:temperpaw \"app usage:\" @observation_metadata:*de.episode_id* @observation_metadata:*ep-1*",
                     "time_window": "2026-05-28T00:00:00Z/2026-05-28T00:10:00Z",
                     "result_count": 1,
                     "interpretation": "runtime requests were observed",

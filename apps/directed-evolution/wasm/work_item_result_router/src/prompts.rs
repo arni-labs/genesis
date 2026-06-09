@@ -77,7 +77,7 @@ RuntimeRef: {runtime_ref}\n\
 VariantSummary: {variant_summary}\n\n\
 EpisodeContract:\n{contract_context}\n\n\
 RecordedTrialEvidence:\n{}\n\n\
-DirectedEvolutionHeaders:\n{}\n\n\
+TemperObservationHeaders:\n{}\n\n\
 Use the stage contract, Adaptation Goal, Viability Constraints, Selection Pressure, and real evidence. \
 If RuntimeRef is a temper://tenant/<tenant>/app/<app_ref> value, exercise that live tenant through \
 TemperApiBase /tdata OData calls with x-tenant-id set to the tenant from RuntimeRef. \
@@ -112,9 +112,9 @@ Do not modify evaluators or selection rules.",
 
 fn evaluation_stage_guidance(stage_fields: &Value) -> &'static str {
     if stage_requires_datadog(stage_fields) {
-        "This is a Datadog-measured telemetry stage. Query Datadog for the exact DirectedEvolutionHeaders join fields using service:temper-platform \"directed evolution runtime request\" scoped by directed_evolution.episode_id, directed_evolution.variant_id, and the runtime tenant from RuntimeRef. Prefer Datadog MCP aggregate/SQL evidence over brittle log-explorer field syntax: use a broad runtime-request filter, select the directed_evolution episode_id and variant_id columns plus tenant, and count rows for this exact episode, variant, and tenant. Do not require directed_evolution.runtime_ref unless Datadog field discovery proves it is indexed for these logs. Return top-level provenance_kind=datadog-measured and make the first evidence_scope item the Datadog logs query or aggregate with query, time_window, result_count, interpretation, zero_result_meaning, and datadog_url. Zero matching runtime-request logs is failure; runtime OData probes are supporting evidence only and must not replace Datadog."
+        "This is a Datadog-measured telemetry stage. Query Datadog for runtime app-usage logs and traces scoped by the generic Temper observation metadata: observation_metadata in logs and temper.observation.de.* attributes in traces. Use de.episode_id, de.variant_id, and the runtime tenant from RuntimeRef. Use the Datadog service that owns the runtime named by TemperApiBase/RuntimeRef, not the Genesis control-plane service unless Genesis is actually the runtime. Prefer Datadog MCP aggregate/SQL evidence over brittle log-explorer field syntax: use a broad app-usage filter, select the observation metadata columns plus tenant, and count rows for this exact episode, variant, and tenant. Do not require producer-specific indexed fields unless Datadog field discovery proves they exist. Return top-level provenance_kind=datadog-measured and make the first evidence_scope item the Datadog logs or traces query with query, time_window, result_count, interpretation, zero-result meaning, and datadog_url. Zero matching runtime app-usage telemetry is failure for this stage; runtime OData probes are supporting evidence only and must not replace Datadog."
     } else {
-        "This is not a Datadog telemetry stage. Do not fail this stage because Datadog runtime-request logs are absent, and do not return provenance_kind=datadog-measured unless the RequiredEvidence or StageKind explicitly requires Datadog. Use the diff, specs, state, recorded observations, and runtime probes appropriate to this non-telemetry stage."
+        "This is not a Datadog telemetry stage. Do not fail this stage because Datadog app-usage telemetry is absent, and do not return provenance_kind=datadog-measured unless the RequiredEvidence or StageKind explicitly requires Datadog. Use the diff, specs, state, recorded observations, and runtime probes appropriate to this non-telemetry stage."
     }
 }
 
@@ -156,9 +156,9 @@ RuntimeRef: {runtime_ref}\n\
 Persona: {}\n\
 Goal: {goal}\n\
 VariantSummary: {variant_summary}\n\n\
-DirectedEvolutionHeaders:\n{}\n\n\
+TemperObservationHeaders:\n{}\n\n\
 Use the live app only. If RuntimeRef is a temper://tenant/<tenant>/app/<app_ref> value, send \
-x-tenant-id for that tenant and include the DirectedEvolutionHeaders on every app/runtime request. \
+x-tenant-id for that tenant and include the TemperObservationHeaders on every app/runtime request. \
 Start runtime probing at /tdata and /tdata/$metadata; a 404 from / or decorative app routes is not \
 a blocker when the OData runtime works. Only use status=blocked when /tdata and /tdata/$metadata are \
 unreachable for the parsed runtime tenant, or when the live app behavior prevents the user journey. \
@@ -201,26 +201,22 @@ fn directed_evolution_header_block(
     runtime_ref: &str,
     app_ref: &str,
 ) -> String {
-    [
-        ("x-de-direction-id", direction_id),
-        ("x-de-episode-id", episode_id),
-        ("x-de-generation-id", generation_id),
-        ("x-de-variant-id", variant_id),
-        ("x-de-stage-id", stage_id),
-        ("x-de-stage-result-id", stage_result_id),
-        ("x-de-trial-id", trial_id),
-        ("x-de-work-item-id", work_item_id),
-        ("x-de-persona-index", persona_index),
-        ("x-de-run-index", run_index),
-        ("x-de-simulated-user-id", simulated_user_id),
-        ("x-de-runtime-ref", runtime_ref),
-        ("x-de-app-ref", app_ref),
-    ]
-    .into_iter()
-    .filter(|(_, value)| !value.trim().is_empty())
-    .map(|(name, value)| format!("{name}: {value}"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    let metadata = json!({
+        "de.direction_id": direction_id,
+        "de.episode_id": episode_id,
+        "de.generation_id": generation_id,
+        "de.variant_id": variant_id,
+        "de.stage_id": stage_id,
+        "de.stage_result_id": stage_result_id,
+        "de.trial_id": trial_id,
+        "de.work_item_id": work_item_id,
+        "de.persona_index": persona_index,
+        "de.run_index": run_index,
+        "de.simulated_user_id": simulated_user_id,
+        "de.runtime_ref": runtime_ref,
+        "de.app_ref": app_ref,
+    });
+    format!("X-Temper-Observe-Metadata: {metadata}")
 }
 
 fn selector_prompt(
@@ -452,7 +448,8 @@ mod prompt_tests {
         );
 
         assert!(prompt.contains("RuntimeRef: temper://tenant/de-variant-var-1/app/nerdsane/agent-answers@abc123"));
-        assert!(prompt.contains("x-de-direction-id: direction-1"));
+        assert!(prompt.contains("X-Temper-Observe-Metadata:"));
+        assert!(prompt.contains("\"de.direction_id\":\"direction-1\""));
         assert!(prompt.contains("TemperApiBase: https://genesis-production-164d.up.railway.app"));
         assert!(prompt.contains("x-tenant-id set to the tenant from RuntimeRef"));
         assert!(prompt.contains("AppRef: nerdsane/agent-answers@abc123"));
@@ -476,7 +473,8 @@ mod prompt_tests {
             "nerdsane/agent-answers@abc",
         );
 
-        assert!(headers.contains("x-de-persona-index: 2"));
-        assert!(headers.contains("x-de-run-index: 3"));
+        assert!(headers.contains("X-Temper-Observe-Metadata:"));
+        assert!(headers.contains("\"de.persona_index\":\"2\""));
+        assert!(headers.contains("\"de.run_index\":\"3\""));
     }
 }
