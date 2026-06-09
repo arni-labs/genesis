@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { Tabs as BitsTabs } from 'bits-ui';
   import { ArrowLeft, AlertCircle, PackageCheck } from '@lucide/svelte';
   import { base } from '$app/paths';
@@ -7,6 +7,7 @@
   import { Card, Tabs, Toast, type TabItem } from '$lib/components/ui';
   import Topbar from '$lib/components/Topbar.svelte';
   import DetailHero from '$lib/components/DetailHero.svelte';
+  import DirectedEvolutionTab from '$lib/components/DirectedEvolutionTab.svelte';
   import FilesTab from '$lib/components/FilesTab.svelte';
   import VersionsTab from '$lib/components/VersionsTab.svelte';
   import OverviewTab from '$lib/components/OverviewTab.svelte';
@@ -18,6 +19,15 @@
     findAppById,
     registryStore
   } from '$lib/registry';
+  import {
+    directedEvolutionContextForApp,
+    directedEvolutionHref
+  } from '$lib/directedEvolutionContext';
+  import {
+    loadDirectedEvolutionSnapshot,
+    queueSeedSimulatedUsers,
+    type DirectedEvolutionSnapshot
+  } from '$lib/directedEvolution';
   import { parseJsonList, parseJsonMap } from '$lib/api';
   import type {
     AppInstallation,
@@ -29,7 +39,7 @@
     RepositoryFile
   } from '$lib/types';
 
-  type WorkbenchTab = 'files' | 'versions' | 'overview' | 'lineage' | 'install';
+  type WorkbenchTab = 'files' | 'versions' | 'overview' | 'lineage' | 'evolution' | 'install';
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
 
   const configuredApiBase = (import.meta.env.VITE_TEMPER_API_BASE ?? '').replace(/\/$/, '');
@@ -45,12 +55,18 @@
   let currentPath = '';
   let selectedFilePath = '';
   let selectedVersionHash = '';
+  let evolutionSnapshot: DirectedEvolutionSnapshot | null = null;
+  let evolutionLoading = false;
+  let evolutionError = '';
+  let evolutionLoadKey = '';
+  let evolutionRefreshTimer: number | undefined;
 
   const tabItems: TabItem[] = [
     { value: 'files', label: 'Files' },
     { value: 'versions', label: 'Versions' },
     { value: 'overview', label: 'Overview' },
     { value: 'lineage', label: 'Lineage' },
+    { value: 'evolution', label: 'Evolution' },
     { value: 'install', label: 'Install' }
   ];
 
@@ -63,6 +79,10 @@
 
   $: appId = decodeURIComponent($page.params.id ?? '');
   $: selectedApp = findAppById(state.snapshot, appId);
+  $: evolutionContext = selectedApp ? directedEvolutionContextForApp(selectedApp) : null;
+  $: evolutionMissionControlHref = evolutionContext
+    ? directedEvolutionHref(evolutionContext, base)
+    : `${base}/evolution`;
   $: ownersById = new Map(owners.map((owner) => [owner.id || owner.accountId, owner]));
 
   $: selectedLineage = selectedApp
@@ -121,8 +141,32 @@
     selectedVersionHash = '';
   }
 
+  $: if (evolutionContext) {
+    const key = `${selectedApp?.id ?? ''}:${evolutionContext.controlTenantId}`;
+    if (key !== evolutionLoadKey) {
+      void loadEvolutionFor(evolutionContext.controlTenantId, key);
+    }
+  }
+
+  $: if (!evolutionContext && evolutionLoadKey) {
+    evolutionLoadKey = '';
+    evolutionSnapshot = null;
+    evolutionError = '';
+  }
+
   onMount(() => {
     void loadRegistry();
+    evolutionRefreshTimer = window.setInterval(() => {
+      if (evolutionContext) {
+        void loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey || `${appId}:refresh`);
+      }
+    }, 12_000);
+  });
+
+  onDestroy(() => {
+    if (evolutionRefreshTimer !== undefined) {
+      window.clearInterval(evolutionRefreshTimer);
+    }
   });
 
   async function loadFilesFor(app: RegistryApp, key: string) {
@@ -151,6 +195,62 @@
         filesLoading = false;
       }
     }
+  }
+
+  async function loadEvolutionFor(tenantId: string, key: string, force = false) {
+    if (!tenantId || (evolutionLoading && !force)) return;
+    evolutionLoadKey = key;
+    evolutionLoading = true;
+    evolutionError = '';
+
+    try {
+      const snapshot = await loadDirectedEvolutionSnapshot(tenantId);
+      if (evolutionLoadKey !== key && !force) return;
+      evolutionSnapshot = snapshot;
+    } catch (error) {
+      if (evolutionLoadKey === key || force) {
+        evolutionError = error instanceof Error ? error.message : String(error);
+        evolutionSnapshot = null;
+      }
+    } finally {
+      if (evolutionLoadKey === key || force) {
+        evolutionLoading = false;
+      }
+    }
+  }
+
+  function refreshEvolution() {
+    if (!evolutionContext) return;
+    void loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey, true);
+  }
+
+  async function startSeedSimulatedUsers(input: { userCount: number; runsPerUser: number }) {
+    if (!evolutionContext || !evolutionSnapshot) {
+      throw new Error('Directed Evolution state is not loaded yet.');
+    }
+    const organism =
+      evolutionSnapshot.organisms.find((item) => item.appRef === evolutionContext.seedAppRef) ??
+      evolutionSnapshot.organisms[0] ??
+      null;
+    if (!organism) {
+      throw new Error('No active seed organism is available for this app.');
+    }
+    const queued = await queueSeedSimulatedUsers({
+      controlTenantId: evolutionContext.controlTenantId,
+      runtimeTenantId: evolutionContext.runtimeTenantId,
+      appId: evolutionContext.appId,
+      appLabel: evolutionContext.appLabel,
+      appRef: evolutionContext.seedAppRef,
+      organismId: organism.id,
+      runtimeBaseUrl: evolutionContext.runtimeBaseUrl,
+      runtimeAuthEnvVars: evolutionContext.runtimeAuthEnvVars,
+      runtimeDatadogService: evolutionContext.runtimeDatadogService,
+      userCount: input.userCount,
+      runsPerUser: input.runsPerUser
+    });
+    showToast(`Queued ${queued.length} simulated-user run${queued.length === 1 ? '' : 's'}`);
+    await loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey, true);
+    return queued.length;
   }
 
   function refresh() {
@@ -464,6 +564,20 @@
               {mutationList}
               {shortHash}
             />
+          </BitsTabs.Content>
+          <BitsTabs.Content value="evolution">
+            {#if evolutionContext}
+              <DirectedEvolutionTab
+                context={evolutionContext}
+                snapshot={evolutionSnapshot}
+                loading={evolutionLoading}
+                error={evolutionError}
+                missionControlHref={evolutionMissionControlHref}
+                onRefresh={refreshEvolution}
+                onCopy={copyText}
+                onStartSimulatedUsers={startSeedSimulatedUsers}
+              />
+            {/if}
           </BitsTabs.Content>
           <BitsTabs.Content value="install">
             <InstallTab

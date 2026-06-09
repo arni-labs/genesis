@@ -105,6 +105,10 @@
     import.meta.env.VITE_TEMPER_TENANT_ID ??
     'default';
   let directedEvolutionTenantId = defaultDirectedEvolutionTenant;
+  let appContextId = '';
+  let runtimeTenantId = '';
+  let runtimeBaseUrl = '';
+  let runtimeDatadogService = '';
 
   $: registryState = $registryStore;
   $: registrySnapshot = registryState.snapshot;
@@ -250,6 +254,10 @@
 
   onMount(() => {
     directedEvolutionTenantId = resolveDirectedEvolutionTenant();
+    appContextId = resolveUrlParam('app', 'genesis-directed-evolution-app');
+    runtimeTenantId = resolveUrlParam('runtimeTenant', 'genesis-directed-evolution-runtime-tenant');
+    runtimeBaseUrl = resolveUrlParam('runtimeBase', '');
+    runtimeDatadogService = resolveUrlParam('runtimeService', '');
     void loadRegistry();
     void loadEvolution();
     refreshTimer = window.setInterval(() => void loadEvolution(), 12_000);
@@ -863,6 +871,17 @@
     );
   }
 
+  function resolveUrlParam(name: string, storageKey: string): string {
+    if (!browser) return '';
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get(name)?.trim();
+    if (fromUrl) {
+      window.localStorage.setItem(storageKey, fromUrl);
+      return fromUrl;
+    }
+    return window.localStorage.getItem(storageKey)?.trim() || '';
+  }
+
 </script>
 
 <svelte:head>
@@ -897,6 +916,17 @@
               <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
                 Tenant {directedEvolutionTenantId}
               </p>
+              {#if appContextId || runtimeTenantId || runtimeBaseUrl || runtimeDatadogService}
+                <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+                  {#if appContextId}App {appContextId}{/if}
+                  {#if appContextId && runtimeTenantId} · {/if}
+                  {#if runtimeTenantId}Runtime {runtimeTenantId}{/if}
+                  {#if (appContextId || runtimeTenantId) && runtimeDatadogService} · {/if}
+                  {#if runtimeDatadogService}Datadog {runtimeDatadogService}{/if}
+                  {#if (appContextId || runtimeTenantId || runtimeDatadogService) && runtimeBaseUrl} · {/if}
+                  {#if runtimeBaseUrl}Base {runtimeBaseUrl}{/if}
+                </p>
+              {/if}
             </div>
             <div class="flex items-center gap-1.5">
               <Badge tone={loading ? 'warning' : 'neutral'} pixel={!loading}>

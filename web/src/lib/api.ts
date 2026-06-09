@@ -145,6 +145,23 @@ export async function postEntityAction(
   );
 }
 
+export async function createEntity(
+  collection: string,
+  body: Record<string, unknown> = {},
+  principal: Principal = { id: 'genesis-mission-control', kind: 'agent', agentType: 'human' },
+  tenantId = TENANT_ID
+): Promise<EntityRow> {
+  return requestJson<EntityRow>(
+    `/tdata/${collection}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body)
+    },
+    principal,
+    tenantId
+  );
+}
+
 async function loadCollection<T>(
   collection: CollectionName,
   normalizer: (row: EntityRow) => T
