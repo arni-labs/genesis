@@ -10,6 +10,7 @@
     GitCompareArrows,
     ListChecks,
     RefreshCw,
+    ShieldCheck,
     X
   } from '@lucide/svelte';
   import Topbar from '$lib/components/Topbar.svelte';
@@ -43,11 +44,52 @@
 
   type StatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
   type EvolutionView = 'directions' | 'detail' | 'genealogy';
+  type PrecheckRequirement = {
+    label: string;
+    snakeName: string;
+    camelName: string;
+    value?: string;
+    requiredForReady: boolean;
+  };
   const evolutionViews = [
     { id: 'directions', label: 'Directions', icon: Compass },
     { id: 'detail', label: 'Direction Detail', icon: ListChecks },
     { id: 'genealogy', label: 'Organism Genealogy', icon: Dna }
   ] satisfies { id: EvolutionView; label: string; icon: typeof Compass }[];
+  const precheckRequirements = [
+    {
+      label: 'Observer evidence required',
+      snakeName: 'mandatory_datadog_observer_evidence',
+      camelName: 'mandatoryDatadogObserverEvidence',
+      requiredForReady: true
+    },
+    {
+      label: 'Telemetry evaluator required',
+      snakeName: 'mandatory_datadog_telemetry_evaluator_evidence',
+      camelName: 'mandatoryDatadogTelemetryEvaluatorEvidence',
+      requiredForReady: true
+    },
+    {
+      label: 'Datadog evidence required',
+      snakeName: 'mandatory_datadog_evidence',
+      camelName: 'mandatoryDatadogEvidence',
+      requiredForReady: true
+    },
+    {
+      label: 'Terminal success required',
+      snakeName: 'mandatory_terminal_success',
+      camelName: 'mandatoryTerminalSuccess',
+      value: 'required',
+      requiredForReady: true
+    },
+    {
+      label: 'Datadog query secrets confirmed',
+      snakeName: 'production_datadog_query_secrets_confirmed',
+      camelName: 'productionDatadogQuerySecretsConfirmed',
+      value: 'confirmed',
+      requiredForReady: true
+    }
+  ] satisfies PrecheckRequirement[];
 
   let snapshot: DirectedEvolutionSnapshot | null = null;
   let loading = false;
@@ -95,6 +137,12 @@
       promotions.find((promotion) => promotion.winningVariantId === selectedEpisode.winningVariantId) ??
       null
     : null;
+  $: organismHeaderAppRef =
+    currentParentVersion?.appRef ||
+    selectedPromotion?.canonicalAppRef ||
+    selectedPromotion?.appRef ||
+    organism?.appRef ||
+    '';
   $: currentGoal = selectedEpisode
     ? snapshot?.adaptationGoals.find((goal) => goal.id === selectedEpisode.adaptationGoalId) ?? null
     : null;
@@ -149,6 +197,12 @@
   $: episodeTrials = selectedEpisode
     ? (snapshot?.trials ?? []).filter((trial) => trial.episodeId === selectedEpisode.id)
     : [];
+  $: completedEpisodeTrials = episodeTrials.filter((trial) =>
+    ['Succeeded', 'Passed', 'Observed'].includes(trial.status)
+  );
+  $: blockedEpisodeTrials = episodeTrials.filter(
+    (trial) => trial.blocker || ['Failed', 'Blocked', 'Eliminated'].includes(trial.status)
+  );
   $: inspectedVariant =
     episodeVariants.find((variant) => variant.id === inspectedVariantId) ??
     episodeVariants.find((variant) => variant.id === selectedEpisode?.winningVariantId) ??
@@ -160,8 +214,36 @@
   $: comparedVariants = comparedVariantIds
     .map((id) => episodeVariants.find((variant) => variant.id === id))
     .filter((variant): variant is EvolutionVariant => Boolean(variant));
-  $: recentBrainRuns = (snapshot?.brainRuns ?? []).slice(-8).reverse();
+  $: recentWorkerRuns = (snapshot?.workerRuns ?? []).slice(-8).reverse();
   $: recentWorkItems = (snapshot?.workItems ?? []).slice(-8).reverse();
+  $: selectedEpisodeWorkItems = selectedEpisode ? workItemsForEpisode(selectedEpisode) : [];
+  $: selectedEpisodeWorkerRuns = selectedEpisode ? workerRunsForEpisode(selectedEpisode) : [];
+  $: selectedEpisodeEvidence = selectedEpisode ? evidenceForEpisode(selectedEpisode) : [];
+  $: selectedEpisodeDatadogEvidence = selectedEpisodeEvidence.filter(isStructuredDatadogEvidence);
+  $: selectedEpisodeDatadogObserverEvidence = selectedEpisodeDatadogEvidence.filter((artifact) =>
+    datadogEvidenceRoleMatches(artifact, 'observer')
+  );
+  $: selectedEpisodeDatadogTelemetryEvaluatorEvidence = selectedEpisodeDatadogEvidence.filter((artifact) =>
+    datadogEvidenceRoleMatches(artifact, 'telemetry_evaluator')
+  );
+  $: selectedEpisodePrecheckEvidence = selectedEpisodeEvidence.filter(isNoMutationPrecheckEvidence);
+  $: selectedEpisodePrecheckArtifact = selectedEpisodePrecheckEvidence[0] ?? null;
+  $: selectedEpisodePrecheckRequirements = selectedEpisodePrecheckArtifact
+    ? precheckRequirementBadges(selectedEpisodePrecheckArtifact)
+    : [];
+  $: selectedEpisodeProofGates = selectedEpisode
+    ? proofGatesForEpisode(
+        selectedEpisode,
+        selectedEpisodeWorkItems.length,
+        selectedEpisodeWorkerRuns.length,
+        selectedEpisodeEvidence.length,
+        selectedEpisodeDatadogEvidence.length,
+        selectedEpisodeDatadogObserverEvidence.length,
+        selectedEpisodeDatadogTelemetryEvaluatorEvidence.length,
+        selectedEpisodePrecheckEvidence.length
+      )
+    : [];
+  $: selectedEpisodeProofReady = selectedEpisodeProofGates.every((gate) => gate.tone === 'success');
   $: totalWarnings = snapshot?.warnings ?? [];
 
   const terminalEpisodeStatuses = new Set(['Completed', 'Stopped', 'Failed']);
@@ -243,7 +325,7 @@
     if (['Queued', 'Draft', 'Negotiating', 'Planned', 'Generating', 'Evaluating', 'Selecting', 'Promoting', 'Paused', 'Claimed'].includes(status)) {
       return 'warning';
     }
-    if (['Failed', 'Stopped', 'Eliminated', 'Dismissed', 'Cancelled'].includes(status)) {
+    if (['Failed', 'Stopped', 'Eliminated', 'NotSelected', 'Dismissed', 'Cancelled'].includes(status)) {
       return 'danger';
     }
     if (['Proposed', 'Framed', 'Linked', 'Pinned'].includes(status)) {
@@ -377,7 +459,20 @@
     return (
       (snapshot?.mutations ?? []).find((mutation) => mutation.id === variant.mutationId) ??
       (snapshot?.mutations ?? []).find((mutation) => mutation.variantId === variant.id) ??
-      null
+      (variant.changedFiles.length || variant.diffPatch
+        ? {
+            id: `${variant.id}:inline-mutation`,
+            status: variant.status,
+            variantId: variant.id,
+            summary: variant.summary,
+            changedFiles: variant.changedFiles,
+            diffRef: variant.branchRef || variant.appRef,
+            diffPatch: variant.diffPatch,
+            workerRunId: variant.workerRunId,
+            reason: variant.reason,
+            raw: variant.raw
+          }
+        : null)
     );
   }
 
@@ -471,12 +566,287 @@
     );
   }
 
-  function directionBrainRun(direction: EvolutionDirection) {
+  function directionWorkerRun(direction: EvolutionDirection) {
     const pressures = directionPressures(direction);
-    const brainRunIds = [direction.brainRunId, ...pressures.map((pressure) => pressure.brainRunId)].filter(
+    const workerRunIds = [direction.workerRunId, ...pressures.map((pressure) => pressure.workerRunId)].filter(
       Boolean
     );
-    return (snapshot?.brainRuns ?? []).find((run) => brainRunIds.includes(run.id)) ?? null;
+    return (snapshot?.workerRuns ?? []).find((run) => workerRunIds.includes(run.id)) ?? null;
+  }
+
+  function selectedEpisodeEntityIds(episode: EvolutionEpisode): Set<string> {
+    const ids = new Set([
+      episode.id,
+      episode.directionId,
+      episode.promotionId,
+      episode.winningVariantId,
+      ...((snapshot?.generations ?? [])
+        .filter((generation) => generation.episodeId === episode.id)
+        .map((generation) => generation.id)),
+      ...((snapshot?.variants ?? [])
+        .filter((variant) => variant.episodeId === episode.id)
+        .flatMap((variant) => [variant.id, variant.generationId, variant.mutationId, variant.workItemId])),
+      ...((snapshot?.stageResults ?? [])
+        .filter((result) => result.episodeId === episode.id)
+        .flatMap((result) => [result.id, result.workItemId, result.evidenceArtifactId])),
+      ...((snapshot?.trials ?? [])
+        .filter((trial) => trial.episodeId === episode.id)
+        .flatMap((trial) => [trial.id, trial.workItemId, trial.evidenceArtifactId]))
+    ].filter(Boolean));
+    return ids;
+  }
+
+  function parsedRecord(raw: string): Record<string, unknown> {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function nestedString(record: Record<string, unknown>, path: string[]): string {
+    let current: unknown = record;
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return '';
+      current = (current as Record<string, unknown>)[key];
+    }
+    return typeof current === 'string' ? current : '';
+  }
+
+  function nestedBoolean(record: Record<string, unknown>, path: string[]): boolean {
+    let current: unknown = record;
+    for (const key of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
+      current = (current as Record<string, unknown>)[key];
+    }
+    return current === true || current === 'true';
+  }
+
+  function correlationEpisodeId(raw: string): string {
+    const correlation = parsedRecord(raw);
+    return (
+      nestedString(correlation, ['episode_id']) ||
+      nestedString(correlation, ['episodeId']) ||
+      nestedString(correlation, ['datadog', 'join_fields', 'episode_id']) ||
+      nestedString(correlation, ['output', 'episode_id']) ||
+      nestedString(correlation, ['output', 'episodeId'])
+    );
+  }
+
+  function workItemsForEpisode(episode: EvolutionEpisode) {
+    const ids = selectedEpisodeEntityIds(episode);
+    return (snapshot?.workItems ?? []).filter(
+      (item) => ids.has(item.targetEntityId) || correlationEpisodeId(item.correlationJson) === episode.id
+    );
+  }
+
+  function workerRunsForEpisode(episode: EvolutionEpisode) {
+    const workItemIds = new Set(workItemsForEpisode(episode).map((item) => item.id));
+    return (snapshot?.workerRuns ?? []).filter(
+      (run) =>
+        workItemIds.has(run.workItemId) ||
+        correlationEpisodeId(run.correlationJson) === episode.id ||
+        run.summary.includes(episode.id)
+    );
+  }
+
+  function evidenceForEpisode(episode: EvolutionEpisode) {
+    const ids = selectedEpisodeEntityIds(episode);
+    return (snapshot?.evidenceArtifacts ?? []).filter(
+      (artifact) =>
+        (artifact.targetEntityType === 'Episode' && artifact.targetEntityId === episode.id) ||
+        ids.has(artifact.targetEntityId) ||
+        ids.has(artifact.id) ||
+        correlationEpisodeId(artifact.correlationJson) === episode.id
+    );
+  }
+
+  function evidenceScopeDatadogUrl(raw: string): string {
+    const correlation = parsedRecord(raw);
+    const directOutput = correlation.output;
+    const scope =
+      directOutput && typeof directOutput === 'object' && !Array.isArray(directOutput)
+        ? ((directOutput as Record<string, unknown>).evidence_scope ??
+            (directOutput as Record<string, unknown>).evidenceScope)
+        : undefined;
+    if (!Array.isArray(scope)) return '';
+    const first = scope.find((item) => {
+      const url =
+        item && typeof item === 'object'
+          ? ((item as Record<string, unknown>).datadog_url ??
+              (item as Record<string, unknown>).datadogUrl)
+          : '';
+      return typeof url === 'string' && url.startsWith('https://app.');
+    });
+    if (!first || typeof first !== 'object') return '';
+    const url =
+      (first as Record<string, unknown>).datadog_url ??
+      (first as Record<string, unknown>).datadogUrl;
+    return typeof url === 'string' ? url : '';
+  }
+
+  function evidenceScopeItems(raw: string): Record<string, unknown>[] {
+    const correlation = parsedRecord(raw);
+    const directOutput = correlation.output;
+    const scope =
+      directOutput && typeof directOutput === 'object' && !Array.isArray(directOutput)
+        ? ((directOutput as Record<string, unknown>).evidence_scope ??
+            (directOutput as Record<string, unknown>).evidenceScope)
+        : undefined;
+    if (Array.isArray(scope)) {
+      return scope.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+    }
+    return scope && typeof scope === 'object' && !Array.isArray(scope) ? [scope as Record<string, unknown>] : [];
+  }
+
+  function isStructuredDatadogEvidence(artifact: EvolutionEvidenceArtifact): boolean {
+    const datadogUrl = artifact.uri.startsWith('https://app.') ? artifact.uri : evidenceScopeDatadogUrl(artifact.correlationJson);
+    return (
+      artifact.evidenceProvenance === 'datadog-measured' &&
+      Boolean(artifact.query) &&
+      Boolean(artifact.timeWindow) &&
+      artifact.resultCount !== '' &&
+      Boolean(artifact.interpretation) &&
+      Boolean(artifact.zeroResultMeaning) &&
+      Boolean(datadogUrl)
+    );
+  }
+
+  function datadogEvidenceRoleMatches(artifact: EvolutionEvidenceArtifact, role: string): boolean {
+    const correlation = parsedRecord(artifact.correlationJson);
+    const rawRecord = artifact.raw ?? {};
+    const roleCandidates = [
+      nestedString(rawRecord, ['Role']),
+      nestedString(rawRecord, ['role']),
+      nestedString(rawRecord, ['fields', 'Role']),
+      nestedString(rawRecord, ['fields', 'role']),
+      nestedString(correlation, ['role']),
+      nestedString(correlation, ['datadog', 'role']),
+      nestedString(correlation, ['datadog', 'join_fields', 'role']),
+      nestedString(correlation, ['output', 'role']),
+      nestedString(correlation, ['output', 'evaluator_role']),
+      nestedString(correlation, ['output', 'evaluatorRole']),
+      ...evidenceScopeItems(artifact.correlationJson).map((item) => {
+        const scopedRole = item.role ?? item.Role ?? item.evaluator_role ?? item.evaluatorRole;
+        return typeof scopedRole === 'string' ? scopedRole : '';
+      })
+    ];
+    return roleCandidates.includes(role);
+  }
+
+  function isNoMutationPrecheckEvidence(artifact: EvolutionEvidenceArtifact): boolean {
+    const correlation = parsedRecord(artifact.correlationJson);
+    const status = nestedString(correlation, ['status']) || nestedString(correlation, ['output', 'status']);
+    const noMutation =
+      nestedBoolean(correlation, ['no_mutation']) ||
+      nestedBoolean(correlation, ['noMutation']) ||
+      nestedBoolean(correlation, ['output', 'no_mutation']) ||
+      nestedBoolean(correlation, ['output', 'noMutation']);
+    const wouldCreateLiveEpisode =
+      nestedBoolean(correlation, ['would_create_live_episode']) ||
+      nestedBoolean(correlation, ['wouldCreateLiveEpisode']) ||
+      nestedBoolean(correlation, ['output', 'would_create_live_episode']) ||
+      nestedBoolean(correlation, ['output', 'wouldCreateLiveEpisode']);
+    return (
+      artifact.evidenceProvenance === 'precheck-ready' &&
+      artifact.artifactKind.toLowerCase().includes('precheck') &&
+      status === 'ready' &&
+      noMutation &&
+      wouldCreateLiveEpisode &&
+      hasMandatoryPrecheckRequirements(correlation)
+    );
+  }
+
+  function precheckRequirementEnabled(correlation: Record<string, unknown>, snakeName: string, camelName: string): boolean {
+    return (
+      nestedBoolean(correlation, ['evidence_requirements', snakeName]) ||
+      nestedBoolean(correlation, ['evidenceRequirements', camelName]) ||
+      nestedBoolean(correlation, ['output', 'evidence_requirements', snakeName]) ||
+      nestedBoolean(correlation, ['output', 'evidenceRequirements', camelName])
+    );
+  }
+
+  function hasMandatoryPrecheckRequirements(correlation: Record<string, unknown>): boolean {
+    return precheckRequirements
+      .filter((requirement) => requirement.requiredForReady)
+      .every((requirement) =>
+        precheckRequirementEnabled(correlation, requirement.snakeName, requirement.camelName)
+      );
+  }
+
+  function precheckRequirementBadges(
+    artifact: EvolutionEvidenceArtifact
+  ): { label: string; value: string; tone: StatusTone }[] {
+    const correlation = parsedRecord(artifact.correlationJson);
+    return precheckRequirements
+      .filter((requirement) =>
+        precheckRequirementEnabled(correlation, requirement.snakeName, requirement.camelName)
+      )
+      .map((requirement) => ({
+        label: requirement.label,
+        value: requirement.value ?? 'required',
+        tone: 'success'
+      }));
+  }
+
+  function proofGatesForEpisode(
+    episode: EvolutionEpisode,
+    workItemCount: number,
+    workerRunCount: number,
+    evidenceCount: number,
+    datadogEvidenceCount: number,
+    datadogObserverEvidenceCount: number,
+    datadogTelemetryEvaluatorEvidenceCount: number,
+    precheckEvidenceCount: number
+  ): { label: string; value: string; tone: StatusTone }[] {
+    const terminalSuccess = ['Completed', 'Complete', 'Succeeded', 'Promoted', 'NoPromotion'].includes(episode.status);
+    const terminalFailure = ['Failed', 'Stopped', 'Cancelled', 'Abandoned'].includes(episode.status);
+    return [
+      {
+        label: 'WorkItems',
+        value: `${workItemCount}`,
+        tone: workItemCount ? 'success' : 'warning'
+      },
+      {
+        label: 'WorkerRuns',
+        value: `${workerRunCount}`,
+        tone: workerRunCount ? 'success' : 'warning'
+      },
+      {
+        label: 'EvidenceArtifacts',
+        value: `${evidenceCount}`,
+        tone: evidenceCount ? 'success' : 'warning'
+      },
+      {
+        label: 'Datadog measured evidence',
+        value: `${datadogEvidenceCount}`,
+        tone: datadogEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'Datadog observer evidence',
+        value: `${datadogObserverEvidenceCount}`,
+        tone: datadogObserverEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'Datadog telemetry evaluator evidence',
+        value: `${datadogTelemetryEvaluatorEvidenceCount}`,
+        tone: datadogTelemetryEvaluatorEvidenceCount ? 'success' : 'danger'
+      },
+      {
+        label: 'No-mutation precheck',
+        value: precheckEvidenceCount ? 'ready' : 'missing',
+        tone: precheckEvidenceCount ? 'success' : 'warning'
+      },
+      {
+        label: 'Terminal success',
+        value: terminalSuccess ? episode.status : terminalFailure ? episode.status : 'pending',
+        tone: terminalSuccess ? 'success' : terminalFailure ? 'danger' : 'warning'
+      }
+    ];
   }
 
   function resolveDirectedEvolutionTenant(): string {
@@ -521,7 +891,7 @@
                 {organism?.name || 'No organism online'}
               </h2>
               <p class="mt-1 max-w-[78ch] text-[12.5px] leading-relaxed text-[var(--color-muted)]">
-                {organism?.appRef ||
+                {organismHeaderAppRef ||
                   'Install and activate the Directed Evolution app to stream live organism, episode, variant, and evidence state here.'}
               </p>
               <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
@@ -590,10 +960,10 @@
                 <MetricTile compact label="Episodes" value={activeEpisodes.length} />
                 <MetricTile compact label="Variants" value={episodeVariants.length} />
                 <MetricTile compact label="Promotions" value={promotions.length} />
-                <MetricTile compact label="Materialized" value={promotions.filter((item) => item.materialized).length} />
+                <MetricTile compact label="Materialized" value={promotions.filter((item) => promotionHotLoaded(item)).length} />
                 <MetricTile compact label="Materializing" value={pendingMaterializations.length} />
                 <MetricTile compact label="Failed Installs" value={failedMaterializations.length} />
-                <MetricTile compact label="Brain Runs" value={snapshot?.brainRuns.length ?? 0} />
+                <MetricTile compact label="Worker Runs" value={snapshot?.workerRuns.length ?? 0} />
               </div>
             </div>
 
@@ -757,7 +1127,7 @@
                       <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-2">
                         <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Simulated-user lab</p>
                         <p class="mt-1 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
-                          {episodeTrials.length} trial rows · {episodeTrials.filter((trial) => trial.status === 'Observed').length} observed · {episodeTrials.filter((trial) => trial.status === 'Blocked').length} blocked
+                          {episodeTrials.length} trial rows · {completedEpisodeTrials.length} completed · {blockedEpisodeTrials.length} blockers
                         </p>
                       </div>
                     </div>
@@ -773,6 +1143,7 @@
                 {stages}
                 {stageResults}
                 {episodeVariants}
+                mutations={snapshot?.mutations ?? []}
                 {constraints}
                 metricDefinitions={metrics}
                 {eliminationRules}
@@ -832,8 +1203,84 @@
                       </div>
                     </section>
                   {/if}
+                  {#if selectedEpisode}
+                    <section
+                      aria-label="Agent Answers live proof gate"
+                      class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3"
+                    >
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <PanelTitle icon={ShieldCheck} title="Agent Answers Proof Gate" />
+                        <Badge tone={selectedEpisodeProofReady ? 'success' : 'warning'}>
+                          {selectedEpisodeProofReady ? 'ready' : 'pending'}
+                        </Badge>
+                      </div>
+                      <p class="mt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
+                        directed-evolution-agent-answers-live-proof.sh
+                      </p>
+                      <div class="mt-3 grid gap-1.5">
+                        {#each selectedEpisodeProofGates as gate (gate.label)}
+                          <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5">
+                            <span class="truncate text-[11px] font-medium text-[var(--color-ink-soft)]">
+                              {gate.label}
+                            </span>
+                            <Badge tone={gate.tone}>{gate.value}</Badge>
+                          </div>
+                        {/each}
+                      </div>
+                      <div class="mt-3 grid gap-2">
+                        {#each [
+                          { label: 'Datadog observer', artifact: selectedEpisodeDatadogObserverEvidence[0] },
+                          { label: 'Datadog telemetry evaluator', artifact: selectedEpisodeDatadogTelemetryEvaluatorEvidence[0] }
+                        ] as item (item.label)}
+                          {#if item.artifact}
+                            <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+                              <div class="flex flex-wrap items-center justify-between gap-2">
+                                <p class="text-[11px] font-semibold text-[var(--color-ink-soft)]">{item.label}</p>
+                                <Badge tone="success">datadog-measured</Badge>
+                              </div>
+                              <p class="mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-[var(--color-ink-soft)]">
+                                {item.artifact.interpretation || item.artifact.summary}
+                              </p>
+                              <p class="mt-1 line-clamp-2 font-mono text-[10px] text-[var(--color-muted)]">
+                                {item.artifact.query}
+                              </p>
+                              <p class="mt-1 text-[10px] text-[var(--color-faint)]">
+                                {item.artifact.timeWindow} · zero means {item.artifact.zeroResultMeaning}
+                              </p>
+                            </div>
+                          {/if}
+                        {/each}
+                      </div>
+                      {#if selectedEpisodePrecheckEvidence[0]}
+                        <div class="mt-3 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <p class="text-[11px] font-semibold text-[var(--color-ink-soft)]">No-mutation precheck</p>
+                            <Badge tone="success">ready</Badge>
+                          </div>
+                          <p class="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--color-ink-soft)]">
+                            {selectedEpisodePrecheckEvidence[0].summary}
+                          </p>
+                          <p class="mt-1 font-mono text-[10px] text-[var(--color-muted)]">
+                            PRECHECK_ONLY=1 · no production mutation
+                          </p>
+                          {#if selectedEpisodePrecheckRequirements.length}
+                            <div class="mt-2 grid gap-1.5">
+                              {#each selectedEpisodePrecheckRequirements as requirement (requirement.label)}
+                                <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-1">
+                                  <span class="truncate text-[10px] font-medium text-[var(--color-ink-soft)]">
+                                    {requirement.label}
+                                  </span>
+                                  <Badge tone={requirement.tone}>{requirement.value}</Badge>
+                                </div>
+                              {/each}
+                            </div>
+                          {/if}
+                        </div>
+                      {/if}
+                    </section>
+                  {/if}
                   <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
-                    <PanelTitle icon={Activity} title="Recent Brain Work" />
+                    <PanelTitle icon={Activity} title="Recent Worker Work" />
                     <div class="mt-2 grid gap-1.5">
                       {#each recentWorkItems.slice(0, 5) as item (item.id)}
                         <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5 text-[11px]">
@@ -883,6 +1330,7 @@
                 directions={activeDirections}
                 {promotions}
                 variants={snapshot?.variants ?? []}
+                mutations={snapshot?.mutations ?? []}
                 {activePolicy}
                 {shortId}
                 {statusTone}

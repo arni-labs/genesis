@@ -187,25 +187,21 @@ fn refs_url_for_repo(api_base: &str, repository_id: &str) -> String {
     let escaped_repository_id = repository_id.replace('\'', "''");
     let filter = format!("RepositoryId eq '{escaped_repository_id}'");
     format!(
-        "{}/tdata/Refs?$filter={}",
+        "{}/tdata/Refs?$filter={}&$top=500",
         api_base.trim_end_matches('/'),
-        encode_query_component(&filter)
+        urlencode(&filter)
     )
 }
 
-fn encode_query_component(value: &str) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+fn urlencode(value: &str) -> String {
     let mut out = String::new();
     for byte in value.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(byte as char);
             }
-            _ => {
-                out.push('%');
-                out.push(HEX[(byte >> 4) as usize] as char);
-                out.push(HEX[(byte & 0x0f) as usize] as char);
-            }
+            b' ' => out.push_str("%20"),
+            _ => out.push_str(&format!("%{byte:02X}")),
         }
     }
     out

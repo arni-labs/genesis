@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { BrainCircuit, DatabaseZap, Eye, GitPullRequestArrow, RadioTower, X } from '@lucide/svelte';
+  import { Cpu, DatabaseZap, Eye, GitPullRequestArrow, RadioTower, X } from '@lucide/svelte';
   import { Badge, Button } from '$lib/components/ui';
   import type {
-    EvolutionBrainRun,
+    EvolutionWorkerRun,
     EvolutionDirection,
     EvolutionEvidenceArtifact,
     EvolutionMeasurement,
@@ -21,10 +21,10 @@
     signals: EvolutionSignal[];
     pressures: EvolutionPressure[];
     evidenceArtifacts: EvolutionEvidenceArtifact[];
-    brainRuns: EvolutionBrainRun[];
+    workerRuns: EvolutionWorkerRun[];
     inspectedVariant: EvolutionVariant | null;
     recentWorkItems: EvolutionWorkItem[];
-    recentBrainRuns: EvolutionBrainRun[];
+    recentWorkerRuns: EvolutionWorkerRun[];
     actionBusy: string;
     shortId: (value: string, length?: number) => string;
     statusTone: (status: string) => StatusTone;
@@ -33,7 +33,7 @@
     directionPressures: (direction: EvolutionDirection) => EvolutionPressure[];
     directionSignals: (direction: EvolutionDirection) => EvolutionSignal[];
     directionEvidence: (direction: EvolutionDirection) => EvolutionEvidenceArtifact[];
-    directionBrainRun: (direction: EvolutionDirection) => EvolutionBrainRun | null;
+    directionWorkerRun: (direction: EvolutionDirection) => EvolutionWorkerRun | null;
     variantMeasurements: (variant: EvolutionVariant) => EvolutionMeasurement[];
     variantEvidence: (variant: EvolutionVariant) => EvolutionEvidenceArtifact[];
     variantReason: (variant: EvolutionVariant) => string;
@@ -45,10 +45,10 @@
     signals,
     pressures,
     evidenceArtifacts,
-    brainRuns,
+    workerRuns,
     inspectedVariant,
     recentWorkItems,
-    recentBrainRuns,
+    recentWorkerRuns,
     actionBusy,
     shortId,
     statusTone,
@@ -57,7 +57,7 @@
     directionPressures,
     directionSignals,
     directionEvidence,
-    directionBrainRun,
+    directionWorkerRun,
     variantMeasurements,
     variantEvidence,
     variantReason,
@@ -88,17 +88,17 @@
     fedPressures: EvolutionPressure[],
     fedSignals: EvolutionSignal[],
     fedEvidence: EvolutionEvidenceArtifact[],
-    fedBrainRun: EvolutionBrainRun | null
+    fedWorkerRun: EvolutionWorkerRun | null
   ): string {
-    return `${fedPressures.length} pressures · ${fedSignals.length} signals · ${fedEvidence.length} evidence · ${fedBrainRun ? 1 : 0} brain runs`;
+    return `${fedPressures.length} pressures · ${fedSignals.length} signals · ${fedEvidence.length} evidence · ${fedWorkerRun ? 1 : 0} worker runs`;
   }
 </script>
 
 <aside class="grid min-w-0 content-start gap-3">
   <section class="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
-    <PanelTitle icon={BrainCircuit} title="Suggested Directions" />
+    <PanelTitle icon={GitPullRequestArrow} title="Suggested Directions" />
     <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
-      {pressures.length} pressures · {signals.length} signals · {evidenceArtifacts.length} evidence · {brainRuns.length} brain runs
+      {pressures.length} pressures · {signals.length} signals · {evidenceArtifacts.length} evidence · {workerRuns.length} worker runs
     </p>
     <div class="mt-3 grid gap-2">
       {#if activeDirections.length}
@@ -106,7 +106,7 @@
           {@const fedPressures = directionPressures(direction)}
           {@const fedSignals = directionSignals(direction)}
           {@const fedEvidence = directionEvidence(direction)}
-          {@const fedBrainRun = directionBrainRun(direction)}
+          {@const fedWorkerRun = directionWorkerRun(direction)}
           <div class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3">
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
@@ -167,17 +167,17 @@
                   </div>
                 {/each}
               {/if}
-              {#if fedBrainRun}
+              {#if fedWorkerRun}
                 <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-white px-2 py-1.5">
                   <div class="flex items-center justify-between gap-2">
                     <span class="inline-flex min-w-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
-                      <BrainCircuit size={10} />
-                      {fedBrainRun.role || fedBrainRun.agentKind || 'brain'}
+                      <Cpu size={10} />
+                      {fedWorkerRun.role || fedWorkerRun.agentKind || 'worker'}
                     </span>
-                    <Badge tone={statusTone(fedBrainRun.status)}>{fedBrainRun.status}</Badge>
+                    <Badge tone={statusTone(fedWorkerRun.status)}>{fedWorkerRun.status}</Badge>
                   </div>
                   <p class="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--color-ink-soft)]">
-                    {fedBrainRun.summary || fedBrainRun.model || shortId(fedBrainRun.id)}
+                    {fedWorkerRun.summary || fedWorkerRun.model || shortId(fedWorkerRun.id)}
                   </p>
                 </div>
               {/if}
@@ -221,7 +221,7 @@
             {#if direction.provenanceJson}
               <details class="mt-2 rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-white px-2 py-1.5">
                 <summary class="cursor-pointer font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
-                  Basis · {directionCounts(fedPressures, fedSignals, fedEvidence, fedBrainRun)}
+                  Basis · {directionCounts(fedPressures, fedSignals, fedEvidence, fedWorkerRun)}
                 </summary>
                 <div class="mt-1 grid gap-1">
                   {#each jsonEntries(direction.provenanceJson).slice(0, 5) as [key, value] (key)}
@@ -264,7 +264,7 @@
   </section>
 
   <section class="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-3">
-    <PanelTitle icon={BrainCircuit} title="Brain Queue" />
+    <PanelTitle icon={Cpu} title="Worker Queue" />
     <div class="mt-3 grid gap-2">
       {#each recentWorkItems as item (item.id)}
         <div class="rounded-[var(--radius-sm)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-2">
@@ -284,9 +284,9 @@
         </p>
       {/each}
     </div>
-    {#if recentBrainRuns.length}
+    {#if recentWorkerRuns.length}
       <div class="mt-3 border-t border-[var(--color-border)] pt-3">
-        {#each recentBrainRuns.slice(0, 4) as run (run.id)}
+        {#each recentWorkerRuns.slice(0, 4) as run (run.id)}
           <div class="mb-1.5 flex items-center justify-between gap-2 text-[11px] last:mb-0">
             <span class="truncate text-[var(--color-muted)]">{run.role || shortId(run.id)}</span>
             <Badge tone={statusTone(run.status)}>{run.status}</Badge>

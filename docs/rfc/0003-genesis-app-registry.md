@@ -227,16 +227,17 @@ regime A (in-process, microsecond-scale).
 
 | What | Where |
 |---|---|
-| App source bytes (specs, WASM, policies, manifest) | git repos in temper-git — both in the operator's local kernel (working copy) and in the commons kernel (canonical) |
+| App source bytes (specs, WASM, policies, manifest) | Genesis app versions in the commons kernel. Local working copies are authoring scratch space only; platform repo `os-apps/` folders are bootstrap/dev/test fixtures, not production catalogs or mirrors. |
 | `App` row (name, owner, exports, manifest digest) | temper-git entity table in the kernel that owns it |
 | `Lineage` row (parent, mutations) | same |
 | `Closure` row (resolved dep graph by hash) | same |
 | Running app instance data (e.g., katagami's actual posts) | private to the operator's kernel; never leaves |
 | `Owner` row (account, public key, contact) | commons kernel only |
 
-GitHub demoted to **optional backup mirror.** The commons kernel is
-the canonical source. Operators can configure their TemperPaw to mirror
-to GitHub for redundancy, but the registry doesn't depend on it.
+GitHub and platform repositories are **not app-source mirrors** for production
+Temper apps. They can hold platform code, worker code, docs, tests,
+bootstrap seeds, and pinned Genesis references. The commons kernel remains the
+canonical source of app bytes and lineage.
 
 ---
 

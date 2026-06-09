@@ -1,0 +1,41 @@
+[automaton]
+name = "WorkItemReceipt"
+states = ["Open", "SucceededRouted", "FailedRouted"]
+initial = "Open"
+allow_indefinite_states = ["SucceededRouted", "FailedRouted"]
+
+[[action]]
+name = "RouteSucceededWorkItem"
+kind = "input"
+from = ["Open"]
+to = "SucceededRouted"
+effect = [{ type = "trigger", name = "work_item_succeeded" }]
+params = ["WorkItemId", "Role", "TargetEntityType", "TargetEntityId", "WorkerRunId", "ResultJson", "EvidenceArtifactId", "Summary", "CorrelationJson"]
+hint = "Record a terminal shared WorkItem success and route it into Directed Evolution domain state."
+
+[[action.triggers]]
+name = "work_item_succeeded"
+kind = "wasm"
+module = "work_item_result_router"
+
+[action.triggers.config]
+temper_api_url = "{secret:temper_api_url}"
+temper_public_api_url = "{secret:temper_public_api_url}"
+
+[[action]]
+name = "RouteFailedWorkItem"
+kind = "input"
+from = ["Open"]
+to = "FailedRouted"
+effect = [{ type = "trigger", name = "work_item_failed" }]
+params = ["WorkItemId", "Role", "TargetEntityType", "TargetEntityId", "WorkerRunId", "FailureReason", "EvidenceArtifactId", "CorrelationJson"]
+hint = "Record a terminal shared WorkItem failure and route it into Directed Evolution domain state."
+
+[[action.triggers]]
+name = "work_item_failed"
+kind = "wasm"
+module = "work_item_result_router"
+
+[action.triggers.config]
+temper_api_url = "{secret:temper_api_url}"
+temper_public_api_url = "{secret:temper_public_api_url}"

@@ -50,7 +50,7 @@ export type EvolutionPressure = EntityBase & {
   summary: string;
   signalIds: string[];
   evidenceArtifactId: string;
-  brainRunId: string;
+  workerRunId: string;
   directionId: string;
 };
 
@@ -64,7 +64,7 @@ export type EvolutionDirection = EntityBase & {
   autonomyLane: string;
   proposedAdaptationGoal: string;
   proposedViabilityConstraints: string[];
-  brainRunId: string;
+  workerRunId: string;
   episodeId: string;
   selectionNotes: string;
 };
@@ -117,7 +117,9 @@ export type EvolutionVariant = EntityBase & {
   branchRef: string;
   runtimeRef: string;
   summary: string;
-  brainRunId: string;
+  changedFiles: string[];
+  diffPatch: string;
+  workerRunId: string;
   workItemId: string;
   eliminationRuleId: string;
   stageResultId: string;
@@ -148,7 +150,7 @@ export type EvolutionPromotion = EntityBase & {
 export type EvolutionAdaptationGoal = EntityBase & {
   episodeId: string;
   goalStatement: string;
-  createdByBrainRunId: string;
+  createdByWorkerRunId: string;
   humanNotes: string;
 };
 
@@ -156,7 +158,7 @@ export type EvolutionViabilityConstraint = EntityBase & {
   episodeId: string;
   constraintStatement: string;
   constraintKind: string;
-  createdByBrainRunId: string;
+  createdByWorkerRunId: string;
   reason: string;
 };
 
@@ -166,7 +168,7 @@ export type EvolutionSelectionPressure = EntityBase & {
   metricIds: string[];
   eliminationRuleIds: string[];
   scoringRuleIds: string[];
-  createdByBrainRunId: string;
+  createdByWorkerRunId: string;
 };
 
 export type EvolutionSelectionProtocol = EntityBase & {
@@ -177,7 +179,7 @@ export type EvolutionSelectionProtocol = EntityBase & {
   scoringRuleIds: string[];
   evaluatorRef: string;
   decisionPolicy: string;
-  createdByBrainRunId: string;
+  createdByWorkerRunId: string;
   frozenBy: string;
   reason: string;
 };
@@ -187,7 +189,7 @@ export type EvolutionEliminationRule = EntityBase & {
   ruleStatement: string;
   metricIds: string[];
   thresholdJson: string;
-  createdByBrainRunId: string;
+  createdByWorkerRunId: string;
   reason: string;
 };
 
@@ -196,7 +198,7 @@ export type EvolutionScoringRule = EntityBase & {
   ruleStatement: string;
   metricIds: string[];
   weight: string;
-  createdByBrainRunId: string;
+  createdByWorkerRunId: string;
   reason: string;
 };
 
@@ -279,7 +281,8 @@ export type EvolutionMutation = EntityBase & {
   summary: string;
   changedFiles: string[];
   diffRef: string;
-  brainRunId: string;
+  diffPatch: string;
+  workerRunId: string;
   reason: string;
 };
 
@@ -338,13 +341,13 @@ export type EvolutionWorkItem = EntityBase & {
   outputSchemaRef: string;
   correlationJson: string;
   workerId: string;
-  brainRunId: string;
+  workerRunId: string;
   resultJson: string;
   summary: string;
   failureReason: string;
 };
 
-export type EvolutionBrainRun = EntityBase & {
+export type EvolutionWorkerRun = EntityBase & {
   role: string;
   workItemId: string;
   agentKind: string;
@@ -382,6 +385,6 @@ export type DirectedEvolutionSnapshot = {
   trials: EvolutionTrial[];
   autonomyPolicies: EvolutionAutonomyPolicy[];
   workItems: EvolutionWorkItem[];
-  brainRuns: EvolutionBrainRun[];
+  workerRuns: EvolutionWorkerRun[];
   warnings: LoadWarning[];
 };
