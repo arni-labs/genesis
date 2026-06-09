@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use std::time::Instant;
-use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp};
+use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp, streaming_call};
 use temper_wasm_sdk::prelude::*;
 use tg_wire::{ObjectKind, PackEmitter, SidebandWriter, encode_into, flush};
 
@@ -44,7 +44,18 @@ temper_module! {
         if http.method == "POST" && path.ends_with("/git-upload-pack") {
             return match serve_upload_pack(&ctx, &http) {
                 Ok(value) => Ok(value),
-                Err(error) => respond_upload_pack_error(&http, &error),
+                Err(error) => {
+                    let _ = ctx.log_structured(
+                        "error",
+                        "Genesis git upload-pack failed",
+                        &json!({
+                            "error": error,
+                            "owner": http.params.get("owner").cloned().unwrap_or_default(),
+                            "repo": http.params.get("repo").cloned().unwrap_or_default(),
+                        }),
+                    );
+                    respond_upload_pack_error(&http, &error)
+                }
             };
         }
         respond_text(&http, 404, "text/plain", "no upload-pack route matches")
@@ -105,6 +116,7 @@ const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const READ_CHUNK: usize = 16 * 1024;
 const MAX_CACHED_OBJECT_BYTES: usize = 128 * 1024 * 1024;
 const PREFETCH_PAGE_SIZE: usize = 20;
+const HTTP_STREAM_READ_CHUNK_BYTES: usize = 64 * 1024;
 
 fn respond_upload_pack_error(http: &InboundHttp, error: &str) -> Result<Value, String> {
     http.submit_response_head(
@@ -676,7 +688,7 @@ fn fetch_object_body(
         return Ok(body.clone());
     }
 
-    if let Some(cached) = fetch_cached_object_body(ctx, blob_endpoint, repo_id, sha)? {
+    if let Some(cached) = fetch_cached_object_body(blob_endpoint, repo_id, sha)? {
         return Ok(cached);
     }
 
@@ -742,7 +754,6 @@ fn fetch_object_body(
 }
 
 fn fetch_cached_object_body(
-    ctx: &Context,
     blob_endpoint: &str,
     repo_id: &str,
     sha: &str,
@@ -751,20 +762,15 @@ fn fetch_cached_object_body(
         "{}/git-objects/{repo_id}/{sha}.b64",
         blob_endpoint.trim_end_matches('/')
     );
-    let response = ctx
-        .http_call("GET", &url, &[], "")
-        .map_err(|e| format!("object-cache GET {sha}: {e}"))?;
-    if response.status == 404 {
+    let (status, body) = streaming_get(&url, &[], &format!("object-cache GET {sha}"))?;
+    if status == 404 {
         return Ok(None);
     }
-    if !(200..300).contains(&response.status) {
-        return Err(format!(
-            "object-cache GET {sha} returned HTTP {}",
-            response.status
-        ));
+    if !(200..300).contains(&status) {
+        return Err(format!("object-cache GET {sha} returned HTTP {status}"));
     }
     let body = B64
-        .decode(response.body.trim())
+        .decode(String::from_utf8_lossy(&body).trim())
         .map_err(|e| format!("object-cache GET {sha} base64 decode: {e}"))?;
     if body.len() > MAX_CACHED_OBJECT_BYTES {
         return Err(format!(
@@ -807,7 +813,7 @@ fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
 }
 
 fn resolve_field_value(
-    ctx: &Context,
+    _ctx: &Context,
     principal: &Principal,
     api_base: &str,
     value: &serde_json::Value,
@@ -823,16 +829,55 @@ fn resolve_field_value(
         "{}/_internal/blobs/{blob_key}",
         api_base.trim_end_matches('/')
     );
-    let response = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("field-overflow GET {blob_key}: {e}"))?;
-    if !(200..300).contains(&response.status) {
+    let outbound_headers = principal.outbound_headers();
+    let header_refs: Vec<(&str, &str)> = outbound_headers
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    let (status, body) = streaming_get(
+        &url,
+        &header_refs,
+        &format!("field-overflow GET {blob_key}"),
+    )?;
+    if !(200..300).contains(&status) {
         return Err(format!(
-            "field-overflow GET {blob_key} returned HTTP {}",
-            response.status
+            "field-overflow GET {blob_key} returned HTTP {status}"
         ));
     }
-    serde_json::from_str(&response.body).map_err(|e| format!("field-overflow {blob_key} json: {e}"))
+    let body =
+        String::from_utf8(body).map_err(|e| format!("field-overflow GET {blob_key} utf8: {e}"))?;
+    serde_json::from_str(&body).map_err(|e| format!("field-overflow {blob_key} json: {e}"))
+}
+
+fn streaming_get(
+    url: &str,
+    headers: &[(&str, &str)],
+    label: &str,
+) -> Result<(u16, Vec<u8>), String> {
+    let (request_body, mut response_body, response_head) =
+        streaming_call("GET", url, headers).map_err(|e| format!("{label} stream begin: {e}"))?;
+    request_body
+        .finish()
+        .map_err(|e| format!("{label} request close: {e}"))?;
+    let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
+    if !(200..300).contains(&head.status) {
+        let _ = response_body.close();
+        return Ok((head.status, Vec::new()));
+    }
+
+    let mut out = Vec::new();
+    let mut buf = alloc::vec![0u8; HTTP_STREAM_READ_CHUNK_BYTES];
+    loop {
+        let Some(n) = response_body
+            .read_next_chunk(&mut buf)
+            .map_err(|e| format!("{label} response body: {e}"))?
+        else {
+            break;
+        };
+        out.extend_from_slice(&buf[..n]);
+    }
+    let _ = response_body.close();
+    Ok((head.status, out))
 }
 
 fn field_overflow_blob_key(value: &serde_json::Value) -> Result<Option<String>, String> {
