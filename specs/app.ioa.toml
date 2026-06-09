@@ -126,7 +126,7 @@ name = "Install"
 kind = "Composite"
 from = ["Active"]
 to = "Active"
-params = ["TargetTenant", "AppRef", "Installer"]
+params = ["TargetTenant", "AppRef", "Installer", "FollowPolicy"]
 hint = "Install this pinned Genesis app into a Temper tenant. The spec records AppInstallation; the kernel materializes bytes only after this action succeeds."
 
 [[action.triggers]]

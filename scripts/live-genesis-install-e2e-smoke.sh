@@ -300,13 +300,13 @@ TOOL_TENANT="paw-tool-${RUN_ID}"
 CLI_TENANT="paw-cli-${RUN_ID}"
 for target in "$ODATA_TENANT" "$TOOL_TENANT"; do
   post_json "$TENANT" "/tdata/Apps('${APP_ID}')/App.Install?await_integration=true" \
-    "{\"TargetTenant\":$(json_escape "$target"),\"AppRef\":$(json_escape "$APP_REF"),\"Installer\":$(json_escape "$target")}" \
+    "{\"TargetTenant\":$(json_escape "$target"),\"AppRef\":$(json_escape "$APP_REF"),\"Installer\":$(json_escape "$target"),\"FollowPolicy\":\"pinned\"}" \
     "$TMP_DIR/install-${target}.json"
   create_note_in_tenant "$target" "installed via ${target}"
 done
 
 printf 'Installing %s through temper install\n' "$APP_REF"
-run_temper_cli install "$APP_REF" --tenant "$CLI_TENANT" --url "$BASE_URL" --installer cli-e2e > "$TMP_DIR/cli-install.log" 2>&1
+run_temper_cli install "$APP_REF" --tenant "$CLI_TENANT" --url "$BASE_URL" --installer cli-e2e --follow-policy pinned > "$TMP_DIR/cli-install.log" 2>&1
 create_note_in_tenant "$CLI_TENANT" "installed via cli"
 
 get_json "$TENANT" "/tdata/AppInstallations" "$TMP_DIR/installations.json"
@@ -317,6 +317,13 @@ const installed = rows.filter((r) => (r.fields?.Status || r.status) === "Install
 if (installed.length < 3) {
   console.error(`expected at least 3 installed AppInstallation rows, got ${installed.length}`);
   process.exit(1);
+}
+for (const row of installed) {
+  const followPolicy = row.fields?.FollowPolicy || row.FollowPolicy;
+  if (followPolicy && followPolicy !== "pinned") {
+    console.error(`expected pinned install follow policy, got ${followPolicy}`);
+    process.exit(1);
+  }
 }
 ' "$TMP_DIR/installations.json"
 

@@ -25,6 +25,12 @@ initial = ""
 query_indexed = true
 
 [[state]]
+name = "FollowPolicy"
+type = "string"
+initial = "pinned"
+query_indexed = true
+
+[[state]]
 name = "TargetTenant"
 type = "string"
 initial = ""
@@ -65,7 +71,7 @@ name = "Create"
 kind = "input"
 from = ["Pending"]
 to = "Pending"
-params = ["AppId", "AppRef", "VersionHash", "TargetTenant", "ClosureId", "Installer", "Message", "CreatedAt"]
+params = ["AppId", "AppRef", "VersionHash", "FollowPolicy", "TargetTenant", "ClosureId", "Installer", "Message", "CreatedAt"]
 hint = "Record that a spec-owned Genesis app installation has been requested."
 
 [[action]]
