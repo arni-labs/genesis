@@ -145,6 +145,7 @@ fn run_install(ctx: &Context) -> Result<Value, String> {
         });
     let version_hash =
         app_ref_version_hash(&app_ref).unwrap_or_else(|| app.latest_version_hash.clone());
+    let follow_policy = normalize_follow_policy(params.follow_policy.as_deref())?;
     let installation_id = installation_id(&app.id, &target_tenant, &version_hash);
     let sub_writes = vec![json!({
         "entity_type": "AppInstallation",
@@ -154,6 +155,7 @@ fn run_install(ctx: &Context) -> Result<Value, String> {
             "AppId": app.id,
             "AppRef": app_ref,
             "VersionHash": version_hash,
+            "FollowPolicy": follow_policy,
             "TargetTenant": target_tenant,
             "ClosureId": "",
             "Installer": params.installer.unwrap_or_else(|| "unknown".to_string()),
@@ -182,8 +184,12 @@ struct RegisterParams {
 impl RegisterParams {
     fn from_value(value: &Value) -> Result<Self, String> {
         Ok(Self {
-            name: read_required_string_for(value, "Name", "App.RegisterNewApp")?,
-            repository_id: read_required_string_for(value, "RepositoryId", "App.RegisterNewApp")?,
+            name: read_required_string_for(value, "Name", "Temper.Git.RegisterNewApp")?,
+            repository_id: read_required_string_for(
+                value,
+                "RepositoryId",
+                "Temper.Git.RegisterNewApp",
+            )?,
             description: read_string(value, "Description").unwrap_or_default(),
             exports: read_string(value, "Exports").unwrap_or_else(|| "{}".to_string()),
             visibility: read_string(value, "Visibility").unwrap_or_else(|| "public".to_string()),
@@ -223,6 +229,7 @@ struct InstallParams {
     target_tenant: Option<String>,
     app_ref: Option<String>,
     installer: Option<String>,
+    follow_policy: Option<String>,
 }
 
 impl InstallParams {
@@ -232,15 +239,31 @@ impl InstallParams {
                 .or_else(|| read_string(value, "tenant")),
             app_ref: read_string(value, "AppRef"),
             installer: read_string(value, "Installer"),
+            follow_policy: read_string(value, "FollowPolicy")
+                .or_else(|| read_string(value, "follow_policy")),
         })
     }
+}
+
+fn normalize_follow_policy(raw: Option<&str>) -> Result<String, String> {
+    let normalized = raw.unwrap_or("").trim().to_ascii_lowercase();
+    if normalized.is_empty() || normalized == "pinned" {
+        return Ok("pinned".to_string());
+    }
+    if normalized == "follow_latest" || normalized == "follow-latest" {
+        return Ok("follow_latest".to_string());
+    }
+    Err(format!(
+        "FollowPolicy must be 'pinned' or 'follow_latest', got '{}'",
+        raw.unwrap_or("")
+    ))
 }
 
 impl PublishParams {
     fn from_value(value: &Value) -> Result<Self, String> {
         Ok(Self {
-            new_hash: read_required_string_for(value, "NewHash", "App.PublishNewVersion")?,
-            ref_name: read_required_string_for(value, "RefName", "App.PublishNewVersion")?,
+            new_hash: read_required_string_for(value, "NewHash", "Temper.Git.PublishNewVersion")?,
+            ref_name: read_required_string_for(value, "RefName", "Temper.Git.PublishNewVersion")?,
         })
     }
 }
@@ -1151,7 +1174,8 @@ mod tests {
         ctx.trigger_params = json!({
             "TargetTenant": "tenant-a",
             "AppRef": "acme/notes@1111111111111111111111111111111111111111",
-            "Installer": "temperpaw"
+            "Installer": "temperpaw",
+            "FollowPolicy": "follow_latest"
         });
         ctx.entity_state = json!({
             "fields": {
@@ -1181,6 +1205,7 @@ mod tests {
             writes[0]["params"]["VersionHash"],
             "1111111111111111111111111111111111111111"
         );
+        assert_eq!(writes[0]["params"]["FollowPolicy"], "follow_latest");
     }
 
     #[test]

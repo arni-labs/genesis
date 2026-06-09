@@ -1,10 +1,12 @@
 import type {
+  AppInstallation,
   AppFilesSnapshot,
   ClaimOwnerInput,
   Closure,
   EntityRow,
   GitBlob,
   GitCommit,
+  GitRef,
   GitTree,
   Lineage,
   LoadWarning,
@@ -22,8 +24,10 @@ type CollectionName =
   | 'Owners'
   | 'Lineages'
   | 'Closures'
+  | 'AppInstallations'
   | 'Commits'
   | 'Trees'
+  | 'Refs'
   | 'Blobs';
 
 type Principal = {
@@ -158,11 +162,12 @@ async function loadCollection<T>(
 }
 
 export async function loadRegistrySnapshot(): Promise<RegistrySnapshot> {
-  const [apps, owners, lineages, closures] = await Promise.all([
+  const [apps, owners, lineages, closures, installations] = await Promise.all([
     loadCollection('Apps', normalizeApp),
     loadCollection('Owners', normalizeOwner),
     loadCollection('Lineages', normalizeLineage),
-    loadCollection('Closures', normalizeClosure)
+    loadCollection('Closures', normalizeClosure),
+    loadCollection('AppInstallations', normalizeAppInstallation)
   ]);
 
   return {
@@ -170,9 +175,14 @@ export async function loadRegistrySnapshot(): Promise<RegistrySnapshot> {
     owners: owners.value,
     lineages: lineages.value,
     closures: closures.value,
-    warnings: [apps.warning, owners.warning, lineages.warning, closures.warning].filter(
-      Boolean
-    ) as LoadWarning[]
+    installations: installations.value,
+    warnings: [
+      apps.warning,
+      owners.warning,
+      lineages.warning,
+      closures.warning,
+      installations.warning
+    ].filter(Boolean) as LoadWarning[]
   };
 }
 
@@ -212,8 +222,13 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
       appId: app.id,
       repositoryId: app.repositoryId,
       commitHash: app.latestVersionHash,
+      repoHeadHash: '',
+      repoHeadRef: '',
+      repoHeadKind: '',
+      latestMatchesRepoHead: false,
       commit: null,
       versions: [],
+      refs: [],
       files: []
     };
   }
@@ -222,16 +237,19 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     `RepositoryId eq '${app.repositoryId.replace(/'/g, "''")}'`
   );
   const query = `$filter=${repositoryFilter}&$top=5000`;
-  const [commitRows, treeRows, blobRows] = await Promise.all([
+  const [commitRows, treeRows, blobRows, refRows] = await Promise.all([
     listCollection('Commits', query),
     listCollection('Trees', query),
-    listCollection('Blobs', query)
+    listCollection('Blobs', query),
+    listCollection('Refs', query).catch(() => [] as EntityRow[])
   ]);
 
   const commits = commitRows.map(normalizeCommit);
   const versions = orderCommitsForLatest(commits, app.latestVersionHash);
   const trees = treeRows.map(normalizeTree);
   const blobs = blobRows.map(normalizeBlob);
+  const refs = refRows.map(normalizeRef).filter((item) => item.status !== 'Deleted');
+  const repoHead = defaultRepositoryHead(refs);
   const commit =
     commits.find((item) => item.id === app.latestVersionHash) ??
     commits.find((item) => item.treeSha) ??
@@ -241,8 +259,13 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     appId: app.id,
     repositoryId: app.repositoryId,
     commitHash: app.latestVersionHash,
+    repoHeadHash: repoHead?.targetCommitSha ?? '',
+    repoHeadRef: repoHead?.name ?? '',
+    repoHeadKind: repoHead?.kind ?? '',
+    latestMatchesRepoHead: Boolean(repoHead?.targetCommitSha && repoHead.targetCommitSha === app.latestVersionHash),
     commit,
     versions,
+    refs,
     files: commit ? buildRepositoryFiles(commit.treeSha, trees, blobs) : []
   };
 }
@@ -390,6 +413,24 @@ function normalizeClosure(row: EntityRow): Closure {
   };
 }
 
+function normalizeAppInstallation(row: EntityRow): AppInstallation {
+  return {
+    id: stringField(row, 'Id'),
+    appId: stringField(row, 'AppId'),
+    appRef: stringField(row, 'AppRef'),
+    versionHash: stringField(row, 'VersionHash'),
+    followPolicy: stringField(row, 'FollowPolicy') || 'pinned',
+    targetTenant: stringField(row, 'TargetTenant'),
+    closureId: stringField(row, 'ClosureId'),
+    installer: stringField(row, 'Installer'),
+    message: stringField(row, 'Message'),
+    status: stringField(row, 'Status') || 'Pending',
+    createdAt: stringField(row, 'CreatedAt'),
+    installedAt: stringField(row, 'InstalledAt'),
+    raw: row
+  };
+}
+
 function normalizeCommit(row: EntityRow): GitCommit {
   return {
     id: stateStringField(row, 'Id'),
@@ -400,6 +441,19 @@ function normalizeCommit(row: EntityRow): GitCommit {
     committer: stateStringField(row, 'Committer'),
     message: stateStringField(row, 'Message'),
     createdAt: stateStringField(row, 'CreatedAt'),
+    raw: row
+  };
+}
+
+function normalizeRef(row: EntityRow): GitRef {
+  return {
+    id: stateStringField(row, 'Id'),
+    repositoryId: stateStringField(row, 'RepositoryId'),
+    name: stateStringField(row, 'Name'),
+    targetCommitSha: stateStringField(row, 'TargetCommitSha'),
+    kind: stateStringField(row, 'Kind') || 'branch',
+    status: stateStringField(row, 'Status') || 'Active',
+    updatedAt: stateStringField(row, 'UpdatedAt'),
     raw: row
   };
 }
@@ -422,6 +476,17 @@ function normalizeBlob(row: EntityRow): GitBlob {
     createdAt: stateStringField(row, 'CreatedAt'),
     raw: row
   };
+}
+
+function defaultRepositoryHead(refs: GitRef[]): GitRef | null {
+  return (
+    refs.find((item) => item.name === 'refs/heads/main') ??
+    refs.find((item) => item.name === 'main') ??
+    refs.find((item) => item.name.startsWith('refs/heads/')) ??
+    refs.find((item) => item.kind === 'branch') ??
+    refs[0] ??
+    null
+  );
 }
 
 function orderCommitsForLatest(commits: GitCommit[], latestHash: string): GitCommit[] {
