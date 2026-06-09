@@ -53,6 +53,17 @@ export type GitBlob = {
   raw: EntityRow;
 };
 
+export type GitRef = {
+  id: string;
+  repositoryId: string;
+  name: string;
+  targetCommitSha: string;
+  kind: string;
+  status: string;
+  updatedAt: string;
+  raw: EntityRow;
+};
+
 export type RepositoryFile = {
   path: string;
   name: string;
@@ -69,8 +80,13 @@ export type AppFilesSnapshot = {
   appId: string;
   repositoryId: string;
   commitHash: string;
+  repoHeadHash: string;
+  repoHeadRef: string;
+  repoHeadKind: string;
+  latestMatchesRepoHead: boolean;
   commit: GitCommit | null;
   versions: GitCommit[];
+  refs: GitRef[];
   files: RepositoryFile[];
 };
 
@@ -112,11 +128,28 @@ export type Closure = {
   raw: EntityRow;
 };
 
+export type AppInstallation = {
+  id: string;
+  appId: string;
+  appRef: string;
+  versionHash: string;
+  followPolicy: string;
+  targetTenant: string;
+  closureId: string;
+  installer: string;
+  message: string;
+  status: string;
+  createdAt: string;
+  installedAt: string;
+  raw: EntityRow;
+};
+
 export type RegistrySnapshot = {
   apps: RegistryApp[];
   owners: Owner[];
   lineages: Lineage[];
   closures: Closure[];
+  installations: AppInstallation[];
   warnings: LoadWarning[];
 };
 

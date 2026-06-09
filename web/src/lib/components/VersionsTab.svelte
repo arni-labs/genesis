@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Copy, GitCommitHorizontal, PackageCheck } from '@lucide/svelte';
+  import { Copy, GitBranch, GitCommitHorizontal, PackageCheck } from '@lucide/svelte';
   import { IconButton } from '$lib/components/ui';
-  import type { GitCommit, RegistryApp } from '$lib/types';
+  import type { AppFilesSnapshot, GitCommit, RegistryApp } from '$lib/types';
 
   type VersionInstallCommands = {
     appRef: string;
@@ -12,6 +12,7 @@
 
   type VersionsTabProps = {
     app: RegistryApp;
+    snapshot: AppFilesSnapshot | null;
     versions: GitCommit[];
     selectedHash: string;
     loading: boolean;
@@ -25,6 +26,7 @@
 
   let {
     app,
+    snapshot,
     versions,
     selectedHash,
     loading,
@@ -39,6 +41,9 @@
   const selectedVersion = $derived(
     versions.find((version) => version.id === selectedHash) ?? versions[0] ?? null
   );
+  const repoHeadHash = $derived(snapshot?.repoHeadHash ?? '');
+  const repoHeadRef = $derived(snapshot?.repoHeadRef ?? 'refs/heads/main');
+  const promotionPending = $derived(Boolean(repoHeadHash && repoHeadHash !== app.latestVersionHash));
 
   function parents(commit: GitCommit): string[] {
     const value = commit.parentShas.trim();
@@ -73,12 +78,18 @@
 
 <div class="grid gap-3 px-3 pb-3 pt-3">
   <div
-    class="grid grid-cols-1 gap-0 divide-y divide-[var(--color-border)] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+    class="grid grid-cols-1 gap-0 divide-y divide-[var(--color-border)] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white sm:grid-cols-4 sm:divide-x sm:divide-y-0"
   >
     <div class="px-3 py-2">
       <p class="v-eyebrow">Latest</p>
       <p class="mt-0.5 truncate font-mono text-[12px] text-[var(--color-ink)]">
         {shortHash(app.latestVersionHash, 18)}
+      </p>
+    </div>
+    <div class="px-3 py-2">
+      <p class="v-eyebrow">Repo head</p>
+      <p class="mt-0.5 truncate font-mono text-[12px] text-[var(--color-ink)]">
+        {repoHeadHash ? shortHash(repoHeadHash, 18) : 'not projected'}
       </p>
     </div>
     <div class="px-3 py-2">
@@ -94,6 +105,15 @@
       </p>
     </div>
   </div>
+
+  {#if promotionPending}
+    <div class="flex items-start gap-2 rounded-[var(--radius-md)] border border-[var(--color-warning)]/40 bg-[rgba(235,180,32,0.12)] px-3 py-2 font-sans text-[12px] text-[#604000]">
+      <GitBranch size={13} class="mt-[1px] shrink-0" />
+      <span>
+        {repoHeadRef}@{shortHash(repoHeadHash, 16)} is pushed, but Genesis latest is still {shortHash(app.latestVersionHash, 16)}.
+      </span>
+    </div>
+  {/if}
 
   <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)]">
     <div class="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white">

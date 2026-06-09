@@ -9,6 +9,7 @@ type EntityRow = {
 const parentHash = '1111111111111111111111111111111111111111';
 const childHash = '2222222222222222222222222222222222222222';
 const oldChildHash = '5555555555555555555555555555555555555555';
+const newerChildRefHash = '7777777777777777777777777777777777777777';
 const parentTreeHash = '3333333333333333333333333333333333333333';
 const childTreeHash = '4444444444444444444444444444444444444444';
 const oldChildTreeHash = '6666666666666666666666666666666666666666';
@@ -97,6 +98,38 @@ const closures = [
     ResolverVersion: '1.0',
     ResolvedAt: '2026-05-19T08:05:00Z',
     ResolvedBy: 'playwright-regression'
+  })
+];
+
+const refs = [
+  row('Ref', 'ref-rp-team-kernel-core-main', 'Active', {
+    RepositoryId: 'rp-team-kernel-core',
+    Name: 'refs/heads/main',
+    TargetCommitSha: parentHash,
+    Kind: 'branch',
+    UpdatedAt: '2026-05-19T08:01:00Z'
+  }),
+  row('Ref', 'ref-rp-alice-notes-main', 'Active', {
+    RepositoryId: 'rp-alice-notes',
+    Name: 'refs/heads/main',
+    TargetCommitSha: newerChildRefHash,
+    Kind: 'branch',
+    UpdatedAt: '2026-05-19T08:06:00Z'
+  })
+];
+
+const installations = [
+  row('AppInstallation', 'install-alice-notes-live', 'Installed', {
+    AppId: 'app-alice-notes',
+    AppRef: `alice/alice-notes@${childHash}`,
+    VersionHash: childHash,
+    FollowPolicy: 'pinned',
+    TargetTenant: 'live',
+    ClosureId: 'cl-test-realpack',
+    Installer: 'playwright-regression',
+    Message: 'Installed pinned fixture for registry provenance.',
+    CreatedAt: '2026-05-19T08:06:00Z',
+    InstalledAt: '2026-05-19T08:07:00Z'
   })
 ];
 
@@ -650,6 +683,9 @@ async function mockOData(page: Page) {
   await page.route('**/tdata/Closures', async (route) => {
     await route.fulfill({ json: { value: closures } });
   });
+  await page.route('**/tdata/AppInstallations', async (route) => {
+    await route.fulfill({ json: { value: installations } });
+  });
   await page.route('**/tdata/Owners', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as Record<string, unknown>;
@@ -684,6 +720,9 @@ async function mockOData(page: Page) {
   });
   await page.route('**/tdata/Blobs*', async (route) => {
     await route.fulfill({ json: { value: blobs } });
+  });
+  await page.route('**/tdata/Refs*', async (route) => {
+    await route.fulfill({ json: { value: refs } });
   });
 
   for (const collection of Object.keys(directedCollections)) {
@@ -741,6 +780,10 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await page.getByRole('tab', { name: 'Versions' }).click();
   const versionsPanel = page.getByRole('tabpanel', { name: 'Versions' });
   await expect(page.getByText('Version Chain')).toBeVisible();
+  await expect(versionsPanel.getByText('Repo head')).toBeVisible();
+  await expect(
+    versionsPanel.getByText(/is pushed, but Genesis latest is still/)
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: /add notes app/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /initial notes app/ })).toBeVisible();
   await expect(versionsPanel.getByText(`alice/alice-notes@${childHash}`, { exact: true })).toBeVisible();
@@ -749,6 +792,10 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
 
   await page.getByRole('tab', { name: 'Overview' }).click();
   await expect(page.getByText('Alice', { exact: true })).toBeVisible();
+  await expect(page.getByText('Runtime provenance')).toBeVisible();
+  await expect(page.getByText('live', { exact: true })).toBeVisible();
+  await expect(page.getByText('pinned', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Repo head .* is newer than Genesis latest/)).toBeVisible();
   await expect(page.getByText('cl-test-realpack')).toBeVisible();
   await expect(page.getByText(/kernel-core:/)).toBeVisible();
 
@@ -764,12 +811,17 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await expect(
     installPanel.getByText(`/tdata/Apps('app-alice-notes')/App.Install`)
   ).toBeVisible();
+  await expect(installPanel.getByText('"FollowPolicy":"pinned"')).toBeVisible();
   await expect(
-    installPanel.getByText(`temper install alice/alice-notes@${childHash} --tenant default --url`)
+    installPanel.getByText(
+      `temper install alice/alice-notes@${childHash} --tenant default --url`
+    )
   ).toBeVisible();
+  await expect(installPanel.getByText('--follow-policy pinned')).toBeVisible();
   await expect(
     installPanel.getByText(`temper.install_app({"app_ref":"alice/alice-notes@${childHash}"`)
   ).toBeVisible();
+  await expect(installPanel.getByText('"follow_policy":"pinned"')).toBeVisible();
   await expect(installPanel.getByText('git clone')).toBeVisible();
 
   await page.goto('/');

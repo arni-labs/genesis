@@ -20,6 +20,7 @@
   } from '$lib/registry';
   import { parseJsonList, parseJsonMap } from '$lib/api';
   import type {
+    AppInstallation,
     AppFilesSnapshot,
     Closure,
     Lineage,
@@ -58,6 +59,7 @@
   $: owners = (state.snapshot?.owners ?? []) as Owner[];
   $: lineages = (state.snapshot?.lineages ?? []) as Lineage[];
   $: closures = (state.snapshot?.closures ?? []) as Closure[];
+  $: installations = (state.snapshot?.installations ?? []) as AppInstallation[];
 
   $: appId = decodeURIComponent($page.params.id ?? '');
   $: selectedApp = findAppById(state.snapshot, appId);
@@ -82,6 +84,11 @@
           closure.root === selectedApp.latestVersionHash ||
           closure.root === selectedApp.repositoryId
       )
+    : [];
+  $: selectedInstallations = selectedApp
+    ? installations
+        .filter((installation) => installationMatchesApp(installation, selectedApp))
+        .sort((a, b) => installationTimestamp(b) - installationTimestamp(a))
     : [];
   $: exportsList = selectedApp ? parseJsonList(selectedApp.exports) : [];
   $: mutationList = selectedLineage ? parseJsonList(selectedLineage.mutations) : [];
@@ -252,17 +259,18 @@
     const body = JSON.stringify({
       TargetTenant: 'default',
       AppRef: ref,
-      Installer: 'manual'
+      Installer: 'manual',
+      FollowPolicy: 'pinned'
     });
     return `curl -sS -X POST "${registryApiBase()}/tdata/Apps('${escapedODataId(app.id)}')/App.Install" -H "Content-Type: application/json" -H "X-Tenant-Id: default" -d '${body}'`;
   }
 
   function cliInstallCommand(app: RegistryApp, hash = ''): string {
-    return `temper install ${appRef(app, hash)} --tenant default --url ${registryApiBase()}`;
+    return `temper install ${appRef(app, hash)} --tenant default --url ${registryApiBase()} --follow-policy pinned`;
   }
 
   function temperPawInstallCommand(app: RegistryApp, hash = ''): string {
-    return `temper.install_app({"app_ref":"${appRef(app, hash)}","tenant":"default","registry_url":"${registryApiBase()}"})`;
+    return `temper.install_app({"app_ref":"${appRef(app, hash)}","tenant":"default","registry_url":"${registryApiBase()}","follow_policy":"pinned"})`;
   }
 
   function cloneCommand(app: RegistryApp): string {
@@ -271,6 +279,16 @@
 
   function closureEntries(closure: Closure): Array<[string, string]> {
     return parseJsonMap(closure.resolved);
+  }
+
+  function installationMatchesApp(installation: AppInstallation, app: RegistryApp): boolean {
+    const appPrefix = `${app.ownerId}/${app.name}@`;
+    return installation.appId === app.id || installation.appRef.startsWith(appPrefix);
+  }
+
+  function installationTimestamp(installation: AppInstallation): number {
+    const parsed = Date.parse(installation.installedAt || installation.createdAt || '');
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   function entriesForPath(entries: RepositoryFile[], path: string): RepositoryFile[] {
@@ -406,6 +424,7 @@
           <BitsTabs.Content value="versions">
             <VersionsTab
               app={selectedApp}
+              snapshot={fileSnapshot}
               versions={versionEntries}
               selectedHash={selectedVersionHash || selectedApp.latestVersionHash}
               loading={filesLoading}
@@ -425,6 +444,8 @@
           <BitsTabs.Content value="overview">
             <OverviewTab
               app={selectedApp}
+              snapshot={fileSnapshot}
+              installations={selectedInstallations}
               {ownerLabel}
               {exportsList}
               closures={selectedClosures}
