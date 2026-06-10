@@ -43,9 +43,15 @@ temper_side_effect_module! {
         }
 
         match (role.as_str(), target_entity_type.as_str()) {
-            ("observer", "Signal") => {
-                route_observer(&ctx, &base_url, &headers, &target_entity_id, &fields, &output)
-            }
+            ("observer", "Signal" | "Organism") => route_observer(
+                &ctx,
+                &base_url,
+                &headers,
+                &target_entity_type,
+                &target_entity_id,
+                &fields,
+                &output,
+            ),
             ("variant_generator", "Generation") => route_variant_generator(
                 &ctx,
                 &base_url,
