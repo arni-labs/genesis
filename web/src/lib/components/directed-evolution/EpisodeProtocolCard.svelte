@@ -40,7 +40,7 @@
     <div class="grid grid-cols-[84px_minmax(0,1fr)] gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5">
       <span class="font-mono uppercase tracking-[0.08em] text-[var(--color-muted)]">director</span>
       <span class="min-w-0 truncate text-[var(--color-ink-soft)]">
-        {selectedEpisode.plannedBy || selectedEpisode.startedBy || 'brain pending'}
+        {selectedEpisode.plannedBy || selectedEpisode.startedBy || 'worker pending'}
       </span>
     </div>
     <div class="grid grid-cols-[84px_minmax(0,1fr)] gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5">

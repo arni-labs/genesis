@@ -15,6 +15,7 @@ const childTreeHash = '4444444444444444444444444444444444444444';
 const oldChildTreeHash = '6666666666666666666666666666666666666666';
 const readmeBlobHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const manifestBlobHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const oldManifestBlobHash = 'cccccccccccccccccccccccccccccccccccccccc';
 
 function row(entityType: string, id: string, status: string, fields: Record<string, unknown>): EntityRow {
   return {
@@ -193,7 +194,8 @@ const trees = [
   row('Tree', oldChildTreeHash, 'Durable', {
     RepositoryId: 'rp-alice-notes',
     CanonicalBytes: treeCanonical([
-      { mode: '100644', name: 'README.md', sha: readmeBlobHash }
+      { mode: '100644', name: 'README.md', sha: readmeBlobHash },
+      { mode: '100644', name: 'app.toml', sha: oldManifestBlobHash }
     ])
   })
 ];
@@ -206,8 +208,13 @@ const blobs = [
   }),
   row('Blob', manifestBlobHash, 'Durable', {
     RepositoryId: 'rp-alice-notes',
-    Content: base64('name = "alice-notes"\n'),
+    Content: base64('name = "alice-notes"\nkind = "temper-native"\n'),
     Size: 21
+  }),
+  row('Blob', oldManifestBlobHash, 'Durable', {
+    RepositoryId: 'rp-alice-notes',
+    Content: base64('name = "old-notes"\n'),
+    Size: 19
   })
 ];
 
@@ -265,7 +272,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       SignalIdsJson: JSON.stringify(['sig-unmet-citation']),
       EvidenceArtifactId: 'evidence-signal-citation',
       DirectionId: 'direction-citation-memory',
-      BrainRunId: 'brain-observer'
+      WorkerRunId: 'worker-observer'
     })
   ],
   Directions: [
@@ -277,13 +284,13 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       Summary: 'Add citation memory so generated answers retain source context across follow-up turns.',
       ProvenanceJson: JSON.stringify({
         signal: 'sig-unmet-citation',
-        observer: 'brain-observer',
+        observer: 'worker-observer',
         basis: 'simulated users repeatedly asked where the answer came from'
       }),
       AutonomyLane: 'growth-human-gated',
       ProposedAdaptationGoal: 'Follow-up answers keep a visible source trail.',
       ProposedViabilityConstraintsJson: JSON.stringify(['Do not reduce answer correctness']),
-      BrainRunId: 'brain-observer'
+      WorkerRunId: 'worker-observer'
     }),
     row('Direction', 'direction-comparison-preview', 'Approved', {
       OrganismId: 'org-agent-answers',
@@ -363,7 +370,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       AppRef: 'arni-labs/agent-answers@variant-a',
       RuntimeRef: 'agent-answers-a.local',
       Summary: 'Adds a source memory panel',
-      BrainRunId: 'brain-variant-a',
+      WorkerRunId: 'worker-variant-a',
       MutationId: 'mutation-memory-panel',
       PromotionId: 'promotion-citation-memory'
     }),
@@ -442,7 +449,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
     row('AdaptationGoal', 'goal-citation-memory', 'Active', {
       EpisodeId: 'episode-citation-memory',
       GoalStatement: 'Follow-up answers keep a visible source trail.',
-      CreatedByBrainRunId: 'brain-direction'
+      CreatedByWorkerRunId: 'worker-direction'
     })
   ],
   ViabilityConstraints: [
@@ -568,21 +575,27 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
         'apps/agent-answers/specs/model.csdl.xml'
       ]),
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-a',
-      BrainRunId: 'brain-variant-a'
+      DiffPatch:
+        'diff --git a/apps/agent-answers/specs/answer.ioa.toml b/apps/agent-answers/specs/answer.ioa.toml\n@@ source memory @@\n+state = \"SourceMemoryPanel\"\n',
+      WorkerRunId: 'worker-variant-a'
     }),
     row('Mutation', 'mutation-hidden-citations', 'Recorded', {
       VariantId: 'variant-hidden-citations',
       Summary: 'Stores citations invisibly without showing a source trail.',
       ChangedFilesJson: JSON.stringify(['apps/agent-answers/specs/answer.ioa.toml']),
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-b',
-      BrainRunId: 'brain-variant-b'
+      DiffPatch:
+        'diff --git a/apps/agent-answers/specs/answer.ioa.toml b/apps/agent-answers/specs/answer.ioa.toml\n@@ hidden citations @@\n+state = \"HiddenCitationStore\"\n',
+      WorkerRunId: 'worker-variant-b'
     }),
     row('Mutation', 'mutation-flat-sources', 'Recorded', {
       VariantId: 'variant-flat-sources',
       Summary: 'Adds a flat source note without preserving follow-up relationship.',
       ChangedFilesJson: JSON.stringify(['apps/agent-answers/APP.md']),
       DiffRef: 'git://arni-labs/agent-answers/compare/seed-parent...variant-flat',
-      BrainRunId: 'brain-variant-flat'
+      DiffPatch:
+        'diff --git a/apps/agent-answers/APP.md b/apps/agent-answers/APP.md\n@@ flat sources @@\n+Flat source note\n',
+      WorkerRunId: 'worker-variant-flat'
     })
   ],
   Measurements: [
@@ -621,6 +634,139 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       }),
       TargetEntityType: 'Variant',
       TargetEntityId: 'variant-hidden-citations'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-datadog', 'Linked', {
+      ArtifactKind: 'datadog_measurement',
+      Uri: 'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory',
+      Summary: 'Datadog observer measured the Agent Answers runtime request stream for this Directed Evolution episode.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        role: 'observer',
+        datadog: {
+          role: 'observer',
+          join_fields: {
+            episode_id: 'episode-citation-memory',
+            role: 'observer'
+          }
+        },
+        output: {
+          evidence_scope: [
+            {
+              surface: 'logs',
+              role: 'observer',
+              query:
+                'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory',
+              time_window: 'now-15m to now',
+              result_count: 3,
+              interpretation:
+                'Runtime request logs were present for the Agent Answers Directed Evolution episode.',
+              zero_result_meaning: 'failure',
+              datadog_url:
+                'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory'
+            }
+          ]
+        }
+      }),
+      Query:
+        'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory',
+      TimeWindow: 'now-15m to now',
+      ResultCount: '3',
+      Interpretation:
+        'Observer runtime request logs were present for the Agent Answers Directed Evolution episode.',
+      ZeroResultMeaning: 'failure',
+      EvidenceProvenance: 'datadog-measured',
+      Role: 'observer',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-telemetry-evaluator', 'Linked', {
+      ArtifactKind: 'datadog_measurement',
+      Uri: 'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory%20role%3Atelemetry_evaluator',
+      Summary:
+        'Datadog telemetry evaluator measured Directed Evolution proof-run events for the Agent Answers episode.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        datadog: {
+          role: 'telemetry_evaluator',
+          join_fields: {
+            episode_id: 'episode-citation-memory',
+            role: 'telemetry_evaluator'
+          }
+        },
+        output: {
+          evaluator_role: 'telemetry_evaluator',
+          evidence_scope: [
+            {
+              surface: 'logs',
+              role: 'telemetry_evaluator',
+              query:
+                'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator',
+              time_window: 'now-15m to now',
+              result_count: 2,
+              interpretation:
+                'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.',
+              zero_result_meaning: 'failure',
+              datadog_url:
+                'https://app.datadoghq.com/logs?query=directed_evolution.episode_id%3Aepisode-citation-memory%20role%3Atelemetry_evaluator'
+            }
+          ]
+        }
+      }),
+      Query:
+        'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator',
+      TimeWindow: 'now-15m to now',
+      ResultCount: '2',
+      Interpretation:
+        'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.',
+      ZeroResultMeaning: 'failure',
+      EvidenceProvenance: 'datadog-measured',
+      Role: 'telemetry_evaluator',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-precheck-legacy', 'Linked', {
+      ArtifactKind: 'proof_precheck',
+      Uri: 'https://github.com/nerdsane/temperpaw/actions/runs/26850000000',
+      Summary: 'Legacy aggregate-only precheck should not satisfy the Agent Answers proof gate.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        proof_kind: 'legacy Agent Answers Directed Evolution proof precheck',
+        status: 'ready',
+        no_mutation: true,
+        would_create_live_episode: true,
+        evidence_requirements: {
+          mandatory_datadog_evidence: true
+        }
+      }),
+      EvidenceProvenance: 'precheck-ready',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
+    }),
+    row('EvidenceArtifact', 'evidence-live-proof-precheck', 'Linked', {
+      ArtifactKind: 'proof_precheck',
+      Uri: 'https://github.com/nerdsane/temperpaw/actions/runs/26861004390',
+      Summary: 'No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.',
+      CorrelationJson: JSON.stringify({
+        episode_id: 'episode-citation-memory',
+        proof_kind: 'live Agent Answers Directed Evolution proof precheck',
+        status: 'ready',
+        no_mutation: true,
+        would_create_live_episode: true,
+        worker: {
+          start_local_worker: '0',
+          execution_enabled: '1'
+        },
+        evidence_requirements: {
+          mandatory_datadog_evidence: true,
+          mandatory_datadog_observer_evidence: true,
+          mandatory_datadog_telemetry_evaluator_evidence: true,
+          mandatory_terminal_success: true,
+          production_datadog_query_secrets_confirmed: true
+        }
+      }),
+      EvidenceProvenance: 'precheck-ready',
+      TargetEntityType: 'Episode',
+      TargetEntityId: 'episode-citation-memory'
     })
   ],
   Trials: [
@@ -628,7 +774,7 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       EpisodeId: 'episode-citation-memory',
       GenerationId: 'generation-citation-memory-1',
       VariantId: 'variant-memory-panel',
-      SimulatedUserBrainRunId: 'brain-sim-user-a',
+      SimulatedUserWorkerRunId: 'worker-sim-user-a',
       RuntimeRef: 'agent-answers-a.local',
       GoalJson: JSON.stringify({ goal: 'ask follow-up source question' })
     })
@@ -651,13 +797,30 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       TargetEntityId: 'generation-citation-memory-1'
     })
   ],
-  BrainRuns: [
-    row('BrainRun', 'brain-observer', 'Succeeded', {
+  WorkerRuns: [
+    row('WorkerRun', 'worker-observer', 'Succeeded', {
       Role: 'observer',
       WorkItemId: 'work-observer',
       AgentKind: 'codex',
       Model: 'codex-cli',
       Summary: 'Observed unmet follow-up citation intent.'
+    }),
+    row('WorkerRun', 'worker-variant-a', 'Succeeded', {
+      Role: 'variant_generator',
+      WorkItemId: 'work-variant-a',
+      AgentKind: 'codex',
+      Model: 'codex-cli',
+      Summary: 'Generated Agent Answers citation-memory variant.'
+    })
+  ],
+  WorkerAgents: [
+    row('WorkerAgent', 'worker-agent-local-codex', 'Idle', {
+      AgentKind: 'codex',
+      RuntimeRef: 'local-codex',
+      ActiveWorkItemId: '',
+      LastHeartbeatAt: '2026-05-19T08:09:00Z',
+      CapabilitiesJson: JSON.stringify(['local_codex', 'datadog_query', 'runtime_probe']),
+      Summary: 'Local worker available for Directed Evolution source discovery.'
     })
   ]
 };
@@ -775,7 +938,7 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await expect(page.getByRole('heading', { name: 'alice-notes' })).toBeVisible();
   await expect(page.getByRole('button', { name: /app.toml/ })).toBeVisible();
   await page.getByRole('button', { name: /app.toml/ }).click();
-  await expect(page.getByText('name = "alice-notes"')).toBeVisible();
+  await expect(page.getByText('name = "alice-notes"', { exact: true })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Versions' }).click();
   const versionsPanel = page.getByRole('tabpanel', { name: 'Versions' });
@@ -784,6 +947,10 @@ test('renders browse, lineage, closures, and Genesis install surfaces without br
   await expect(
     versionsPanel.getByText(/is pushed, but Genesis latest is still/)
   ).toBeVisible();
+  await expect(page.getByText('Commit Changes')).toBeVisible();
+  await expect(versionsPanel.getByText('@@ change 1 @@')).toBeVisible();
+  await expect(versionsPanel.getByText('+name = "alice-notes"')).toBeVisible();
+  await expect(versionsPanel.getByText('+kind = "temper-native"')).toBeVisible();
   await expect(page.getByRole('button', { name: /add notes app/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /initial notes app/ })).toBeVisible();
   await expect(versionsPanel.getByText(`alice/alice-notes@${childHash}`, { exact: true })).toBeVisible();
@@ -853,6 +1020,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await page.goto('/genesis/evolution');
 
   await expect(page.getByRole('heading', { name: 'Agent Answers' })).toBeVisible();
+  await page.getByRole('button', { name: /Open episode Answer citations that survive follow-up/ }).click();
   await expect(
     page.getByRole('heading', { name: 'Answer citations that survive follow-up' }).first()
   ).toBeVisible();
@@ -880,11 +1048,53 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await expect(page.getByText('Materializing')).toBeVisible();
   await expect(page.getByText('Failed Installs')).toBeVisible();
   await expect(page.getByText('Hot-loaded').first()).toBeVisible();
+  await expect(page.getByText('+state = "SourceMemoryPanel"').first()).toBeVisible();
   await expect(
     page.getByText('temper://tenant/default/app/arni-labs/agent-answers@citation-winner', {
       exact: true
     })
   ).toBeVisible();
+  const liveProofGate = page.getByLabel('Agent Answers live proof gate');
+  await expect(liveProofGate.getByText('Agent Answers Proof Gate')).toBeVisible();
+  await expect(liveProofGate.getByText('directed-evolution-agent-answers-live-proof.sh')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog measured evidence')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog observer evidence')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog telemetry evaluator evidence')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog observer', { exact: true })).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog telemetry evaluator', { exact: true })).toBeVisible();
+  await expect(
+    liveProofGate.getByText('Observer runtime request logs were present for the Agent Answers Directed Evolution episode.')
+  ).toBeVisible();
+  await expect(
+    liveProofGate.getByText(
+      'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.'
+    )
+  ).toBeVisible();
+  await expect(
+    liveProofGate.getByText(
+      'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory'
+    )
+  ).toBeVisible();
+  await expect(
+    liveProofGate.getByText(
+      'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator'
+    )
+  ).toBeVisible();
+  await expect(liveProofGate.getByText('No-mutation precheck', { exact: true }).first()).toBeVisible();
+  await expect(
+    liveProofGate.getByText('No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.')
+  ).toBeVisible();
+  await expect(
+    liveProofGate.getByText('Legacy aggregate-only precheck should not satisfy the Agent Answers proof gate.')
+  ).toHaveCount(0);
+  await expect(liveProofGate.getByText('Observer evidence required')).toBeVisible();
+  await expect(liveProofGate.getByText('Telemetry evaluator required')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog evidence required')).toBeVisible();
+  await expect(liveProofGate.getByText('Datadog query secrets confirmed')).toBeVisible();
+  await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toHaveCount(2);
+  const terminalSuccessGate = liveProofGate.locator('div').filter({ hasText: 'Terminal success' }).first();
+  await expect(terminalSuccessGate.getByText('Terminal success')).toBeVisible();
+  await expect(terminalSuccessGate.getByText('pending', { exact: true })).toBeVisible();
   await expect(page.getByText('Answer citations that survive follow-up').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Directions' }).click();
@@ -898,9 +1108,10 @@ test('renders live Directed Evolution mission control and dispatches real contro
   await page.getByRole('button', { name: 'Organism Genealogy' }).click({ force: true });
   await expect(page.getByText('Specimen History')).toBeVisible();
   await expect(page.getByText('current parent', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('mutation edge')).toBeVisible();
+  await expect(page.getByText('promoted change')).toBeVisible();
   await expect(page.getByText('winner variant')).toBeVisible();
   await expect(page.getByText('Winner: Adds a source memory panel')).toBeVisible();
+  await expect(page.getByText('+state = "SourceMemoryPanel"').first()).toBeVisible();
   await expect(page.getByText('Citation memory evolved from the seed organism')).toBeVisible();
 
   await page.getByRole('button', { name: 'Direction Detail' }).click();
@@ -927,7 +1138,7 @@ test('renders live Directed Evolution mission control and dispatches real contro
 
   await page.getByRole('button', { name: 'Inspect' }).first().click();
   await expect(page.getByText('App/spec diff')).toBeVisible();
-  await expect(page.getByText('apps/agent-answers/specs/answer.ioa.toml')).toBeVisible();
+  await expect(page.getByText('apps/agent-answers/specs/answer.ioa.toml').first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'Datadog', exact: true })).toHaveAttribute(
     'href',
     /app\.datadoghq\.com\/logs/

@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Temper.PawOrchestration" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+
+      <EntityType Name="HeartbeatRun">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="AgentId" Type="Edm.String"/>
+        <Property Name="OrgId" Type="Edm.String"/>
+        <Property Name="WakeReason" Type="Edm.String"/>
+        <Property Name="TokensConsumed" Type="Edm.Int64"/>
+        <Property Name="CostCents" Type="Edm.Int64"/>
+        <Property Name="DurationMs" Type="Edm.Int64"/>
+        <Property Name="BudgetApproved" Type="Edm.Boolean"/>
+        <Property Name="HasResult" Type="Edm.Boolean"/>
+        <Property Name="TurnCount" Type="Edm.Int64"/>
+        <Property Name="MaxTurns" Type="Edm.Int64"/>
+        <Property Name="Checkpoint" Type="Edm.String"/>
+        <Property Name="ErrorMessage" Type="Edm.String"/>
+        <Property Name="AdapterType" Type="Edm.String"/>
+      </EntityType>
+
+      <EntityType Name="Organization">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="Name" Type="Edm.String"/>
+        <Property Name="Description" Type="Edm.String"/>
+        <Property Name="MemberCount" Type="Edm.Int64"/>
+        <Property Name="BudgetMonthlyCents" Type="Edm.Int64"/>
+        <Property Name="BudgetConsumedCents" Type="Edm.Int64"/>
+        <Property Name="ActiveRuns" Type="Edm.Int64"/>
+      </EntityType>
+
+      <EntityType Name="BudgetLedger">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="OrgId" Type="Edm.String"/>
+        <Property Name="AgentId" Type="Edm.String"/>
+        <Property Name="RunId" Type="Edm.String"/>
+        <Property Name="AmountCents" Type="Edm.String"/>
+        <Property Name="Tokens" Type="Edm.String"/>
+        <Property Name="Category" Type="Edm.String"/>
+      </EntityType>
+
+      <EntityType Name="WorkerProvider">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="ProviderKind" Type="Edm.String"/>
+        <Property Name="DisplayName" Type="Edm.String"/>
+        <Property Name="Capabilities" Type="Edm.String"/>
+        <Property Name="Enabled" Type="Edm.Boolean"/>
+        <Property Name="RiskCeiling" Type="Edm.String"/>
+        <Property Name="StatusSummary" Type="Edm.String"/>
+      </EntityType>
+
+      <EntityType Name="WorkerAgent">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="WorkerId" Type="Edm.String"/>
+        <Property Name="ProviderId" Type="Edm.String"/>
+        <Property Name="DisplayName" Type="Edm.String"/>
+        <Property Name="Capabilities" Type="Edm.String"/>
+        <Property Name="Host" Type="Edm.String"/>
+        <Property Name="WorktreeRoot" Type="Edm.String"/>
+        <Property Name="LastSeenAt" Type="Edm.String"/>
+        <Property Name="StatusSummary" Type="Edm.String"/>
+      </EntityType>
+
+      <EntityType Name="WorkItem">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="Claimed" Type="Edm.Boolean"/>
+        <Property Name="Role" Type="Edm.String"/>
+        <Property Name="TargetEntityType" Type="Edm.String"/>
+        <Property Name="TargetEntityId" Type="Edm.String"/>
+        <Property Name="PromptRef" Type="Edm.String"/>
+        <Property Name="ContextRef" Type="Edm.String"/>
+        <Property Name="OutputSchemaRef" Type="Edm.String"/>
+        <Property Name="CorrelationJson" Type="Edm.String"/>
+        <Property Name="RequiredCapabilities" Type="Edm.String"/>
+        <Property Name="Lane" Type="Edm.String"/>
+        <Property Name="ExclusiveKey" Type="Edm.String"/>
+        <Property Name="WorkerId" Type="Edm.String"/>
+        <Property Name="ClaimedBy" Type="Edm.String"/>
+        <Property Name="WorkerRunId" Type="Edm.String"/>
+        <Property Name="ResultJson" Type="Edm.String"/>
+        <Property Name="EvidenceArtifactId" Type="Edm.String"/>
+        <Property Name="Summary" Type="Edm.String"/>
+        <Property Name="FailureReason" Type="Edm.String"/>
+      </EntityType>
+
+      <EntityType Name="WorkerRun">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="Started" Type="Edm.Boolean"/>
+        <Property Name="Role" Type="Edm.String"/>
+        <Property Name="WorkItemId" Type="Edm.String"/>
+        <Property Name="WorkerId" Type="Edm.String"/>
+        <Property Name="ProviderId" Type="Edm.String"/>
+        <Property Name="AgentKind" Type="Edm.String"/>
+        <Property Name="Model" Type="Edm.String"/>
+        <Property Name="SessionId" Type="Edm.String"/>
+        <Property Name="ParentSessionId" Type="Edm.String"/>
+        <Property Name="CorrelationJson" Type="Edm.String"/>
+        <Property Name="OutputJson" Type="Edm.String"/>
+        <Property Name="EvidenceArtifactId" Type="Edm.String"/>
+        <Property Name="Summary" Type="Edm.String"/>
+        <Property Name="FailureReason" Type="Edm.String"/>
+      </EntityType>
+
+      <Action Name="Register" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerProvider"/>
+        <Parameter Name="provider_kind" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="display_name" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="capabilities" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="risk_ceiling" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="enabled" Type="Edm.Boolean" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerProvider"/>
+      </Action>
+
+      <Action Name="Activate" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerProvider"/>
+        <Parameter Name="status_summary" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerProvider"/>
+      </Action>
+
+      <Action Name="Disable" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerProvider"/>
+        <Parameter Name="status_summary" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerProvider"/>
+      </Action>
+
+      <Action Name="Register" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerAgent"/>
+        <Parameter Name="worker_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="provider_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="display_name" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="capabilities" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="host" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="worktree_root" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerAgent"/>
+      </Action>
+
+      <Action Name="Activate" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerAgent"/>
+        <Parameter Name="status_summary" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerAgent"/>
+      </Action>
+
+      <Action Name="ReportHeartbeat" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerAgent"/>
+        <Parameter Name="last_seen_at" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="status_summary" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="capabilities" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerAgent"/>
+      </Action>
+
+      <Action Name="MarkUnhealthy" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerAgent"/>
+        <Parameter Name="status_summary" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerAgent"/>
+      </Action>
+
+      <Action Name="Disable" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerAgent"/>
+        <Parameter Name="status_summary" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerAgent"/>
+      </Action>
+
+      <Action Name="QueueWorkItem" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkItem"/>
+        <Parameter Name="Role" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="TargetEntityType" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="TargetEntityId" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="PromptRef" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="ContextRef" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="OutputSchemaRef" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="CorrelationJson" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="RequiredCapabilities" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="Lane" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="ExclusiveKey" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkItem"/>
+      </Action>
+
+      <Action Name="ClaimWorkItem" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkItem"/>
+        <Parameter Name="WorkerId" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="ClaimedBy" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkItem"/>
+      </Action>
+
+      <Action Name="StartWorkItem" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkItem"/>
+        <Parameter Name="WorkerRunId" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkItem"/>
+      </Action>
+
+      <Action Name="SucceedWorkItem" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkItem"/>
+        <Parameter Name="ResultJson" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="EvidenceArtifactId" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="Summary" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkItem"/>
+      </Action>
+
+      <Action Name="FailWorkItem" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkItem"/>
+        <Parameter Name="FailureReason" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="EvidenceArtifactId" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkItem"/>
+      </Action>
+
+      <Action Name="CancelWorkItem" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkItem"/>
+        <Parameter Name="Reason" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkItem"/>
+      </Action>
+
+      <Action Name="StartWorkerRun" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerRun"/>
+        <Parameter Name="Role" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="WorkItemId" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="WorkerId" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="ProviderId" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="AgentKind" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="Model" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="SessionId" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="ParentSessionId" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="CorrelationJson" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerRun"/>
+      </Action>
+
+      <Action Name="SucceedWorkerRun" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerRun"/>
+        <Parameter Name="OutputJson" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="EvidenceArtifactId" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="Summary" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerRun"/>
+      </Action>
+
+      <Action Name="FailWorkerRun" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerRun"/>
+        <Parameter Name="FailureReason" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="EvidenceArtifactId" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerRun"/>
+      </Action>
+
+      <Action Name="CancelWorkerRun" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.WorkerRun"/>
+        <Parameter Name="Reason" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.WorkerRun"/>
+      </Action>
+
+      <Action Name="Schedule" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <Parameter Name="agent_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="org_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="wake_reason" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="max_turns" Type="Edm.Int64" Nullable="false"/>
+        <Parameter Name="adapter_type" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="ApproveBudget" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="CheckIn" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="StartExecution" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="RecordTurn" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <Parameter Name="input_tokens" Type="Edm.Int64" Nullable="false"/>
+        <Parameter Name="output_tokens" Type="Edm.Int64" Nullable="false"/>
+        <Parameter Name="cost_cents" Type="Edm.Int64" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="SaveCheckpoint" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <Parameter Name="checkpoint" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="RecordResult" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <Parameter Name="result" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="Complete" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="Fail" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <Parameter Name="error_message" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="Cancel" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.HeartbeatRun"/>
+        <ReturnType Type="Temper.PawOrchestration.HeartbeatRun"/>
+      </Action>
+
+      <Action Name="Configure" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <Parameter Name="name" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="description" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="budget_monthly_cents" Type="Edm.Int64" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="Activate" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="AddMember" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <Parameter Name="member_id" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="RemoveMember" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <Parameter Name="member_id" Type="Edm.String" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="RecordCost" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <Parameter Name="amount_cents" Type="Edm.Int64" Nullable="false"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="ResetBudgetCycle" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="Pause" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="Resume" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="Archive" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.Organization"/>
+        <ReturnType Type="Temper.PawOrchestration.Organization"/>
+      </Action>
+
+      <Action Name="Record" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.PawOrchestration.BudgetLedger"/>
+        <Parameter Name="org_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="agent_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="run_id" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="amount_cents" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="tokens" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="category" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.PawOrchestration.BudgetLedger"/>
+      </Action>
+
+      <EntityContainer Name="Service">
+        <EntitySet Name="WorkerProviders" EntityType="Temper.PawOrchestration.WorkerProvider"/>
+        <EntitySet Name="WorkerAgents" EntityType="Temper.PawOrchestration.WorkerAgent"/>
+        <EntitySet Name="WorkItems" EntityType="Temper.PawOrchestration.WorkItem"/>
+        <EntitySet Name="WorkerRuns" EntityType="Temper.PawOrchestration.WorkerRun"/>
+        <EntitySet Name="HeartbeatRuns" EntityType="Temper.PawOrchestration.HeartbeatRun"/>
+        <EntitySet Name="Organizations" EntityType="Temper.PawOrchestration.Organization"/>
+        <EntitySet Name="BudgetLedgers" EntityType="Temper.PawOrchestration.BudgetLedger"/>
+      </EntityContainer>
+
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

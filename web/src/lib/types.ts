@@ -76,6 +76,25 @@ export type RepositoryFile = {
   isBinary: boolean;
 };
 
+export type RepositoryDiffLine = {
+  kind: 'addition' | 'deletion' | 'context' | 'meta';
+  text: string;
+};
+
+export type RepositoryFileDiff = {
+  path: string;
+  status: 'added' | 'modified' | 'deleted';
+  additions: number;
+  deletions: number;
+  lines: RepositoryDiffLine[];
+};
+
+export type CommitDiff = {
+  commitHash: string;
+  parentHash: string;
+  files: RepositoryFileDiff[];
+};
+
 export type AppFilesSnapshot = {
   appId: string;
   repositoryId: string;
@@ -88,6 +107,7 @@ export type AppFilesSnapshot = {
   versions: GitCommit[];
   refs: GitRef[];
   files: RepositoryFile[];
+  diffs: CommitDiff[];
 };
 
 export type Owner = {
