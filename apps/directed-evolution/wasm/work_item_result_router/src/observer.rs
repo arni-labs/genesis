@@ -2,59 +2,73 @@ fn route_observer(
     ctx: &Context,
     base_url: &str,
     headers: &[(String, String)],
-    signal_id: &str,
+    target_entity_type: &str,
+    target_entity_id: &str,
     work_item_fields: &Value,
     output: &Value,
 ) -> Result<Value, String> {
+    let target = observer_route_target(
+        ctx,
+        base_url,
+        headers,
+        target_entity_type,
+        target_entity_id,
+        work_item_fields,
+        output,
+    )?;
     let actionable = lookup_bool_deep(output, &["actionable", "Actionable"]).unwrap_or(true);
     if !actionable {
         let reason = nonempty(
             lookup_string_deep(output, &["rationale", "reason", "summary"]),
-            "Observer worker marked the signal as not actionable.".to_string(),
+            "Observer worker marked the target as not actionable.".to_string(),
         );
-        post_directed_action(
-            ctx,
-            base_url,
-            headers,
-            "Signals",
-            signal_id,
-            "IgnoreSignal",
-            json!({ "Reason": reason }),
-        )?;
+        if let Some(signal_id) = target.signal_id.as_deref() {
+            post_directed_action(
+                ctx,
+                base_url,
+                headers,
+                "Signals",
+                signal_id,
+                "IgnoreSignal",
+                json!({ "Reason": reason }),
+            )?;
+        }
         return Ok(json!({
             "routed": "observer",
-            "signal_id": signal_id,
+            "target_entity_type": target.target_entity_type,
+            "target_entity_id": target.target_entity_id,
+            "signal_id": target.signal_id,
+            "organism_id": target.organism_id,
             "actionable": false,
         }));
     }
     if !datadog_evidence_satisfies_required_contract(output, "datadog-measured") {
-        post_directed_action(
-            ctx,
-            base_url,
-            headers,
-            "Signals",
-            signal_id,
-            "FailSignalObservation",
-            json!({
-                "error": "missing_datadog_evidence",
-                "error_message": "Observer output was actionable but did not include structured Datadog evidence with query, time window, result count, interpretation, zero-result meaning, and usable Datadog URL.",
-                "integration": "work_item_result_router",
-            }),
-        )?;
+        if let Some(signal_id) = target.signal_id.as_deref() {
+            post_directed_action(
+                ctx,
+                base_url,
+                headers,
+                "Signals",
+                signal_id,
+                "FailSignalObservation",
+                json!({
+                    "error": "missing_datadog_evidence",
+                    "error_message": "Observer output was actionable but did not include structured Datadog evidence with query, time window, result count, interpretation, zero-result meaning, and usable Datadog URL.",
+                    "integration": "work_item_result_router",
+                }),
+            )?;
+        }
         return Ok(json!({
             "routed": "observer",
-            "signal_id": signal_id,
+            "target_entity_type": target.target_entity_type,
+            "target_entity_id": target.target_entity_id,
+            "signal_id": target.signal_id,
+            "organism_id": target.organism_id,
             "actionable": true,
             "failed_closed": "missing_datadog_evidence",
         }));
     }
 
-    let signal = get_entity(ctx, base_url, headers, "Signals", signal_id)?;
-    let signal_fields = state_fields(&signal);
-    let organism_id = field_str(&signal_fields, &["OrganismId"]);
-    let signal_summary = field_str(&signal_fields, &["Summary"]);
-    let signal_kind = field_str(&signal_fields, &["SignalKind"]);
-    let signal_evidence_artifact_id = field_str(&signal_fields, &["EvidenceArtifactId"]);
     let worker_run_id = field_str(work_item_fields, &["WorkerRunId"]);
     let proposals = observer_direction_candidates(output);
     let mut routed = Vec::new();
@@ -62,11 +76,11 @@ fn route_observer(
     for (index, proposal) in proposals.iter().enumerate() {
         let pressure_class = nonempty(
             lookup_string_deep(proposal, &["pressure_class", "PressureClass"]),
-            signal_kind.clone(),
+            target.default_pressure_class.clone(),
         );
         let pressure_summary = nonempty(
             lookup_string_deep(proposal, &["pressure_summary", "summary", "rationale"]),
-            signal_summary.clone(),
+            target.default_summary.clone(),
         );
         let title = nonempty(
             lookup_string_deep(proposal, &["title", "Title"]),
@@ -113,11 +127,11 @@ fn route_observer(
             &pressure_id,
             "InferPressure",
             json!({
-                "OrganismId": organism_id,
+                "OrganismId": target.organism_id,
                 "PressureClass": pressure_class,
                 "Summary": pressure_summary,
-                "SignalIdsJson": json!([signal_id]).to_string(),
-                "EvidenceArtifactId": signal_evidence_artifact_id,
+                "SignalIdsJson": target.signal_ids_json(),
+                "EvidenceArtifactId": target.evidence_artifact_id,
                 "WorkerRunId": worker_run_id,
             }),
         )?;
@@ -129,13 +143,15 @@ fn route_observer(
             &direction_id,
             "ProposeDirection",
             json!({
-                "OrganismId": organism_id,
+                "OrganismId": target.organism_id,
                 "PressureIdsJson": json!([pressure_id]).to_string(),
                 "PressureClass": pressure_class,
                 "Title": title,
                 "Summary": direction_summary,
                 "ProvenanceJson": json!({
-                    "signal_id": signal_id,
+                    "target_entity_type": target.target_entity_type,
+                    "target_entity_id": target.target_entity_id,
+                    "signal_id": target.signal_id,
                     "pressure_id": pressure_id,
                     "observer_output": output,
                     "observer_candidate": proposal,
@@ -147,15 +163,17 @@ fn route_observer(
                 "WorkerRunId": worker_run_id,
             }),
         )?;
-        post_directed_action(
-            ctx,
-            base_url,
-            headers,
-            "Signals",
-            signal_id,
-            "LinkSignalToPressure",
-            json!({ "PressureId": pressure_id }),
-        )?;
+        if let Some(signal_id) = target.signal_id.as_deref() {
+            post_directed_action(
+                ctx,
+                base_url,
+                headers,
+                "Signals",
+                signal_id,
+                "LinkSignalToPressure",
+                json!({ "PressureId": pressure_id }),
+            )?;
+        }
         post_directed_action(
             ctx,
             base_url,
@@ -170,8 +188,8 @@ fn route_observer(
             base_url,
             headers,
             output,
-            &organism_id,
-            &organism_id,
+            &target.organism_id,
+            &target.organism_lookup_id,
             &direction_id,
             &pressure_class,
             &autonomy_lane,
@@ -189,10 +207,97 @@ fn route_observer(
 
     Ok(json!({
         "routed": "observer",
-        "signal_id": signal_id,
+        "target_entity_type": target.target_entity_type,
+        "target_entity_id": target.target_entity_id,
+        "signal_id": target.signal_id,
+        "organism_id": target.organism_id,
         "actionable": true,
         "directions": routed,
     }))
+}
+
+#[derive(Clone, Debug)]
+struct ObserverRouteTarget {
+    target_entity_type: String,
+    target_entity_id: String,
+    organism_id: String,
+    organism_lookup_id: String,
+    signal_id: Option<String>,
+    default_pressure_class: String,
+    default_summary: String,
+    evidence_artifact_id: String,
+}
+
+impl ObserverRouteTarget {
+    fn signal_ids_json(&self) -> String {
+        match self.signal_id.as_deref() {
+            Some(signal_id) if !signal_id.trim().is_empty() => json!([signal_id]).to_string(),
+            _ => json!([]).to_string(),
+        }
+    }
+}
+
+fn observer_route_target(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    target_entity_type: &str,
+    target_entity_id: &str,
+    work_item_fields: &Value,
+    output: &Value,
+) -> Result<ObserverRouteTarget, String> {
+    match target_entity_type {
+        "Signal" => {
+            let signal = get_entity(ctx, base_url, headers, "Signals", target_entity_id)?;
+            let signal_fields = state_fields(&signal);
+            let organism_id = field_str(&signal_fields, &["OrganismId"]);
+            Ok(ObserverRouteTarget {
+                target_entity_type: "Signal".to_string(),
+                target_entity_id: target_entity_id.to_string(),
+                organism_lookup_id: organism_id.clone(),
+                organism_id,
+                signal_id: Some(target_entity_id.to_string()),
+                default_pressure_class: field_str(&signal_fields, &["SignalKind"]),
+                default_summary: field_str(&signal_fields, &["Summary"]),
+                evidence_artifact_id: field_str(&signal_fields, &["EvidenceArtifactId"]),
+            })
+        }
+        "Organism" => Ok(observer_route_target_for_organism(
+            target_entity_id,
+            work_item_fields,
+            output,
+        )),
+        other => Err(format!(
+            "observer route does not support target entity type {other}"
+        )),
+    }
+}
+
+fn observer_route_target_for_organism(
+    organism_id: &str,
+    work_item_fields: &Value,
+    output: &Value,
+) -> ObserverRouteTarget {
+    let default_summary = nonempty(
+        lookup_string_deep(output, &["pressure_summary", "summary", "rationale"]),
+        nonempty(
+            field_str(work_item_fields, &["Summary"]),
+            "Observer found evidence-grounded pressure.".to_string(),
+        ),
+    );
+    ObserverRouteTarget {
+        target_entity_type: "Organism".to_string(),
+        target_entity_id: organism_id.to_string(),
+        organism_id: organism_id.to_string(),
+        organism_lookup_id: organism_id.to_string(),
+        signal_id: None,
+        default_pressure_class: nonempty(
+            lookup_string_deep(output, &["pressure_class", "PressureClass"]),
+            "observation".to_string(),
+        ),
+        default_summary,
+        evidence_artifact_id: field_str(work_item_fields, &["EvidenceArtifactId"]),
+    }
 }
 
 fn observer_direction_candidates(output: &Value) -> Vec<Value> {

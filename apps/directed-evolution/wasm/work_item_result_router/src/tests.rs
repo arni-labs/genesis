@@ -184,6 +184,50 @@ mod tests {
     }
 
     #[test]
+    fn organism_observer_target_routes_without_signal() {
+        let target = observer_route_target_for_organism(
+            "organism-agent-answers",
+            &json!({
+                "Summary": "Observer completed from source inventory.",
+                "EvidenceArtifactId": "evidence-1"
+            }),
+            &json!({
+                "summary": "Runtime usage showed acceptance friction.",
+                "pressure_class": "repair"
+            }),
+        );
+
+        assert_eq!(target.target_entity_type, "Organism");
+        assert_eq!(target.target_entity_id, "organism-agent-answers");
+        assert_eq!(target.organism_id, "organism-agent-answers");
+        assert_eq!(target.organism_lookup_id, "organism-agent-answers");
+        assert_eq!(target.signal_id, None);
+        assert_eq!(target.signal_ids_json(), "[]");
+        assert_eq!(target.default_pressure_class, "repair");
+        assert_eq!(
+            target.default_summary,
+            "Runtime usage showed acceptance friction."
+        );
+        assert_eq!(target.evidence_artifact_id, "evidence-1");
+    }
+
+    #[test]
+    fn organism_observer_target_falls_back_to_work_item_summary() {
+        let target = observer_route_target_for_organism(
+            "organism-agent-answers",
+            &json!({
+                "Summary": "Worker summary fallback.",
+                "EvidenceArtifactId": "evidence-2"
+            }),
+            &json!({}),
+        );
+
+        assert_eq!(target.default_pressure_class, "observation");
+        assert_eq!(target.default_summary, "Worker summary fallback.");
+        assert_eq!(target.signal_ids_json(), "[]");
+    }
+
+    #[test]
     fn metric_values_are_parsed_for_threshold_gates() {
         assert_eq!(
             metric_numeric_value(&json!({ "runtime_error_count": "2" }), "runtime_error_count"),
