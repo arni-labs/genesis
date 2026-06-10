@@ -27,6 +27,7 @@
     onRefresh: () => void;
     onCopy: (value: string, label: string) => void;
     onStartSimulatedUsers?: (input: { userCount: number; runsPerUser: number }) => Promise<number>;
+    onStartObserver?: () => Promise<string>;
   };
 
   let {
@@ -37,7 +38,8 @@
     missionControlHref,
     onRefresh,
     onCopy,
-    onStartSimulatedUsers
+    onStartSimulatedUsers,
+    onStartObserver
   }: Props = $props();
 
   let userCount = $state(3);
@@ -45,6 +47,9 @@
   let launching = $state(false);
   let launchError = $state('');
   let launchSummary = $state('');
+  let observing = $state(false);
+  let observeError = $state('');
+  let observeSummary = $state('');
 
   const activeWorkStatuses = new Set(['Queued', 'Claimed', 'Running']);
   const terminalRunStatuses = new Set(['Succeeded', 'Failed', 'Cancelled']);
@@ -85,6 +90,11 @@
     simulatedUserWorkItems.filter((item) => ['Failed', 'Cancelled'].includes(item.status))
   );
   let simulatedUserWorkItemIds = $derived(new Set(simulatedUserWorkItems.map((item) => item.id)));
+  let observerWorkItems = $derived(snapshot?.workItems.filter((item) => item.role === 'observer') ?? []);
+  let activeObserverWorkItems = $derived(
+    observerWorkItems.filter((item) => activeWorkStatuses.has(item.status))
+  );
+  let latestObserverWorkItem = $derived(observerWorkItems.slice(-1)[0] ?? null);
   let simulatedUserWorkerRuns = $derived(
     snapshot?.workerRuns.filter(
       (run) => run.role === 'simulated_user' || simulatedUserWorkItemIds.has(run.workItemId)
@@ -182,6 +192,9 @@
   let canLaunchSeedUsers = $derived(
     Boolean(onStartSimulatedUsers && organism && context.configured && context.runtimeBaseUrl)
   );
+  let canStartObserver = $derived(
+    Boolean(onStartObserver && organism && context.configured && context.runtimeBaseUrl)
+  );
   let hasEpisodeUserPlan = $derived(Boolean(latestEpisode || latestPlan));
   let runtimeLogsHref = $derived(
     datadogLogsHref(context.runtimeDatadogService, context.runtimeTenantId)
@@ -228,6 +241,21 @@
       launchError = error instanceof Error ? error.message : String(error);
     } finally {
       launching = false;
+    }
+  }
+
+  async function startObserver() {
+    if (!onStartObserver || !canStartObserver) return;
+    observing = true;
+    observeError = '';
+    observeSummary = '';
+    try {
+      const workItemId = await onStartObserver();
+      observeSummary = `Queued observer ${workItemId}.`;
+    } catch (error) {
+      observeError = error instanceof Error ? error.message : String(error);
+    } finally {
+      observing = false;
     }
   }
 
@@ -487,6 +515,53 @@
         {#if launchError}
           <p class="rounded-[var(--radius-xs)] border border-[var(--color-error)]/30 bg-[rgba(217,45,75,0.08)] px-2 py-1.5 text-[11.5px] text-[#7a1830]">
             {launchError}
+          </p>
+        {/if}
+      </div>
+    </section>
+
+    <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
+      <div class="border-b border-[var(--color-border)] px-3 py-2">
+        <div class="flex items-center justify-between gap-2">
+          <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+            Observer
+          </p>
+          <Badge tone={activeObserverWorkItems.length ? 'warning' : latestObserverWorkItem?.status === 'Succeeded' ? 'success' : latestObserverWorkItem?.status === 'Failed' ? 'danger' : 'neutral'} pixel={activeObserverWorkItems.length > 0}>
+            {activeObserverWorkItems.length ? 'Running' : latestObserverWorkItem?.status || 'Idle'}
+          </Badge>
+        </div>
+      </div>
+      <div class="grid gap-3 p-3">
+        <Button
+          variant="secondary"
+          size="md"
+          disabled={!canStartObserver || observing || activeObserverWorkItems.length > 0}
+          onclick={startObserver}
+          class="w-full"
+        >
+          <Activity size={13} />
+          {observing ? 'Queuing observer' : 'Observe available sources'}
+        </Button>
+
+        {#if latestObserverWorkItem}
+          <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+            <p class="truncate font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-muted)]">
+              {latestObserverWorkItem.id}
+            </p>
+            <p class="mt-1 line-clamp-3 text-[12px] leading-relaxed text-[var(--color-ink-soft)]">
+              {latestObserverWorkItem.summary || latestObserverWorkItem.failureReason || latestObserverWorkItem.status}
+            </p>
+          </div>
+        {/if}
+
+        {#if observeSummary}
+          <p class="rounded-[var(--radius-xs)] border border-[var(--color-success)]/30 bg-[rgba(34,197,94,0.08)] px-2 py-1.5 text-[11.5px] text-[#166534]">
+            {observeSummary}
+          </p>
+        {/if}
+        {#if observeError}
+          <p class="rounded-[var(--radius-xs)] border border-[var(--color-error)]/30 bg-[rgba(217,45,75,0.08)] px-2 py-1.5 text-[11.5px] text-[#7a1830]">
+            {observeError}
           </p>
         {/if}
       </div>
