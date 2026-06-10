@@ -1,8 +1,8 @@
 # Genesis (temper-git) — Agent Guide
 
-> Synchronized with [AGENTS.md](AGENTS.md) (Codex) — identical rules. When you
-> change one, mirror the other. Global rules live in `~/.claude/CLAUDE.md` /
-> `~/AGENTS.md`; this file adds what is Genesis-specific.
+> Synchronized with [CLAUDE.md](CLAUDE.md) (Claude Code) — identical rules. When you
+> change one, mirror the other. Global rules live in `~/AGENTS.md` /
+> `~/.claude/CLAUDE.md`; this file adds what is Genesis-specific.
 
 ## What you're working on
 
@@ -175,7 +175,7 @@ See [CODING_GUIDELINES.md](CODING_GUIDELINES.md) for the full list.
 - [docs/adr/0003-byte-exact-git-compat.md](docs/adr/0003-byte-exact-git-compat.md)
 - [docs/rfc/0001-architecture.md](docs/rfc/0001-architecture.md)
 - [docs/rfc/0002-push-and-clone.md](docs/rfc/0002-push-and-clone.md)
-- [temper/CLAUDE.md](temper/CLAUDE.md) — Temper kernel discipline we
+- [temper/AGENTS.md](temper/AGENTS.md) — Temper kernel discipline we
   inherit.
 - Git object format: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 - Git smart-HTTP: https://git-scm.com/docs/http-protocol
