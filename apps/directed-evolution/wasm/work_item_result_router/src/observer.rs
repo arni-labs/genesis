@@ -42,32 +42,8 @@ fn route_observer(
             "actionable": false,
         }));
     }
-    if !datadog_evidence_satisfies_required_contract(output, "datadog-measured") {
-        if let Some(signal_id) = target.signal_id.as_deref() {
-            post_directed_action(
-                ctx,
-                base_url,
-                headers,
-                "Signals",
-                signal_id,
-                "FailSignalObservation",
-                json!({
-                    "error": "missing_datadog_evidence",
-                    "error_message": "Observer output was actionable but did not include structured Datadog evidence with query, time window, result count, interpretation, zero-result meaning, and usable Datadog URL.",
-                    "integration": "work_item_result_router",
-                }),
-            )?;
-        }
-        return Ok(json!({
-            "routed": "observer",
-            "target_entity_type": target.target_entity_type,
-            "target_entity_id": target.target_entity_id,
-            "signal_id": target.signal_id,
-            "organism_id": target.organism_id,
-            "actionable": true,
-            "failed_closed": "missing_datadog_evidence",
-        }));
-    }
+    let datadog_evidence_satisfied =
+        datadog_evidence_satisfies_required_contract(output, "datadog-measured");
 
     let worker_run_id = field_str(work_item_fields, &["WorkerRunId"]);
     let proposals = observer_direction_candidates(output);
@@ -156,6 +132,7 @@ fn route_observer(
                     "observer_output": output,
                     "observer_candidate": proposal,
                     "candidate_index": index,
+                    "datadog_evidence_satisfied": datadog_evidence_satisfied,
                 }).to_string(),
                 "AutonomyLane": autonomy_lane,
                 "ProposedAdaptationGoal": proposed_adaptation_goal,
@@ -212,6 +189,7 @@ fn route_observer(
         "signal_id": target.signal_id,
         "organism_id": target.organism_id,
         "actionable": true,
+        "datadog_evidence_satisfied": datadog_evidence_satisfied,
         "directions": routed,
     }))
 }
