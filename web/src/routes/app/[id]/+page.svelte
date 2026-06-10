@@ -25,6 +25,7 @@
   } from '$lib/directedEvolutionContext';
   import {
     loadDirectedEvolutionSnapshot,
+    queueSeedObserver,
     queueSeedSimulatedUsers,
     type DirectedEvolutionSnapshot
   } from '$lib/directedEvolution';
@@ -251,6 +252,37 @@
     showToast(`Queued ${queued.length} simulated-user run${queued.length === 1 ? '' : 's'}`);
     await loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey, true);
     return queued.length;
+  }
+
+  async function startSeedObserver() {
+    if (!evolutionContext || !evolutionSnapshot) {
+      throw new Error('Directed Evolution state is not loaded yet.');
+    }
+    const organism =
+      evolutionSnapshot.organisms.find((item) => item.appRef === evolutionContext.seedAppRef) ??
+      evolutionSnapshot.organisms[0] ??
+      null;
+    if (!organism) {
+      throw new Error('No active seed organism is available for this app.');
+    }
+    const simulatedUserWorkItemIds = evolutionSnapshot.workItems
+      .filter((item) => item.role === 'simulated_user')
+      .map((item) => item.id);
+    const queued = await queueSeedObserver({
+      controlTenantId: evolutionContext.controlTenantId,
+      runtimeTenantId: evolutionContext.runtimeTenantId,
+      appId: evolutionContext.appId,
+      appLabel: evolutionContext.appLabel,
+      appRef: evolutionContext.seedAppRef,
+      organismId: organism.id,
+      runtimeBaseUrl: evolutionContext.runtimeBaseUrl,
+      runtimeAuthEnvVars: evolutionContext.runtimeAuthEnvVars,
+      runtimeDatadogService: evolutionContext.runtimeDatadogService,
+      simulatedUserWorkItemIds
+    });
+    showToast(`Queued observer ${queued.id}`);
+    await loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey, true);
+    return queued.id;
   }
 
   function refresh() {
@@ -576,6 +608,7 @@
                 onRefresh={refreshEvolution}
                 onCopy={copyText}
                 onStartSimulatedUsers={startSeedSimulatedUsers}
+                onStartObserver={startSeedObserver}
               />
             {/if}
           </BitsTabs.Content>

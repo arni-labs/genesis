@@ -274,6 +274,19 @@ export type QueueSeedSimulatedUsersInput = {
   runsPerUser: number;
 };
 
+export type QueueSeedObserverInput = {
+  controlTenantId: string;
+  runtimeTenantId: string;
+  appId: string;
+  appLabel: string;
+  appRef: string;
+  organismId: string;
+  runtimeBaseUrl: string;
+  runtimeAuthEnvVars: string[];
+  runtimeDatadogService: string;
+  simulatedUserWorkItemIds: string[];
+};
+
 export async function queueSeedSimulatedUsers(
   input: QueueSeedSimulatedUsersInput
 ): Promise<EvolutionWorkItem[]> {
@@ -350,6 +363,49 @@ export async function queueSeedSimulatedUsers(
   return queued;
 }
 
+export async function queueSeedObserver(input: QueueSeedObserverInput): Promise<EvolutionWorkItem> {
+  const workItem = await createEntity(
+    'WorkItems',
+    {},
+    { id: 'genesis-directed-evolution', kind: 'agent', agentType: 'human' },
+    input.controlTenantId
+  );
+  const workItemId = stringField(workItem, 'Id');
+  const prompt = seedObserverPrompt(input, workItemId);
+  const queuedRow = await pawAction(
+    'WorkItems',
+    workItemId,
+    'QueueWorkItem',
+    {
+      Role: 'observer',
+      TargetEntityType: 'Organism',
+      TargetEntityId: input.organismId,
+      PromptRef: `literal:${prompt}`,
+      ContextRef: `seed-observer:${input.runtimeTenantId}:${input.appId}`,
+      OutputSchemaRef: 'directed-evolution.observer.source-discovery.v1',
+      RequiredCapabilities: 'local_codex,datadog_query,runtime_probe',
+      Lane: 'observer',
+      ExclusiveKey: `observer:${input.runtimeTenantId}:${input.appId}`,
+      CorrelationJson: JSON.stringify({
+        phase: 'seed-observation',
+        observation_scope: 'all_available_sources',
+        app_id: input.appId,
+        app_ref: input.appRef,
+        organism_id: input.organismId,
+        runtime_tenant: input.runtimeTenantId,
+        runtime_base_url: input.runtimeBaseUrl,
+        runtime_ref: runtimeRef(input.runtimeTenantId, input.appRef),
+        runtime_datadog_service: input.runtimeDatadogService,
+        runtime_auth_env_vars: input.runtimeAuthEnvVars,
+        simulated_user_work_item_ids: input.simulatedUserWorkItemIds,
+        requested_by: 'genesis-directed-evolution'
+      })
+    },
+    input.controlTenantId
+  );
+  return normalizeWorkItem(queuedRow);
+}
+
 function directedAction(
   collection: string,
   id: string,
@@ -417,6 +473,20 @@ function seedObservationMetadata(
     'de.runtime_ref': runtimeRef(input.runtimeTenantId, input.appRef),
     'de.app_ref': input.appRef
   };
+}
+
+function seedObserverPrompt(input: QueueSeedObserverInput, workItemId: string): string {
+  return `Observe the ${input.appLabel} seed runtime and produce evidence-grounded candidate directions.
+ObserverWorkItemId: ${workItemId}
+RuntimeTenant: ${input.runtimeTenantId}
+RuntimeBase: ${input.runtimeBaseUrl}
+RuntimeRef: ${runtimeRef(input.runtimeTenantId, input.appRef)}
+AppRef: ${input.appRef}
+RuntimeDatadogService: ${input.runtimeDatadogService || 'unknown'}
+
+Discover and inspect all available sources for this app. Do not restrict yourself to a scripted query list. Start from the worker-provided observer source inventory, then inspect anything else accessible and relevant: Genesis WorkItems, WorkerRuns, EvidenceArtifacts, Signals, existing Directions, runtime OData metadata/state, app source or description files, Datadog logs/traces/metrics/monitors, trajectory records, and unmet-intent/friction outputs.
+
+Return directions only when evidence supports them. Include rejected interpretations and evidence_scope entries for sources read, sources with zero results, and important sources that were unavailable.`;
 }
 
 function seedSimulatedUserPrompt(
