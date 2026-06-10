@@ -812,6 +812,16 @@ const directedCollectionFixtures: Record<string, EntityRow[]> = {
       Model: 'codex-cli',
       Summary: 'Generated Agent Answers citation-memory variant.'
     })
+  ],
+  WorkerAgents: [
+    row('WorkerAgent', 'worker-agent-local-codex', 'Idle', {
+      AgentKind: 'codex',
+      RuntimeRef: 'local-codex',
+      ActiveWorkItemId: '',
+      LastHeartbeatAt: '2026-05-19T08:09:00Z',
+      CapabilitiesJson: JSON.stringify(['local_codex', 'datadog_query', 'runtime_probe']),
+      Summary: 'Local worker available for Directed Evolution source discovery.'
+    })
   ]
 };
 

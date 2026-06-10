@@ -354,7 +354,7 @@ mod tests {
     fn refs_url_filters_by_repository_id() {
         assert_eq!(
             refs_url_for_repo("https://genesis.example.test/", "rp-temperpaw-paw-agent"),
-            "https://genesis.example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-temperpaw-paw-agent%27"
+            "https://genesis.example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-temperpaw-paw-agent%27&$top=500"
         );
     }
 
@@ -362,7 +362,7 @@ mod tests {
     fn refs_url_escapes_odata_string_quotes_before_query_encoding() {
         assert_eq!(
             refs_url_for_repo("https://genesis.example.test", "rp-owner-o'hare"),
-            "https://genesis.example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-owner-o%27%27hare%27"
+            "https://genesis.example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-owner-o%27%27hare%27&$top=500"
         );
     }
 }
