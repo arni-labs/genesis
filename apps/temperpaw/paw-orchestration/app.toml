@@ -1,0 +1,3 @@
+name = "paw-orchestration"
+description = "Shared Paw worker orchestration with providers, worker slots, work items, worker runs, organizations, budget ledgers, and heartbeat runs"
+version = "0.1.0"

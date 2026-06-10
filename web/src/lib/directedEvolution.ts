@@ -1,4 +1,5 @@
 import {
+  createEntity,
   listEntityCollection,
   parseJsonList,
   postEntityAction,
@@ -9,7 +10,8 @@ import type {
   EntityBase,
   EvolutionAdaptationGoal,
   EvolutionAutonomyPolicy,
-  EvolutionBrainRun,
+  EvolutionWorkerAgent,
+  EvolutionWorkerRun,
   EvolutionDirection,
   EvolutionEliminationRule,
   EvolutionEpisode,
@@ -40,6 +42,7 @@ export { jsonEntries } from './directedEvolutionFormatting';
 export type * from './directedEvolutionTypes';
 
 const DIRECTED_EVOLUTION_NAMESPACE = 'Temper.DirectedEvolution';
+const PAW_ORCHESTRATION_NAMESPACE = 'Temper.PawOrchestration';
 const COLLECTION_TOP = '$top=500';
 
 type CollectionResult<T> = {
@@ -64,6 +67,23 @@ async function loadDirectedCollection<T>(
       }
     };
   }
+}
+
+async function loadWorkerRuns(tenantId?: string): Promise<CollectionResult<EvolutionWorkerRun>> {
+  const workerRuns = await loadDirectedCollection('WorkerRuns', normalizeWorkerRun, tenantId);
+  if (workerRuns.value.length || !workerRuns.warning) {
+    return workerRuns;
+  }
+  const legacyRuns = await loadDirectedCollection('BrainRuns', normalizeWorkerRun, tenantId);
+  return {
+    value: legacyRuns.value,
+    warning: legacyRuns.warning
+      ? workerRuns.warning
+      : {
+          collection: 'BrainRuns',
+          message: 'Loaded legacy BrainRuns because WorkerRuns were unavailable for this tenant.'
+        }
+  };
 }
 
 export async function loadDirectedEvolutionSnapshot(
@@ -96,7 +116,8 @@ export async function loadDirectedEvolutionSnapshot(
     trials,
     autonomyPolicies,
     workItems,
-    brainRuns
+    workerRuns,
+    workerAgents
   ] = await Promise.all([
     loadDirectedCollection('Organisms', normalizeOrganism, tenantId),
     loadDirectedCollection('OrganismVersions', normalizeOrganismVersion, tenantId),
@@ -124,7 +145,8 @@ export async function loadDirectedEvolutionSnapshot(
     loadDirectedCollection('Trials', normalizeTrial, tenantId),
     loadDirectedCollection('AutonomyPolicies', normalizeAutonomyPolicy, tenantId),
     loadDirectedCollection('WorkItems', normalizeWorkItem, tenantId),
-    loadDirectedCollection('BrainRuns', normalizeBrainRun, tenantId)
+    loadWorkerRuns(tenantId),
+    loadDirectedCollection('WorkerAgents', normalizeWorkerAgent, tenantId)
   ]);
 
   return {
@@ -154,7 +176,8 @@ export async function loadDirectedEvolutionSnapshot(
     trials: trials.value,
     autonomyPolicies: autonomyPolicies.value,
     workItems: workItems.value,
-    brainRuns: brainRuns.value,
+    workerRuns: workerRuns.value,
+    workerAgents: workerAgents.value,
     warnings: [
       organisms.warning,
       organismVersions.warning,
@@ -182,7 +205,8 @@ export async function loadDirectedEvolutionSnapshot(
       trials.warning,
       autonomyPolicies.warning,
       workItems.warning,
-      brainRuns.warning
+      workerRuns.warning,
+      workerAgents.warning
     ].filter(Boolean) as LoadWarning[]
   };
 }
@@ -236,6 +260,152 @@ export function pinViabilityConstraint(
   );
 }
 
+export type QueueSeedSimulatedUsersInput = {
+  controlTenantId: string;
+  runtimeTenantId: string;
+  appId: string;
+  appLabel: string;
+  appRef: string;
+  organismId: string;
+  runtimeBaseUrl: string;
+  runtimeAuthEnvVars: string[];
+  runtimeDatadogService: string;
+  userCount: number;
+  runsPerUser: number;
+};
+
+export type QueueSeedObserverInput = {
+  controlTenantId: string;
+  runtimeTenantId: string;
+  appId: string;
+  appLabel: string;
+  appRef: string;
+  organismId: string;
+  runtimeBaseUrl: string;
+  runtimeAuthEnvVars: string[];
+  runtimeDatadogService: string;
+  simulatedUserWorkItemIds: string[];
+};
+
+export async function queueSeedSimulatedUsers(
+  input: QueueSeedSimulatedUsersInput
+): Promise<EvolutionWorkItem[]> {
+  const userCount = clampInteger(input.userCount, 1, 12);
+  const runsPerUser = clampInteger(input.runsPerUser, 1, 8);
+  const totalRuns = userCount * runsPerUser;
+  const queued: EvolutionWorkItem[] = [];
+
+  for (let index = 0; index < totalRuns; index += 1) {
+    const userIndex = Math.floor(index / runsPerUser) + 1;
+    const runIndex = (index % runsPerUser) + 1;
+    const workItem = await createEntity(
+      'WorkItems',
+      {},
+      { id: 'genesis-directed-evolution', kind: 'agent', agentType: 'human' },
+      input.controlTenantId
+    );
+    const workItemId = stringField(workItem, 'Id');
+    const simulatedUserId = `sim-user-${userIndex}-journey-${runIndex}`;
+    const prompt = seedSimulatedUserPrompt(input, workItemId, simulatedUserId, userIndex, runIndex);
+    const seedWorkflowRunId = `seed-usage:${input.runtimeTenantId}:${simulatedUserId}`;
+    const seedTrialId = `seed-${input.appId}-${simulatedUserId}`;
+    const observationMetadata = seedObservationMetadata(
+      input,
+      workItemId,
+      simulatedUserId,
+      userIndex,
+      runIndex,
+      seedWorkflowRunId,
+      seedTrialId
+    );
+    const runtimeHeaders = {
+      'X-Tenant-Id': input.runtimeTenantId,
+      'X-Temper-Observe-Metadata': JSON.stringify(observationMetadata)
+    };
+    const queuedRow = await pawAction(
+      'WorkItems',
+      workItemId,
+      'QueueWorkItem',
+      {
+        Role: 'simulated_user',
+        TargetEntityType: 'Organism',
+        TargetEntityId: input.organismId,
+        PromptRef: `literal:${prompt}`,
+        ContextRef: `seed-runtime:${input.runtimeTenantId}:${input.appId}`,
+        OutputSchemaRef: 'directed-evolution.seed-simulated-user.v1',
+        RequiredCapabilities: 'local_codex,runtime_probe,simulated_user',
+        Lane: 'simulated-user',
+        ExclusiveKey: '',
+        CorrelationJson: JSON.stringify({
+          phase: 'seed-usage',
+          app_id: input.appId,
+          app_ref: input.appRef,
+          organism_id: input.organismId,
+          runtime_tenant: input.runtimeTenantId,
+          runtime_base_url: input.runtimeBaseUrl,
+          runtime_ref: runtimeRef(input.runtimeTenantId, input.appRef),
+          runtime_datadog_service: input.runtimeDatadogService,
+          runtime_auth_env_vars: input.runtimeAuthEnvVars,
+          simulated_user_id: simulatedUserId,
+          user_index: userIndex,
+          run_index: runIndex,
+          workflow_run_id: seedWorkflowRunId,
+          seed_trial_id: seedTrialId,
+          runtime_headers: runtimeHeaders,
+          requested_by: 'genesis-directed-evolution'
+        })
+      },
+      input.controlTenantId
+    );
+    queued.push(normalizeWorkItem(queuedRow));
+  }
+
+  return queued;
+}
+
+export async function queueSeedObserver(input: QueueSeedObserverInput): Promise<EvolutionWorkItem> {
+  const workItem = await createEntity(
+    'WorkItems',
+    {},
+    { id: 'genesis-directed-evolution', kind: 'agent', agentType: 'human' },
+    input.controlTenantId
+  );
+  const workItemId = stringField(workItem, 'Id');
+  const prompt = seedObserverPrompt(input, workItemId);
+  const queuedRow = await pawAction(
+    'WorkItems',
+    workItemId,
+    'QueueWorkItem',
+    {
+      Role: 'observer',
+      TargetEntityType: 'Organism',
+      TargetEntityId: input.organismId,
+      PromptRef: `literal:${prompt}`,
+      ContextRef: `seed-observer:${input.runtimeTenantId}:${input.appId}`,
+      OutputSchemaRef: 'directed-evolution.observer.source-discovery.v1',
+      RequiredCapabilities: 'local_codex,datadog_query,runtime_probe',
+      Lane: 'observer',
+      ExclusiveKey: `observer:${input.runtimeTenantId}:${input.appId}`,
+      CorrelationJson: JSON.stringify({
+        phase: 'seed-observation',
+        observation_scope: 'all_available_sources',
+        app_id: input.appId,
+        app_ref: input.appRef,
+        organism_id: input.organismId,
+        runtime_tenant: input.runtimeTenantId,
+        runtime_base_url: input.runtimeBaseUrl,
+        runtime_ref: runtimeRef(input.runtimeTenantId, input.appRef),
+        runtime_datadog_service: input.runtimeDatadogService,
+        runtime_auth_env_vars: input.runtimeAuthEnvVars,
+        simulated_user_work_item_ids: input.simulatedUserWorkItemIds,
+        requested_by: 'genesis-directed-evolution'
+      })
+    },
+    input.controlTenantId
+  );
+  return normalizeWorkItem(queuedRow);
+}
+
 function directedAction(
   collection: string,
   id: string,
@@ -252,6 +422,124 @@ function directedAction(
     { id: 'genesis-mission-control', kind: 'agent', agentType: 'human' },
     tenantId
   );
+}
+
+function pawAction(
+  collection: string,
+  id: string,
+  action: string,
+  body: Record<string, unknown>,
+  tenantId?: string
+) {
+  return postEntityAction(
+    collection,
+    id,
+    PAW_ORCHESTRATION_NAMESPACE,
+    action,
+    body,
+    { id: 'genesis-directed-evolution', kind: 'agent', agentType: 'human' },
+    tenantId
+  );
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function runtimeRef(runtimeTenantId: string, appRef: string): string {
+  return `temper://tenant/${runtimeTenantId}/app/${appRef}`;
+}
+
+function seedObservationMetadata(
+  input: QueueSeedSimulatedUsersInput,
+  workItemId: string,
+  simulatedUserId: string,
+  userIndex: number,
+  runIndex: number,
+  seedWorkflowRunId: string,
+  seedTrialId: string
+): Record<string, string> {
+  return {
+    'workflow.root_entity_type': 'Organism',
+    'workflow.root_entity_id': input.organismId,
+    'workflow.run_id': seedWorkflowRunId,
+    'de.phase': 'seed-usage',
+    'de.trial_id': seedTrialId,
+    'de.user_index': String(userIndex),
+    'de.run_index': String(runIndex),
+    'de.simulated_user_id': simulatedUserId,
+    'de.work_item_id': workItemId,
+    'de.runtime_ref': runtimeRef(input.runtimeTenantId, input.appRef),
+    'de.app_ref': input.appRef
+  };
+}
+
+function seedObserverPrompt(input: QueueSeedObserverInput, workItemId: string): string {
+  return `Observe the ${input.appLabel} seed runtime and produce evidence-grounded candidate directions.
+ObserverWorkItemId: ${workItemId}
+RuntimeTenant: ${input.runtimeTenantId}
+RuntimeBase: ${input.runtimeBaseUrl}
+RuntimeRef: ${runtimeRef(input.runtimeTenantId, input.appRef)}
+AppRef: ${input.appRef}
+RuntimeDatadogService: ${input.runtimeDatadogService || 'unknown'}
+
+Discover and inspect all available sources for this app. Do not restrict yourself to a scripted query list. Start from the worker-provided observer source inventory, then inspect anything else accessible and relevant: Genesis WorkItems, WorkerRuns, EvidenceArtifacts, Signals, existing Directions, runtime OData metadata/state, app source or description files, Datadog logs/traces/metrics/monitors, trajectory records, and unmet-intent/friction outputs.
+
+Return directions only when evidence supports them. Include rejected interpretations and evidence_scope entries for sources read, sources with zero results, and important sources that were unavailable.`;
+}
+
+function seedSimulatedUserPrompt(
+  input: QueueSeedSimulatedUsersInput,
+  workItemId: string,
+  simulatedUserId: string,
+  userIndex: number,
+  runIndex: number
+): string {
+  const seedWorkflowRunId = `seed-usage:${input.runtimeTenantId}:${simulatedUserId}`;
+  const seedTrialId = `seed-${input.appId}-${simulatedUserId}`;
+  const observationMetadata = seedObservationMetadata(
+    input,
+    workItemId,
+    simulatedUserId,
+    userIndex,
+    runIndex,
+    seedWorkflowRunId,
+    seedTrialId
+  );
+  const runtimeAuthEnvVars = input.runtimeAuthEnvVars.filter(Boolean);
+  const runtimeAuthEnvText = runtimeAuthEnvVars.length
+    ? runtimeAuthEnvVars.map((name) => `\`${name}\``).join(', ')
+    : 'none configured';
+  const promptedObservationMetadata = {
+    ...observationMetadata,
+    'user.intent': '<your chosen UserIntent>'
+  };
+  return `Act as an AI simulated user for the ${input.appLabel} seed runtime.
+SimulatedUserId: ${simulatedUserId}
+WorkItemId: ${workItemId}
+UserIndex: ${userIndex}
+RunIndex: ${runIndex}
+TemperApiBase: ${input.runtimeBaseUrl}
+RuntimeRef: ${runtimeRef(input.runtimeTenantId, input.appRef)}
+RuntimeTenant: ${input.runtimeTenantId}
+AppRef: ${input.appRef}
+RuntimeDatadogService: ${input.runtimeDatadogService || 'unknown'}
+RuntimeAuthEnvVars: ${runtimeAuthEnvVars.join(', ') || 'none'}
+
+Use the live Temper OData runtime only. Read the app description first when it is available to you, preferring the app bundle APP.md for ${input.appLabel}; then inspect /tdata/$metadata and any current entities you need in order to understand the app.
+
+Before your first non-metadata runtime request, choose a short UserIntent that states what you are trying to accomplish in the app. Put that intent in the generic observation metadata as user.intent and reuse that same UserIntent on every request in this journey unless your goal genuinely changes.
+
+The runtime may require authentication. Resolve a bearer token from these environment variables in order: ${runtimeAuthEnvText}. Never print, log, or return the token. If a token is available, include Authorization: Bearer <token> on every TemperApiBase /tdata request. If no token is available and the runtime returns 401, return status=blocked with blocker_kind=runtime-access and say that the runtime credential is missing.
+
+Include these headers on every /tdata runtime request:
+X-Tenant-Id: ${input.runtimeTenantId}
+X-Temper-Observe-Metadata: ${JSON.stringify(promptedObservationMetadata)}
+
+Use the app like a realistic user would after reading its description. Choose your own intent, try to satisfy it through the live runtime, and stop at a natural point. Do not follow a fixed action checklist. Do not force every available action. Do not accept an answer unless it actually satisfies the intent you chose.
+Return exactly one concise JSON object with status=observed|blocked, summary, journey, observations, intent_satisfied, friction, metrics, evidence_scope, evidence_refs, blocker, blocker_kind, and reasoning_summary.
+Do not judge viability, do not propose an evolution direction, and do not select a winner.`;
 }
 
 function base(row: EntityRow): EntityBase {
@@ -322,7 +610,7 @@ function normalizePressure(row: EntityRow): EvolutionPressure {
     summary: stringField(row, 'Summary'),
     signalIds: parseJsonList(stringField(row, 'SignalIdsJson')),
     evidenceArtifactId: stringField(row, 'EvidenceArtifactId'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    workerRunId: workerRunIdField(row),
     directionId: stringField(row, 'DirectionId')
   };
 }
@@ -341,7 +629,7 @@ function normalizeDirection(row: EntityRow): EvolutionDirection {
     proposedViabilityConstraints: parseJsonList(
       stringField(row, 'ProposedViabilityConstraintsJson')
     ),
-    brainRunId: stringField(row, 'BrainRunId'),
+    workerRunId: workerRunIdField(row),
     episodeId: stringField(row, 'EpisodeId'),
     selectionNotes: stringField(row, 'SelectionNotes')
   };
@@ -403,7 +691,9 @@ function normalizeVariant(row: EntityRow): EvolutionVariant {
     branchRef: stringField(row, 'BranchRef'),
     runtimeRef: stringField(row, 'RuntimeRef'),
     summary: stringField(row, 'Summary'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    changedFiles: parseJsonList(stringField(row, 'ChangedFilesJson')),
+    diffPatch: stringField(row, 'DiffPatch'),
+    workerRunId: workerRunIdField(row),
     workItemId: stringField(row, 'WorkItemId'),
     eliminationRuleId: stringField(row, 'EliminationRuleId'),
     stageResultId: stringField(row, 'StageResultId'),
@@ -440,7 +730,7 @@ function normalizeAdaptationGoal(row: EntityRow): EvolutionAdaptationGoal {
     ...base(row),
     episodeId: stringField(row, 'EpisodeId'),
     goalStatement: stringField(row, 'GoalStatement'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     humanNotes: stringField(row, 'HumanNotes')
   };
 }
@@ -451,7 +741,7 @@ function normalizeViabilityConstraint(row: EntityRow): EvolutionViabilityConstra
     episodeId: stringField(row, 'EpisodeId'),
     constraintStatement: stringField(row, 'ConstraintStatement'),
     constraintKind: stringField(row, 'ConstraintKind'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -464,21 +754,22 @@ function normalizeSelectionPressure(row: EntityRow): EvolutionSelectionPressure 
     metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
     eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
     scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId')
+    createdByWorkerRunId: createdByWorkerRunIdField(row)
   };
 }
 
 function normalizeSelectionProtocol(row: EntityRow): EvolutionSelectionProtocol {
+  const metricIdsJson = stringField(row, 'MetricIdsJson') || stringField(row, 'MetricDefinitionIdsJson');
   return {
     ...base(row),
     episodeId: stringField(row, 'EpisodeId'),
     selectionStatement: stringField(row, 'SelectionStatement'),
-    metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
+    metricIds: parseJsonList(metricIdsJson),
     eliminationRuleIds: parseJsonList(stringField(row, 'EliminationRuleIdsJson')),
     scoringRuleIds: parseJsonList(stringField(row, 'ScoringRuleIdsJson')),
     evaluatorRef: stringField(row, 'EvaluatorRef'),
     decisionPolicy: stringField(row, 'DecisionPolicy'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     frozenBy: stringField(row, 'FrozenBy'),
     reason: stringField(row, 'Reason')
   };
@@ -491,7 +782,7 @@ function normalizeEliminationRule(row: EntityRow): EvolutionEliminationRule {
     ruleStatement: stringField(row, 'RuleStatement'),
     metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
     thresholdJson: stringField(row, 'ThresholdJson'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -503,7 +794,7 @@ function normalizeScoringRule(row: EntityRow): EvolutionScoringRule {
     ruleStatement: stringField(row, 'RuleStatement'),
     metricIds: parseJsonList(stringField(row, 'MetricIdsJson')),
     weight: stringField(row, 'Weight'),
-    createdByBrainRunId: stringField(row, 'CreatedByBrainRunId'),
+    createdByWorkerRunId: createdByWorkerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -604,7 +895,8 @@ function normalizeMutation(row: EntityRow): EvolutionMutation {
     summary: stringField(row, 'Summary'),
     changedFiles: parseJsonList(stringField(row, 'ChangedFilesJson')),
     diffRef: stringField(row, 'DiffRef'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    diffPatch: stringField(row, 'DiffPatch'),
+    workerRunId: workerRunIdField(row),
     reason: stringField(row, 'Reason')
   };
 }
@@ -675,14 +967,14 @@ function normalizeWorkItem(row: EntityRow): EvolutionWorkItem {
     outputSchemaRef: stringField(row, 'OutputSchemaRef'),
     correlationJson: stringField(row, 'CorrelationJson'),
     workerId: stringField(row, 'WorkerId'),
-    brainRunId: stringField(row, 'BrainRunId'),
+    workerRunId: workerRunIdField(row),
     resultJson: stringField(row, 'ResultJson'),
     summary: stringField(row, 'Summary'),
     failureReason: stringField(row, 'FailureReason')
   };
 }
 
-function normalizeBrainRun(row: EntityRow): EvolutionBrainRun {
+function normalizeWorkerRun(row: EntityRow): EvolutionWorkerRun {
   return {
     ...base(row),
     role: stringField(row, 'Role'),
@@ -694,6 +986,23 @@ function normalizeBrainRun(row: EntityRow): EvolutionBrainRun {
     failureReason: stringField(row, 'FailureReason'),
     correlationJson: stringField(row, 'CorrelationJson')
   };
+}
+
+function normalizeWorkerAgent(row: EntityRow): EvolutionWorkerAgent {
+  return {
+    ...base(row),
+    capabilities: stringField(row, 'Capabilities', 'capabilities'),
+    lastSeenAt: stringField(row, 'LastSeenAt', 'last_seen_at'),
+    statusSummary: stringField(row, 'StatusSummary', 'status_summary')
+  };
+}
+
+function workerRunIdField(row: EntityRow): string {
+  return stringField(row, 'WorkerRunId') || stringField(row, 'BrainRunId');
+}
+
+function createdByWorkerRunIdField(row: EntityRow): string {
+  return stringField(row, 'CreatedByWorkerRunId') || stringField(row, 'CreatedByBrainRunId');
 }
 
 function numberField(row: EntityRow, ...keys: string[]): number {

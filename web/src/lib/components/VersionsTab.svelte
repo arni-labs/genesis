@@ -1,7 +1,13 @@
 <script lang="ts">
   import { Copy, GitBranch, GitCommitHorizontal, PackageCheck } from '@lucide/svelte';
   import { IconButton } from '$lib/components/ui';
-  import type { AppFilesSnapshot, GitCommit, RegistryApp } from '$lib/types';
+  import type {
+    AppFilesSnapshot,
+    CommitDiff,
+    GitCommit,
+    RegistryApp,
+    RepositoryFileDiff
+  } from '$lib/types';
 
   type VersionInstallCommands = {
     appRef: string;
@@ -14,6 +20,7 @@
     app: RegistryApp;
     snapshot: AppFilesSnapshot | null;
     versions: GitCommit[];
+    diffs: CommitDiff[];
     selectedHash: string;
     loading: boolean;
     error: string;
@@ -28,6 +35,7 @@
     app,
     snapshot,
     versions,
+    diffs,
     selectedHash,
     loading,
     error,
@@ -44,6 +52,12 @@
   const repoHeadHash = $derived(snapshot?.repoHeadHash ?? '');
   const repoHeadRef = $derived(snapshot?.repoHeadRef ?? 'refs/heads/main');
   const promotionPending = $derived(Boolean(repoHeadHash && repoHeadHash !== app.latestVersionHash));
+  const selectedDiff = $derived(
+    diffs.find((diff) => diff.commitHash === selectedVersion?.id) ?? null
+  );
+  const selectedFiles = $derived(rankedFiles(selectedDiff?.files ?? []));
+  const visibleFiles = $derived(selectedFiles.slice(0, 8));
+  const hiddenFileCount = $derived(Math.max(0, selectedFiles.length - visibleFiles.length));
 
   function parents(commit: GitCommit): string[] {
     const value = commit.parentShas.trim();
@@ -73,6 +87,29 @@
       { title: 'TemperPaw', value: commands.paw, label: 'Version TemperPaw install call' },
       { title: 'OData', value: commands.odata, label: 'Version OData install command' }
     ];
+  }
+
+  function rankedFiles(files: RepositoryFileDiff[]): RepositoryFileDiff[] {
+    return [...files].sort((left, right) => {
+      const rank = diffFileRank(left.path) - diffFileRank(right.path);
+      return rank || left.path.localeCompare(right.path);
+    });
+  }
+
+  function diffFileRank(path: string): number {
+    if (path.startsWith('specs/') || path.endsWith('.ioa.toml') || path.endsWith('.csdl.xml')) {
+      return 0;
+    }
+    if (path.endsWith('.regression.toml') || path === 'app.toml') {
+      return 1;
+    }
+    if (path.startsWith('policies/') || path.endsWith('.cedar')) {
+      return 2;
+    }
+    if (path === 'APP.md' || path.startsWith('adrs/')) {
+      return 3;
+    }
+    return 4;
   }
 </script>
 
@@ -189,34 +226,78 @@
       {/if}
     </div>
 
-    <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-3">
-      <div class="flex items-center justify-between gap-2">
-        <p class="v-eyebrow">Install Selected</p>
-        <PackageCheck size={13} class="text-[var(--color-primary)]" />
-      </div>
-      <p class="mt-1 truncate font-sans text-[12.5px] font-semibold tracking-tight text-[var(--color-ink)]">
-        {selectedVersion ? subject(selectedVersion) : app.name}
-      </p>
-      <div class="mt-2 grid gap-2">
-        {#each installCards(installCommands) as card (card.title)}
-          <div
-            class="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] py-1 pl-2.5 pr-1"
-          >
-            <div class="min-w-0">
-              <p class="v-eyebrow">{card.title}</p>
-              <code class="block truncate font-mono text-[10.5px] text-[var(--color-ink-soft)]">
-                {card.value}
-              </code>
-            </div>
-            <IconButton
-              aria-label={`Copy ${card.label}`}
-              class="h-6 w-6 shrink-0"
-              onclick={() => onCopy(card.value, card.label)}
-            >
-              <Copy size={11} />
-            </IconButton>
+    <div class="grid gap-3">
+      <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-3">
+        <div class="flex items-center justify-between gap-2">
+          <p class="v-eyebrow">Commit Changes</p>
+          <span class="font-mono text-[10px] text-[var(--color-muted)]">
+            {selectedFiles.length} files
+          </span>
+        </div>
+        {#if selectedFiles.length}
+          <div class="mt-2 grid gap-2">
+            {#each visibleFiles as file (file.path)}
+              <div class="overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border-soft)]">
+                <div class="flex items-center justify-between gap-2 bg-[var(--color-surface-soft)] px-2 py-1.5">
+                  <code class="truncate font-mono text-[10.5px] font-semibold text-[var(--color-ink-soft)]">{file.path}</code>
+                  <span class="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">
+                    {file.status} · +{file.additions} -{file.deletions}
+                  </span>
+                </div>
+                <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[10.5px] leading-relaxed"><code>{#each file.lines.slice(0, 22) as line}<span class={[
+                    'block px-2',
+                    line.kind === 'addition'
+                      ? 'bg-[#e8f7ee] text-[#176236]'
+                      : line.kind === 'deletion'
+                        ? 'bg-[#fdecef] text-[#8b1e35]'
+                        : line.kind === 'meta'
+                          ? 'bg-[var(--color-surface-soft)] text-[var(--color-muted)]'
+                          : 'text-[var(--color-ink-soft)]'
+                  ].join(' ')}>{line.text || ' '}</span>{/each}</code></pre>
+              </div>
+            {/each}
+            {#if hiddenFileCount}
+              <p class="rounded-[var(--radius-sm)] bg-[var(--color-surface-soft)] px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                {hiddenFileCount} more changed file{hiddenFileCount === 1 ? '' : 's'} in this commit
+              </p>
+            {/if}
           </div>
-        {/each}
+        {:else}
+          <p class="mt-2 text-[12px] text-[var(--color-muted)]">
+            No file changes are available for this commit.
+          </p>
+        {/if}
+      </div>
+
+      <div class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-3">
+        <div class="flex items-center justify-between gap-2">
+          <p class="v-eyebrow">Install Selected</p>
+          <PackageCheck size={13} class="text-[var(--color-primary)]" />
+        </div>
+        <p class="mt-1 truncate font-sans text-[12.5px] font-semibold tracking-tight text-[var(--color-ink)]">
+          {selectedVersion ? subject(selectedVersion) : app.name}
+        </p>
+        <div class="mt-2 grid gap-2">
+          {#each installCards(installCommands) as card (card.title)}
+            <div
+              class="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] py-1 pl-2.5 pr-1"
+            >
+              <div class="min-w-0">
+                <p class="v-eyebrow">{card.title}</p>
+                <code class="block truncate font-mono text-[10.5px] text-[var(--color-ink-soft)]">
+                  {card.value}
+                </code>
+              </div>
+              <IconButton
+                aria-label={`Copy ${card.label}`}
+                class="h-6 w-6 shrink-0"
+                onclick={() => onCopy(card.value, card.label)}
+              >
+                <Copy size={11} />
+              </IconButton>
+            </div>
+          {/each}
+        </div>
       </div>
     </div>
   </div>

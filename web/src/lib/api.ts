@@ -3,6 +3,7 @@ import type {
   AppFilesSnapshot,
   ClaimOwnerInput,
   Closure,
+  CommitDiff,
   EntityRow,
   GitBlob,
   GitCommit,
@@ -11,6 +12,7 @@ import type {
   Lineage,
   LoadWarning,
   Owner,
+  RepositoryFileDiff,
   RepositoryFile,
   RegistryApp,
   RegistrySnapshot
@@ -143,6 +145,23 @@ export async function postEntityAction(
   );
 }
 
+export async function createEntity(
+  collection: string,
+  body: Record<string, unknown> = {},
+  principal: Principal = { id: 'genesis-mission-control', kind: 'agent', agentType: 'human' },
+  tenantId = TENANT_ID
+): Promise<EntityRow> {
+  return requestJson<EntityRow>(
+    `/tdata/${collection}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body)
+    },
+    principal,
+    tenantId
+  );
+}
+
 async function loadCollection<T>(
   collection: CollectionName,
   normalizer: (row: EntityRow) => T
@@ -229,7 +248,8 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
       commit: null,
       versions: [],
       refs: [],
-      files: []
+      files: [],
+      diffs: []
     };
   }
 
@@ -254,6 +274,9 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     commits.find((item) => item.id === app.latestVersionHash) ??
     commits.find((item) => item.treeSha) ??
     null;
+  const filesByCommit = new Map(
+    commits.map((item) => [item.id, buildRepositoryFiles(item.treeSha, trees, blobs)])
+  );
 
   return {
     appId: app.id,
@@ -266,7 +289,8 @@ export async function loadAppFiles(app: RegistryApp): Promise<AppFilesSnapshot> 
     commit,
     versions,
     refs,
-    files: commit ? buildRepositoryFiles(commit.treeSha, trees, blobs) : []
+    files: commit ? (filesByCommit.get(commit.id) ?? []) : [],
+    diffs: buildCommitDiffs(versions, filesByCommit)
   };
 }
 
@@ -579,6 +603,175 @@ function buildRepositoryFiles(
 
   walk(rootTreeSha, '');
   return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function buildCommitDiffs(
+  versions: GitCommit[],
+  filesByCommit: Map<string, RepositoryFile[]>
+): CommitDiff[] {
+  return versions.map((commit) => {
+    const parentHash = parseParentShas(commit.parentShas)[0] ?? '';
+    const current = filesByCommit.get(commit.id) ?? [];
+    const parent = parentHash ? (filesByCommit.get(parentHash) ?? []) : [];
+    return {
+      commitHash: commit.id,
+      parentHash,
+      files: diffRepositoryFiles(parent, current)
+    };
+  });
+}
+
+function diffRepositoryFiles(
+  previousFiles: RepositoryFile[],
+  nextFiles: RepositoryFile[]
+): RepositoryFileDiff[] {
+  const previous = new Map(previousFiles.filter((file) => file.kind !== 'directory').map((file) => [file.path, file]));
+  const next = new Map(nextFiles.filter((file) => file.kind !== 'directory').map((file) => [file.path, file]));
+  const paths = [...new Set([...previous.keys(), ...next.keys()])].sort((a, b) => a.localeCompare(b));
+  const diffs: RepositoryFileDiff[] = [];
+
+  for (const path of paths) {
+    const before = previous.get(path);
+    const after = next.get(path);
+    if (before?.objectSha === after?.objectSha) continue;
+    const status = before && after ? 'modified' : before ? 'deleted' : 'added';
+    const beforeLines = before && !before.isBinary ? before.preview.split('\n') : [];
+    const afterLines = after && !after.isBinary ? after.preview.split('\n') : [];
+    const lines = fileDiffLines(beforeLines, afterLines, status);
+    diffs.push({
+      path,
+      status,
+      additions: lines.filter((line) => line.kind === 'addition').length,
+      deletions: lines.filter((line) => line.kind === 'deletion').length,
+      lines
+    });
+  }
+
+  return diffs;
+}
+
+function fileDiffLines(
+  beforeLines: string[],
+  afterLines: string[],
+  status: RepositoryFileDiff['status']
+): RepositoryFileDiff['lines'] {
+  if (status === 'added') {
+    return [
+      { kind: 'meta', text: '@@ added file @@' },
+      ...afterLines.map((text) => ({ kind: 'addition' as const, text: `+${text}` }))
+    ];
+  }
+  if (status === 'deleted') {
+    return [
+      { kind: 'meta', text: '@@ deleted file @@' },
+      ...beforeLines.map((text) => ({ kind: 'deletion' as const, text: `-${text}` }))
+    ];
+  }
+  return modifiedFileDiffLines(beforeLines, afterLines);
+}
+
+function modifiedFileDiffLines(
+  beforeLines: string[],
+  afterLines: string[]
+): RepositoryFileDiff['lines'] {
+  const sequence = alignedLineDiff(beforeLines, afterLines);
+  const changedIndexes = sequence
+    .map((line, index) => (line.kind === 'context' ? -1 : index))
+    .filter((index) => index >= 0);
+
+  if (!changedIndexes.length) {
+    return [{ kind: 'meta', text: '@@ unchanged @@' }];
+  }
+
+  const contextBudget = 3;
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const index of changedIndexes) {
+    const start = Math.max(0, index - contextBudget);
+    const end = Math.min(sequence.length - 1, index + contextBudget);
+    const previous = ranges[ranges.length - 1];
+    if (previous && start <= previous.end + 1) {
+      previous.end = Math.max(previous.end, end);
+    } else {
+      ranges.push({ start, end });
+    }
+  }
+
+  const lines: RepositoryFileDiff['lines'] = [];
+  for (const [index, range] of ranges.entries()) {
+    lines.push({ kind: 'meta', text: `@@ change ${index + 1} @@` });
+    lines.push(...sequence.slice(range.start, range.end + 1));
+  }
+  return lines;
+}
+
+function alignedLineDiff(
+  beforeLines: string[],
+  afterLines: string[]
+): RepositoryFileDiff['lines'] {
+  const cellBudget = beforeLines.length * afterLines.length;
+  if (cellBudget > 1_000_000) {
+    return positionalLineDiff(beforeLines, afterLines);
+  }
+
+  const table = Array.from(
+    { length: beforeLines.length + 1 },
+    () => new Uint32Array(afterLines.length + 1)
+  );
+
+  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
+    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
+      table[beforeIndex][afterIndex] =
+        beforeLines[beforeIndex] === afterLines[afterIndex]
+          ? table[beforeIndex + 1][afterIndex + 1] + 1
+          : Math.max(table[beforeIndex + 1][afterIndex], table[beforeIndex][afterIndex + 1]);
+    }
+  }
+
+  const lines: RepositoryFileDiff['lines'] = [];
+  let beforeIndex = 0;
+  let afterIndex = 0;
+  while (beforeIndex < beforeLines.length && afterIndex < afterLines.length) {
+    if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
+      lines.push({ kind: 'context', text: ` ${beforeLines[beforeIndex]}` });
+      beforeIndex += 1;
+      afterIndex += 1;
+    } else if (table[beforeIndex + 1][afterIndex] >= table[beforeIndex][afterIndex + 1]) {
+      lines.push({ kind: 'deletion', text: `-${beforeLines[beforeIndex]}` });
+      beforeIndex += 1;
+    } else {
+      lines.push({ kind: 'addition', text: `+${afterLines[afterIndex]}` });
+      afterIndex += 1;
+    }
+  }
+
+  while (beforeIndex < beforeLines.length) {
+    lines.push({ kind: 'deletion', text: `-${beforeLines[beforeIndex]}` });
+    beforeIndex += 1;
+  }
+  while (afterIndex < afterLines.length) {
+    lines.push({ kind: 'addition', text: `+${afterLines[afterIndex]}` });
+    afterIndex += 1;
+  }
+  return lines;
+}
+
+function positionalLineDiff(
+  beforeLines: string[],
+  afterLines: string[]
+): RepositoryFileDiff['lines'] {
+  const lines: RepositoryFileDiff['lines'] = [];
+  const max = Math.max(beforeLines.length, afterLines.length);
+  for (let index = 0; index < max; index += 1) {
+    const before = beforeLines[index];
+    const after = afterLines[index];
+    if (before === after && before !== undefined) {
+      lines.push({ kind: 'context', text: ` ${before}` });
+    } else {
+      if (before !== undefined) lines.push({ kind: 'deletion', text: `-${before}` });
+      if (after !== undefined) lines.push({ kind: 'addition', text: `+${after}` });
+    }
+  }
+  return lines;
 }
 
 function parseCanonicalTree(

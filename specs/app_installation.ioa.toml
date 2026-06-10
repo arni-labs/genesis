@@ -69,10 +69,10 @@ query_indexed = false
 [[action]]
 name = "Create"
 kind = "input"
-from = ["Pending"]
+from = ["Pending", "Installed", "Failed"]
 to = "Pending"
 params = ["AppId", "AppRef", "VersionHash", "FollowPolicy", "TargetTenant", "ClosureId", "Installer", "Message", "CreatedAt"]
-hint = "Record that a spec-owned Genesis app installation has been requested."
+hint = "Record or reopen a spec-owned Genesis app installation request for a deterministic app/tenant/version key."
 
 [[action]]
 name = "MarkInstalled"
