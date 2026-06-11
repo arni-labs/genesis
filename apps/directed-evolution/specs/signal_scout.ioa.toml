@@ -1,0 +1,66 @@
+# SignalScout — recurring automated signal discovery for one organism.
+#
+# Vision flow step 1 says signals come from observability; the scout
+# makes that true without a human pushing a button. One scout per
+# organism. StartScout queues the first sweep; every sweep reschedules
+# the next via the kernel schedule effect — event-driven, no poller
+# process. Each sweep queues one observer work item that discovers
+# Datadog/runtime findings and returns deduplicatable signals.
+
+[automaton]
+name = "SignalScout"
+states = ["Idle", "Active", "Stopped"]
+initial = "Idle"
+allow_indefinite_states = ["Idle", "Active"]
+
+[[action]]
+name = "StartScout"
+kind = "input"
+from = ["Idle", "Stopped"]
+to = "Active"
+effect = [{ type = "trigger", name = "scout_sweep" }, { type = "schedule", action = "SweepScoutSignals", delay_seconds = 21600 }]
+params = ["OrganismId", "StartedBy"]
+hint = "Start recurring signal discovery for an organism (sweep now, then every 6 hours)."
+
+[[action.triggers]]
+name = "scout_sweep"
+kind = "wasm"
+module = "signal_scout"
+on_failure = "FailScoutSweep"
+
+[action.triggers.config]
+temper_api_url = "{secret:temper_api_url}"
+
+[[action]]
+name = "SweepScoutSignals"
+kind = "input"
+from = ["Active"]
+to = "Active"
+effect = [{ type = "trigger", name = "scout_sweep" }, { type = "schedule", action = "SweepScoutSignals", delay_seconds = 21600 }]
+params = []
+hint = "Run one discovery sweep and reschedule the next."
+
+[[action.triggers]]
+name = "scout_sweep"
+kind = "wasm"
+module = "signal_scout"
+on_failure = "FailScoutSweep"
+
+[action.triggers.config]
+temper_api_url = "{secret:temper_api_url}"
+
+[[action]]
+name = "FailScoutSweep"
+kind = "input"
+from = ["Active"]
+to = "Active"
+params = ["error", "error_message", "integration"]
+hint = "Record a failed sweep; the schedule keeps future sweeps alive."
+
+[[action]]
+name = "StopScout"
+kind = "input"
+from = ["Idle", "Active"]
+to = "Stopped"
+params = ["Reason"]
+hint = "Stop recurring discovery. Already-scheduled sweeps no-op from Stopped."

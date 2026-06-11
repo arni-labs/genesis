@@ -260,6 +260,12 @@
         <Property Name="PromotionId" Type="Edm.String"/>
         <Property Name="Summary" Type="Edm.String"/>
         <Property Name="Reason" Type="Edm.String"/>
+        <Property Name="RuntimeBaseUrl" Type="Edm.String"/>
+        <Property Name="RuntimeTenantId" Type="Edm.String"/>
+        <Property Name="DatadogService" Type="Edm.String"/>
+        <Property Name="RuntimeAuthEnvVarsJson" Type="Edm.String"/>
+        <Property Name="EvaluatorRef" Type="Edm.String"/>
+        <Property Name="ConfiguredBy" Type="Edm.String"/>
       </EntityType>
 
       <EntityType Name="OrganismVersion">
@@ -380,7 +386,22 @@
         <Property Name="Summary" Type="Edm.String"/>
         <Property Name="EvidenceArtifactId" Type="Edm.String"/>
         <Property Name="CorrelationJson" Type="Edm.String"/>
+        <Property Name="Fingerprint" Type="Edm.String"/>
         <Property Name="PressureId" Type="Edm.String"/>
+        <Property Name="Reason" Type="Edm.String"/>
+        <Property Name="error" Type="Edm.String"/>
+        <Property Name="error_message" Type="Edm.String"/>
+        <Property Name="integration" Type="Edm.String"/>
+        <Property Name="decision_id" Type="Edm.String"/>
+        <Property Name="authz_denied" Type="Edm.Boolean"/>
+      </EntityType>
+
+      <EntityType Name="SignalScout">
+        <Key><PropertyRef Name="Id"/></Key>
+        <Property Name="Id" Type="Edm.String" Nullable="false"/>
+        <Property Name="Status" Type="Edm.String"/>
+        <Property Name="OrganismId" Type="Edm.String"/>
+        <Property Name="StartedBy" Type="Edm.String"/>
         <Property Name="Reason" Type="Edm.String"/>
         <Property Name="error" Type="Edm.String"/>
         <Property Name="error_message" Type="Edm.String"/>
@@ -953,6 +974,17 @@
         <ReturnType Type="Temper.DirectedEvolution.Organism"/>
       </Action>
 
+      <Action Name="ConfigureOrganismRuntime" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.DirectedEvolution.Organism"/>
+        <Parameter Name="RuntimeBaseUrl" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="RuntimeTenantId" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="DatadogService" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="RuntimeAuthEnvVarsJson" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="EvaluatorRef" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="ConfiguredBy" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.DirectedEvolution.Organism"/>
+      </Action>
+
       <Action Name="RecordOrganismVersion" IsBound="true">
         <Parameter Name="bindingParameter" Type="Temper.DirectedEvolution.Organism"/>
         <Parameter Name="OrganismVersionId" Type="Edm.String" Nullable="true"/>
@@ -1165,7 +1197,34 @@
         <Parameter Name="Summary" Type="Edm.String" Nullable="true"/>
         <Parameter Name="EvidenceArtifactId" Type="Edm.String" Nullable="true"/>
         <Parameter Name="CorrelationJson" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="Fingerprint" Type="Edm.String" Nullable="true"/>
         <ReturnType Type="Temper.DirectedEvolution.Signal"/>
+      </Action>
+
+      <Action Name="StartScout" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.DirectedEvolution.SignalScout"/>
+        <Parameter Name="OrganismId" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="StartedBy" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.DirectedEvolution.SignalScout"/>
+      </Action>
+
+      <Action Name="SweepScoutSignals" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.DirectedEvolution.SignalScout"/>
+        <ReturnType Type="Temper.DirectedEvolution.SignalScout"/>
+      </Action>
+
+      <Action Name="StopScout" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.DirectedEvolution.SignalScout"/>
+        <Parameter Name="Reason" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.DirectedEvolution.SignalScout"/>
+      </Action>
+
+      <Action Name="FailScoutSweep" IsBound="true">
+        <Parameter Name="bindingParameter" Type="Temper.DirectedEvolution.SignalScout"/>
+        <Parameter Name="error" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="error_message" Type="Edm.String" Nullable="true"/>
+        <Parameter Name="integration" Type="Edm.String" Nullable="true"/>
+        <ReturnType Type="Temper.DirectedEvolution.SignalScout"/>
       </Action>
 
       <Action Name="LinkSignalToPressure" IsBound="true">
@@ -1440,6 +1499,7 @@
         <EntitySet Name="SelectionPressures" EntityType="Temper.DirectedEvolution.SelectionPressure"/>
         <EntitySet Name="SelectionProtocols" EntityType="Temper.DirectedEvolution.SelectionProtocol"/>
         <EntitySet Name="Signals" EntityType="Temper.DirectedEvolution.Signal"/>
+        <EntitySet Name="SignalScouts" EntityType="Temper.DirectedEvolution.SignalScout"/>
         <EntitySet Name="SimulatedUserPlans" EntityType="Temper.DirectedEvolution.SimulatedUserPlan"/>
         <EntitySet Name="StageResults" EntityType="Temper.DirectedEvolution.StageResult"/>
         <EntitySet Name="Trials" EntityType="Temper.DirectedEvolution.Trial"/>

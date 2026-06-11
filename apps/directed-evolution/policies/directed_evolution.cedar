@@ -41,6 +41,7 @@ permit(
     resource is ScoringRule ||
     resource is SelectionPressure ||
     resource is SelectionProtocol ||
+    resource is SignalScout ||
     resource is SimulatedUserPlan ||
     resource is StageResult ||
     resource is Variant ||

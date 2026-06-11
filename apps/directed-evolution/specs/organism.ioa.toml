@@ -24,6 +24,13 @@ params = ["Name", "AppRef", "ParentVersionId", "BaselineEvaluationJson"]
 hint = "Register the organism with its first parent version and baseline evaluation ladder."
 
 [[action]]
+name = "ConfigureOrganismRuntime"
+kind = "input"
+from = ["Draft", "Active"]
+params = ["RuntimeBaseUrl", "RuntimeTenantId", "DatadogService", "RuntimeAuthEnvVarsJson", "EvaluatorRef", "ConfiguredBy"]
+hint = "Record the external runtime target this organism is exercised against (ADR-0023) and the evaluator app ref episodes freeze (ADR-0018). Auth env var names only — never secret values."
+
+[[action]]
 name = "RecordOrganismVersion"
 kind = "input"
 from = ["Active"]
