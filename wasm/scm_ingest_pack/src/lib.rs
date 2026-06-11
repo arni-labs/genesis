@@ -680,15 +680,15 @@ fn build_object_row(
             "Id": sha,
             "RepositoryId": repository_id,
             "Size": raw.len(),
-            "Content": maybe_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
-            "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "Content": always_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
+            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
         pack::ObjectKind::Tree => json!({
             "Id": sha,
             "RepositoryId": repository_id,
-            "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
@@ -713,7 +713,7 @@ fn build_object_row(
                 "Author": author,
                 "Committer": committer,
                 "Message": message,
-                "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -743,7 +743,7 @@ fn build_object_row(
                 "TagName": name,
                 "Tagger": tagger,
                 "Message": message,
-                "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -820,6 +820,23 @@ fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
         ));
     }
     Ok(Some(blob_key.to_string()))
+}
+
+/// Stage a value to the object store unconditionally (ADR-0027): git
+/// object content never sits inline on entity rows; the row keeps a
+/// content-addressed reference. Readers already resolve these refs and
+/// legacy inline rows stay readable.
+fn always_stage_field_value(
+    ctx: &Context,
+    blob_endpoint: &str,
+    value: String,
+) -> Result<Value, String> {
+    let json_value = Value::String(value);
+    let serialized =
+        serde_json::to_vec(&json_value).map_err(|e| format!("object-content serialize: {e}"))?;
+    let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
+    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
+    Ok(blob_ref)
 }
 
 fn overflow_blob_ref_for_serialized(serialized: &[u8]) -> (String, Value) {
