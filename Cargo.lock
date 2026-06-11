@@ -143,9 +143,8 @@ dependencies = [
 name = "git_refs_advertise"
 version = "0.0.1"
 dependencies = [
- "base64",
+ "genesis-git-auth",
  "serde_json",
- "sha2",
  "temper-wasm-sdk",
  "tg-wire",
 ]
@@ -155,10 +154,10 @@ name = "git_upload_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-auth",
  "genesis-git-object",
  "serde",
  "serde_json",
- "sha2",
  "temper-wasm-sdk",
  "tg-wire",
 ]
