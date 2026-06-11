@@ -12,11 +12,28 @@ struct EpisodeStartContract {
     selection_statement: String,
     proposed_constraints_json: String,
     contract_json: String,
+    evaluator_ref: String,
+    decision_policy: String,
+    simulated_user_plan: SimulatedUserPlanSpec,
     metrics: Vec<MetricPlan>,
     constraints: Vec<ConstraintPlan>,
     elimination_rules: Vec<RulePlan>,
     scoring_rules: Vec<ScoringRulePlan>,
     stages: Vec<StagePlan>,
+}
+
+#[derive(Clone)]
+struct SimulatedUserPlanSpec {
+    users_per_variant: String,
+    runs_per_persona: String,
+    personas_json: String,
+    goals_json: String,
+}
+
+impl SimulatedUserPlanSpec {
+    fn is_empty(&self) -> bool {
+        self.personas_json.trim().is_empty()
+    }
 }
 
 impl EpisodeStartContract {
@@ -40,6 +57,23 @@ impl EpisodeStartContract {
             self.stages = default_stages();
         }
         ensure_required_stages(&mut self.stages);
+        if self.simulated_user_plan.is_empty() {
+            self.simulated_user_plan = default_simulated_user_plan(&self.adaptation_goal);
+        }
+        if self.simulated_user_plan.users_per_variant.trim().is_empty() {
+            self.simulated_user_plan.users_per_variant = "2".to_string();
+        }
+        if self.simulated_user_plan.runs_per_persona.trim().is_empty() {
+            self.simulated_user_plan.runs_per_persona = "1".to_string();
+        }
+        if self.simulated_user_plan.goals_json.trim().is_empty() {
+            self.simulated_user_plan.goals_json =
+                default_simulated_user_plan(&self.adaptation_goal).goals_json;
+        }
+        if self.decision_policy.trim().is_empty() {
+            self.decision_policy =
+                "codex-selector-bound-by-mechanical-elimination-rules".to_string();
+        }
         self
     }
 
@@ -48,6 +82,10 @@ impl EpisodeStartContract {
         required(self.organism_id.clone(), "organism_id")?;
         required(self.parent_version_id.clone(), "parent_version_id")?;
         required(self.adaptation_goal.clone(), "adaptation_goal")?;
+        // ADR-0018: every episode runs against a frozen evaluator ref.
+        // Absence fails the request visibly rather than starting an
+        // unauditable episode.
+        required(self.evaluator_ref.clone(), "evaluator_ref")?;
         if self.metrics.is_empty() {
             return Err("episode start contract requires at least one metric".to_string());
         }
@@ -57,7 +95,69 @@ impl EpisodeStartContract {
         if self.stages.is_empty() {
             return Err("episode start contract requires at least one evaluation stage".to_string());
         }
+        if self.simulated_user_plan.is_empty() {
+            return Err("episode start contract requires a simulated-user plan".to_string());
+        }
         Ok(())
+    }
+}
+
+/// Parse a director-supplied simulated-user plan from the request's
+/// `SimulatedUserPlanJson` field. Empty/missing pieces fall back to
+/// the auto-start defaults in `with_defaults`.
+fn simulated_user_plan_spec(fields: &Value) -> SimulatedUserPlanSpec {
+    let parsed = serde_json::from_str::<Value>(&field_str(fields, &["SimulatedUserPlanJson"]))
+        .unwrap_or(Value::Null);
+    SimulatedUserPlanSpec {
+        users_per_variant: scalar_string(lookup_value_deep(
+            &parsed,
+            &["users_per_variant", "UsersPerVariant"],
+        )),
+        runs_per_persona: scalar_string(lookup_value_deep(
+            &parsed,
+            &["runs_per_persona", "RunsPerPersona"],
+        )),
+        personas_json: array_json_string(lookup_value_deep(&parsed, &["personas", "PersonasJson"])),
+        goals_json: array_json_string(lookup_value_deep(&parsed, &["goals", "GoalsJson"])),
+    }
+}
+
+fn scalar_string(value: Option<Value>) -> String {
+    match value {
+        Some(Value::String(s)) => s,
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn array_json_string(value: Option<Value>) -> String {
+    match value {
+        Some(value @ Value::Array(_)) => value.to_string(),
+        Some(Value::String(s)) => s,
+        _ => String::new(),
+    }
+}
+
+fn default_simulated_user_plan(adaptation_goal: &str) -> SimulatedUserPlanSpec {
+    SimulatedUserPlanSpec {
+        users_per_variant: "2".to_string(),
+        runs_per_persona: "1".to_string(),
+        personas_json: json!([
+            {
+                "name": "task-focused user",
+                "goal_style": "exercises the adaptation goal end to end as a real user would",
+            },
+            {
+                "name": "regression checker",
+                "goal_style": "verifies existing behaviors still work while probing the change",
+            },
+        ])
+        .to_string(),
+        goals_json: json!([
+            format!("Exercise the app and observe whether this holds: {adaptation_goal}"),
+            "Use existing core flows and record any behavior that regressed.",
+        ])
+        .to_string(),
     }
 }
 

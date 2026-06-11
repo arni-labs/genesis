@@ -160,9 +160,12 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
 
 /// Bridge short-circuit 401 (temper ADR-0138): on action-bridge routes
 /// the kernel formats responses, so the challenge must travel through
-/// `bridge_response` rather than a guest-submitted head.
+/// `bridge_response` rather than a guest-submitted head. The empty
+/// `action_params` marks the structured result shape the kernel
+/// requires before honoring control keys.
 fn respond_unauthorized() -> Result<Value, String> {
     Ok(json!({
+        "action_params": {},
         "bridge_response": {
             "status": 401,
             "headers": { "WWW-Authenticate": "Basic realm=\"Genesis\"" },

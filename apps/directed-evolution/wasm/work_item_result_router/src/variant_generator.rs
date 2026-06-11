@@ -276,13 +276,34 @@ fn queue_simulated_user_trials(
     app_ref: &str,
     variant_summary: &str,
 ) -> Result<Vec<String>, String> {
+    // ADR-0018: trials enumerate from a FROZEN plan only. No plan or an
+    // unfrozen plan refuses loudly instead of silently running a 1x1
+    // synthetic census.
     let plan_id = field_str(episode_fields, &["SimulatedUserPlanId"]);
-    let plan_fields = entity_fields_or_empty(ctx, base_url, headers, "SimulatedUserPlans", &plan_id);
+    if plan_id.trim().is_empty() {
+        return Err(format!(
+            "episode {episode_id} has no SimulatedUserPlanId; trials require a frozen simulated-user plan"
+        ));
+    }
+    let plan = get_entity(ctx, base_url, headers, "SimulatedUserPlans", &plan_id)?;
+    let plan_status = entity_status(&plan);
+    if plan_status != "Frozen" {
+        return Err(format!(
+            "simulated-user plan {plan_id} is '{plan_status}', not Frozen; refusing to queue trials"
+        ));
+    }
+    let plan_fields = state_fields(&plan);
     let direction_id = field_str(episode_fields, &["DirectionId"]);
     let users_per_variant = field_u64(&plan_fields, &["UsersPerVariant"]).max(1) as usize;
     let runs_per_persona = field_u64(&plan_fields, &["RunsPerPersona"]).max(1) as usize;
     let personas = parse_json_values(&field_str(&plan_fields, &["PersonasJson"]));
     let goals = parse_json_values(&field_str(&plan_fields, &["GoalsJson"]));
+    if personas.len() < users_per_variant {
+        return Err(format!(
+            "simulated-user plan {plan_id} declares {users_per_variant} users per variant but only {} personas; the frozen census must be consistent",
+            personas.len()
+        ));
+    }
     let mut trial_ids = Vec::new();
 
     for persona_index in 0..users_per_variant {

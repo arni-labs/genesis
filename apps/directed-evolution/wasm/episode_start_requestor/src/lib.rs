@@ -95,6 +95,17 @@ fn materialize_episode_start_request(
         "EpisodeStartRequest.AdaptationGoal",
     )?;
 
+    // ADR-0018: the evaluator ref freezes with the episode. Resolution
+    // order: explicit request field, direction proposal, organism row
+    // (the per-organism default maintained by the registry).
+    let evaluator_ref = nonempty(
+        field_str(fields, &["EvaluatorRef"]),
+        nonempty(
+            field_str(&direction_fields, &["ProposedEvaluatorRef", "EvaluatorRef"]),
+            field_str(&organism_fields, &["EvaluatorRef"]),
+        ),
+    );
+
     let contract = EpisodeStartContract {
         direction_id,
         organism_id,
@@ -114,6 +125,9 @@ fn materialize_episode_start_request(
         ),
         proposed_constraints_json: field_str(&direction_fields, &["ProposedViabilityConstraintsJson"]),
         contract_json: field_str(fields, &["ContractJson"]),
+        evaluator_ref,
+        decision_policy: field_str(fields, &["DecisionPolicy"]),
+        simulated_user_plan: simulated_user_plan_spec(fields),
         metrics: metric_plans(fields),
         constraints: constraint_plans(fields, &direction_fields),
         elimination_rules: elimination_rule_plans(fields),

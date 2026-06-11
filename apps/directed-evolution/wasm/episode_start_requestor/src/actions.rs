@@ -48,24 +48,19 @@ fn start_episode_from_contract(
         &metric_ids,
         &contract.requested_by,
     )?;
-    let selection_pressure_id = create_entity(ctx, base_url, headers, "SelectionPressures")?;
-    post_directed_action(
+    let stage_ids = activate_stages(ctx, base_url, headers, &episode_id, &contract.stages)?;
+    let simulated_user_plan_id =
+        activate_frozen_simulated_user_plan(ctx, base_url, headers, &episode_id, &contract)?;
+    let selection_protocol_id = activate_frozen_selection_protocol(
         ctx,
         base_url,
         headers,
-        "SelectionPressures",
-        &selection_pressure_id,
-        "ActivateSelectionPressure",
-        json!({
-            "EpisodeId": episode_id,
-            "SelectionStatement": contract.selection_statement,
-            "MetricIdsJson": json!(metric_ids.ids()).to_string(),
-            "EliminationRuleIdsJson": json!(elimination_rule_ids).to_string(),
-            "ScoringRuleIdsJson": json!(scoring_rule_ids).to_string(),
-            "CreatedByWorkerRunId": contract.requested_by,
-        }),
+        &episode_id,
+        &contract,
+        &metric_ids,
+        &elimination_rule_ids,
+        &scoring_rule_ids,
     )?;
-    let stage_ids = activate_stages(ctx, base_url, headers, &episode_id, &contract.stages)?;
     let adaptation_goal_id = create_entity(ctx, base_url, headers, "AdaptationGoals")?;
     post_directed_action(
         ctx,
@@ -81,20 +76,33 @@ fn start_episode_from_contract(
             "HumanNotes": human_notes_with_contract(&contract.human_notes, &contract.contract_json),
         }),
     )?;
+    // PlanEpisode records the full protocol graph — frozen plan,
+    // frozen protocol, evaluator ref — matching the human-gated path
+    // (ADR-0018: nothing can move the goalposts after start).
     post_directed_action(
         ctx,
         base_url,
         headers,
         "Episodes",
         &episode_id,
-        "RecordEpisodeContract",
+        "PlanEpisode",
         json!({
+            "DirectionId": contract.direction_id,
+            "OrganismId": contract.organism_id,
+            "ParentVersionId": contract.parent_version_id,
+            "AutonomyLane": contract.autonomy_lane,
             "AdaptationGoalId": adaptation_goal_id,
-            "SelectionPressureId": selection_pressure_id,
             "ViabilityConstraintIdsJson": json!(constraint_ids).to_string(),
+            "MetricDefinitionIdsJson": json!(metric_ids.ids()).to_string(),
             "EvaluationStageIdsJson": json!(stage_ids).to_string(),
             "EliminationRuleIdsJson": json!(elimination_rule_ids).to_string(),
             "ScoringRuleIdsJson": json!(scoring_rule_ids).to_string(),
+            "SimulatedUserPlanId": simulated_user_plan_id,
+            "SelectionProtocolId": selection_protocol_id,
+            "EvaluatorRef": contract.evaluator_ref,
+            "OrganismParentRef": contract.parent_version_id,
+            "PlannedBy": contract.started_by,
+            "PlanSummary": human_notes_with_contract(&contract.human_notes, &contract.contract_json),
         }),
     )?;
     post_directed_action(
@@ -264,6 +272,90 @@ fn activate_scoring_rules(
         ids.push(rule_id);
     }
     Ok(ids)
+}
+
+fn activate_frozen_simulated_user_plan(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    episode_id: &str,
+    contract: &EpisodeStartContract,
+) -> Result<String, String> {
+    let plan_id = create_entity(ctx, base_url, headers, "SimulatedUserPlans")?;
+    post_directed_action(
+        ctx,
+        base_url,
+        headers,
+        "SimulatedUserPlans",
+        &plan_id,
+        "ActivateSimulatedUserPlan",
+        json!({
+            "EpisodeId": episode_id,
+            "UsersPerVariant": contract.simulated_user_plan.users_per_variant,
+            "RunsPerPersona": contract.simulated_user_plan.runs_per_persona,
+            "PersonasJson": contract.simulated_user_plan.personas_json,
+            "GoalsJson": contract.simulated_user_plan.goals_json,
+            "CreatedBy": contract.requested_by,
+            "HumanDecisionSummary": contract.human_notes,
+        }),
+    )?;
+    post_directed_action(
+        ctx,
+        base_url,
+        headers,
+        "SimulatedUserPlans",
+        &plan_id,
+        "FreezeSimulatedUserPlan",
+        json!({
+            "FrozenBy": contract.started_by,
+            "Reason": "Frozen before Episode.Start so the simulated-user census cannot drift mid-generation.",
+        }),
+    )?;
+    Ok(plan_id)
+}
+
+fn activate_frozen_selection_protocol(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    episode_id: &str,
+    contract: &EpisodeStartContract,
+    metric_ids: &MetricIds,
+    elimination_rule_ids: &[String],
+    scoring_rule_ids: &[String],
+) -> Result<String, String> {
+    let protocol_id = create_entity(ctx, base_url, headers, "SelectionProtocols")?;
+    post_directed_action(
+        ctx,
+        base_url,
+        headers,
+        "SelectionProtocols",
+        &protocol_id,
+        "ActivateSelectionProtocol",
+        json!({
+            "EpisodeId": episode_id,
+            "SelectionStatement": contract.selection_statement,
+            "MetricIdsJson": json!(metric_ids.ids()).to_string(),
+            "EliminationRuleIdsJson": json!(elimination_rule_ids).to_string(),
+            "ScoringRuleIdsJson": json!(scoring_rule_ids).to_string(),
+            "EvaluatorRef": contract.evaluator_ref,
+            "DecisionPolicy": contract.decision_policy,
+            "CreatedByWorkerRunId": contract.requested_by,
+        }),
+    )?;
+    post_directed_action(
+        ctx,
+        base_url,
+        headers,
+        "SelectionProtocols",
+        &protocol_id,
+        "FreezeSelectionProtocol",
+        json!({
+            "FrozenBy": contract.started_by,
+            "Reason": "Frozen before Episode.Start so variants cannot move the goalposts.",
+        }),
+    )?;
+    Ok(protocol_id)
 }
 
 fn activate_stages(
