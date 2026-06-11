@@ -16,6 +16,7 @@ fn route_observer(
         work_item_fields,
         output,
     )?;
+    record_scout_signals(ctx, base_url, headers, work_item_fields, output, &target)?;
     let actionable = lookup_bool_deep(output, &["actionable", "Actionable"]).unwrap_or(true);
     if !actionable {
         let reason = nonempty(
@@ -371,4 +372,96 @@ fn maybe_auto_start_repair_direction(
     )?;
 
     Ok(request_id)
+}
+
+/// Persist deduplicated signals discovered by a scheduled signal-scout
+/// sweep. Scout-recorded signals arrive pre-interpreted (the same
+/// observer run already proposed directions), so `signal_observer`
+/// skips re-queueing interpretation for Source "signal-scout".
+fn record_scout_signals(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    work_item_fields: &Value,
+    output: &Value,
+    target: &ObserverRouteTarget,
+) -> Result<(), String> {
+    let correlation: Value = serde_json::from_str(&field_str(work_item_fields, &["CorrelationJson"]))
+        .unwrap_or_else(|_| json!({}));
+    let scout_id = lookup_string_deep(&correlation, &["signal_scout_id"]);
+    if scout_id.trim().is_empty() {
+        return Ok(());
+    }
+    let Some(signals) = output.get("signals").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    // Mirror the scout prompt's cap so a runaway output cannot flood
+    // the signal plane.
+    const SCOUT_SIGNALS_MAX: usize = 3;
+    for entry in signals.iter().take(SCOUT_SIGNALS_MAX) {
+        let fingerprint = lookup_string_deep(entry, &["fingerprint", "Fingerprint"]);
+        if fingerprint.trim().is_empty() {
+            continue;
+        }
+        if signal_fingerprint_exists(ctx, base_url, headers, &target.organism_id, &fingerprint)? {
+            continue;
+        }
+        let summary = nonempty(
+            lookup_string_deep(entry, &["summary", "Summary"]),
+            format!("Scout finding {fingerprint}"),
+        );
+        let signal_id = create_entity(ctx, base_url, headers, "Signals")?;
+        post_directed_action(
+            ctx,
+            base_url,
+            headers,
+            "Signals",
+            &signal_id,
+            "RecordSignal",
+            json!({
+                "Source": "signal-scout",
+                "SignalKind": nonempty(
+                    lookup_string_deep(entry, &["signal_kind", "SignalKind", "source"]),
+                    "observability".to_string(),
+                ),
+                "OrganismId": target.organism_id,
+                "Summary": summary,
+                "EvidenceArtifactId": target.evidence_artifact_id,
+                "Fingerprint": fingerprint,
+                "CorrelationJson": json!({
+                    "signal_scout_id": scout_id,
+                    "evidence": entry.get("evidence").cloned().unwrap_or(Value::Null),
+                }).to_string(),
+            }),
+        )?;
+    }
+    Ok(())
+}
+
+fn signal_fingerprint_exists(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    organism_id: &str,
+    fingerprint: &str,
+) -> Result<bool, String> {
+    let filter = format!(
+        "OrganismId eq {} and Fingerprint eq {}",
+        odata_string_literal(organism_id),
+        odata_string_literal(fingerprint)
+    );
+    let url = format!("{base_url}/tdata/Signals?$filter={}&$top=1", urlencode(&filter));
+    let resp = ctx
+        .http_call("GET", &url, headers, "")
+        .map_err(|e| format!("signal fingerprint lookup: {e}"))?;
+    if !(200..300).contains(&resp.status) {
+        return Err(format!("signal fingerprint lookup returned {}", resp.status));
+    }
+    let parsed: Value =
+        serde_json::from_str(&resp.body).map_err(|e| format!("fingerprint lookup json: {e}"))?;
+    Ok(parsed
+        .get("value")
+        .and_then(Value::as_array)
+        .map(|rows| !rows.is_empty())
+        .unwrap_or(false))
 }

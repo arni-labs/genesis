@@ -21,6 +21,44 @@ temper_side_effect_module! {
         let summary = field_str(&fields, &["Summary"]);
         let evidence_artifact_id = field_str(&fields, &["EvidenceArtifactId"]);
         let correlation_json = field_str(&fields, &["CorrelationJson"]);
+        let fingerprint = field_str(&fields, &["Fingerprint"]);
+
+        // Scout-recorded signals arrive pre-interpreted: the sweep's
+        // observer run already proposed directions, so re-queueing an
+        // interpretation work item would cascade observers.
+        if source == "signal-scout" {
+            return Ok(json!({
+                "signal_id": signal_id,
+                "skipped": "scout-recorded signal is already interpreted",
+            }));
+        }
+
+        // Fingerprint dedup: repeated findings collapse onto the first
+        // signal instead of spawning duplicate observer work.
+        if !fingerprint.trim().is_empty() {
+            if let Some(existing_id) = duplicate_signal_id(
+                &ctx,
+                &base_url,
+                &headers,
+                &organism_id,
+                &fingerprint,
+                &signal_id,
+            )? {
+                post_directed_action(
+                    &ctx,
+                    &base_url,
+                    &headers,
+                    "Signals",
+                    &signal_id,
+                    "IgnoreSignal",
+                    json!({ "Reason": format!("duplicate of signal {existing_id} (fingerprint {fingerprint})") }),
+                )?;
+                return Ok(json!({
+                    "signal_id": signal_id,
+                    "skipped": format!("duplicate of {existing_id}"),
+                }));
+            }
+        }
 
         let work_item_id = create_entity(&ctx, &base_url, &headers, "WorkItems")?;
         let prompt = observer_prompt(
@@ -64,6 +102,50 @@ temper_side_effect_module! {
             "observer_work_item_id": work_item_id,
         }))
     }
+}
+
+/// First other signal carrying this fingerprint for the organism, if
+/// any. Archived signals do not suppress new occurrences.
+fn duplicate_signal_id(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    organism_id: &str,
+    fingerprint: &str,
+    own_signal_id: &str,
+) -> Result<Option<String>, String> {
+    let filter = format!(
+        "OrganismId eq {} and Fingerprint eq {}",
+        odata_string_literal(organism_id),
+        odata_string_literal(fingerprint)
+    );
+    let url = format!("{base_url}/tdata/Signals?$filter={}&$top=5", urlencode(&filter));
+    let resp = ctx
+        .http_call("GET", &url, headers, "")
+        .map_err(|e| format!("duplicate signal lookup: {e}"))?;
+    if !(200..300).contains(&resp.status) {
+        return Err(format!("duplicate signal lookup returned {}", resp.status));
+    }
+    let parsed: Value =
+        serde_json::from_str(&resp.body).map_err(|e| format!("duplicate lookup json: {e}"))?;
+    let rows = parsed
+        .get("value")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for row in rows {
+        let id = row
+            .get("entity_id")
+            .or_else(|| row.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let status = entity_status(&row);
+        if !id.is_empty() && id != own_signal_id && status != "Archived" {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }
 
 fn observer_prompt(

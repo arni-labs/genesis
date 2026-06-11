@@ -19,6 +19,23 @@ temper_side_effect_module! {
         let organism_id = field_str(&fields, &["OrganismId"]);
         let direction_id = field_str(&fields, &["DirectionId"]);
         let parent_version_id = field_str(&fields, &["ParentVersionId"]);
+        // The mutation boundary comes from the organism row, not a
+        // hardwired app: variants stay inside this organism's bundle.
+        let organism_fields = state_fields(&get_entity(
+            &ctx,
+            &base_url,
+            &headers,
+            "Organisms",
+            &organism_id,
+        )?);
+        let organism_name = first_nonempty(
+            field_str(&organism_fields, &["Name"]),
+            organism_id.clone(),
+        );
+        let organism_app_ref = first_nonempty(
+            field_str(&fields, &["OrganismParentRef"]),
+            field_str(&organism_fields, &["AppRef"]),
+        );
         let variant_target_count = config_usize(&ctx, "variant_target_count", 3);
         let generation_index = field_u64(&fields, &["generation_count", "GenerationCount"]) + 1;
         let prompt_context = variant_generation_context(
@@ -64,6 +81,8 @@ temper_side_effect_module! {
                 &organism_id,
                 &direction_id,
                 &parent_version_id,
+                &organism_name,
+                &organism_app_ref,
                 variant_index,
                 variant_target_count,
                 &prompt_context,
@@ -106,12 +125,18 @@ temper_side_effect_module! {
     }
 }
 
+fn first_nonempty(value: String, fallback: String) -> String {
+    if value.trim().is_empty() { fallback } else { value }
+}
+
 fn variant_generator_prompt(
     episode_id: &str,
     generation_id: &str,
     organism_id: &str,
     direction_id: &str,
     parent_version_id: &str,
+    organism_name: &str,
+    organism_app_ref: &str,
     variant_index: usize,
     variant_target_count: usize,
     prompt_context: &str,
@@ -121,15 +146,17 @@ fn variant_generator_prompt(
 EpisodeId: {episode_id}\n\
 GenerationId: {generation_id}\n\
 OrganismId: {organism_id}\n\
+OrganismName: {organism_name}\n\
+OrganismBundleRef: {organism_app_ref}\n\
 DirectionId: {direction_id}\n\
 ParentVersionId: {parent_version_id}\n\n\
 {prompt_context}\n\n\
 Variant lane suggestion: {}\n\
 Work in the assigned organism repository and create one real candidate variant. \
-Keep the mutation bounded to the Agent Answers app bundle: prefer changing APP.md, \
-adrs/, specs/question.ioa.toml, specs/answer.ioa.toml, specs/model.csdl.xml, and \
-policies/agent_answers.cedar. Do not create unrelated entity families unless the \
-lane explicitly requires it. Preserve existing Question and Answer actions. \
+Keep the mutation bounded to the organism's app bundle (OrganismBundleRef): prefer \
+minimal changes to that bundle's APP.md, adrs/, specs/, and policies. Do not create \
+unrelated entity families unless the lane explicitly requires it. Preserve every \
+existing entity action and behavior the bundle ships today. \
 Return JSON with: summary, app_ref, branch_ref, runtime_ref, changed_files, diff_ref, diff_patch, \
 verification_notes, and next_actions. Do not change evaluation rules or viability constraints.",
         variant_lane_suggestion(variant_index),
@@ -139,16 +166,16 @@ verification_notes, and next_actions. Do not change evaluation rules or viabilit
 fn variant_lane_suggestion(variant_index: usize) -> &'static str {
     match variant_index {
         1 => {
-            "Improve Answer usefulness by adding a compact answer-quality or decision-frame field/action while preserving Submit and Accept."
+            "Strengthen the primary user-facing outcome named in the Adaptation Goal with one minimal, backward-compatible field or action."
         }
         2 => {
-            "Improve Question intent capture by adding a lightweight intent/context field/action while preserving Configure, RecordAnswer, and Accept."
+            "Improve how the app captures user intent or context relevant to the Adaptation Goal while preserving all existing actions."
         }
         3 => {
-            "Improve evidence and uncertainty handling by adding a bounded evidence/uncertainty field/action on Answer while preserving legacy behavior."
+            "Improve evidence, robustness, or error handling relevant to the Adaptation Goal with one bounded, backward-compatible change."
         }
         _ => {
-            "Make a small backward-compatible Question or Answer improvement that helps simulated users evaluate Q&A quality."
+            "Make a small backward-compatible improvement that helps simulated users observe the Adaptation Goal succeeding."
         }
     }
 }
@@ -291,6 +318,8 @@ mod tests {
             "org-1",
             "dir-1",
             "ov-1",
+            "tractate",
+            "nerdsane/tractate@abc123",
             2,
             3,
             "Adaptation Goal: Improve trust.",
@@ -300,8 +329,11 @@ mod tests {
         assert!(prompt.contains("GenerationId: gen-1"));
         assert!(prompt.contains("variant 2 of 3"));
         assert!(prompt.contains("Improve trust"));
-        assert!(prompt.contains("Improve Question intent capture"));
-        assert!(prompt.contains("Preserve existing Question and Answer actions"));
+        assert!(prompt.contains("OrganismName: tractate"));
+        assert!(prompt.contains("OrganismBundleRef: nerdsane/tractate@abc123"));
+        assert!(prompt.contains("bounded to the organism's app bundle"));
+        assert!(prompt.contains("Preserve every existing entity action"));
         assert!(prompt.contains("Do not change evaluation rules"));
+        assert!(!prompt.contains("Agent Answers"));
     }
 }

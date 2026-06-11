@@ -260,6 +260,43 @@ fn queue_stage_evaluation_work_item(
     Ok(work_item_id)
 }
 
+/// The organism's configured external runtime target (ADR-0023):
+/// where simulated users exercise the app, which tenant, which env
+/// var NAMES resolve the bearer token, and which Datadog service owns
+/// the runtime's telemetry.
+struct OrganismRuntimeTarget {
+    base_url: String,
+    tenant: String,
+    auth_env_vars: String,
+    datadog_service: String,
+}
+
+fn organism_runtime_target(
+    ctx: &Context,
+    base_url: &str,
+    headers: &[(String, String)],
+    organism_id: &str,
+) -> Result<OrganismRuntimeTarget, String> {
+    if organism_id.trim().is_empty() {
+        return Err("episode has no OrganismId; cannot resolve a runtime target".to_string());
+    }
+    let organism = get_entity(ctx, base_url, headers, "Organisms", organism_id)?;
+    let fields = state_fields(&organism);
+    let runtime_base_url = field_str(&fields, &["RuntimeBaseUrl"]);
+    let tenant = field_str(&fields, &["RuntimeTenantId"]);
+    if runtime_base_url.trim().is_empty() || tenant.trim().is_empty() {
+        return Err(format!(
+            "organism {organism_id} has no configured runtime target; dispatch Organism.ConfigureOrganismRuntime (ADR-0023) before trials can run"
+        ));
+    }
+    Ok(OrganismRuntimeTarget {
+        base_url: runtime_base_url,
+        tenant,
+        auth_env_vars: field_str(&fields, &["RuntimeAuthEnvVarsJson"]),
+        datadog_service: field_str(&fields, &["DatadogService"]),
+    })
+}
+
 fn queue_simulated_user_trials(
     ctx: &Context,
     base_url: &str,
@@ -294,6 +331,10 @@ fn queue_simulated_user_trials(
     }
     let plan_fields = state_fields(&plan);
     let direction_id = field_str(episode_fields, &["DirectionId"]);
+    // ADR-0023: trials exercise the app through the organism's
+    // configured external runtime target — never a hardcoded one.
+    let organism_id = field_str(episode_fields, &["OrganismId"]);
+    let runtime_target = organism_runtime_target(ctx, base_url, headers, &organism_id)?;
     let users_per_variant = field_u64(&plan_fields, &["UsersPerVariant"]).max(1) as usize;
     let runs_per_persona = field_u64(&plan_fields, &["RunsPerPersona"]).max(1) as usize;
     let personas = parse_json_values(&field_str(&plan_fields, &["PersonasJson"]));
@@ -338,7 +379,7 @@ fn queue_simulated_user_trials(
                 runtime_ref,
                 app_ref,
                 variant_summary,
-                &resolve_public_api_url(ctx),
+                &runtime_target,
             );
             post_paw_orchestration_action(
                 ctx,
@@ -370,6 +411,11 @@ fn queue_simulated_user_trials(
                         "run_index": run_index,
                         "runtime_ref": runtime_ref,
                         "app_ref": app_ref,
+                        "role": "simulated_user",
+                        "runtime_base_url": runtime_target.base_url,
+                        "runtime_tenant": runtime_target.tenant,
+                        "runtime_auth_env_vars": runtime_target.auth_env_vars,
+                        "datadog_service": runtime_target.datadog_service,
                     }).to_string(),
                 }),
             )?;

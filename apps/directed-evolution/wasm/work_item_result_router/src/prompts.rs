@@ -106,8 +106,28 @@ Do not modify evaluators or selection rules.",
             "",
             runtime_ref,
             app_ref,
+            runtime_tenant_from_ref(runtime_ref).as_str(),
+            stage_prompt_role(stage_fields),
         ),
     )
+}
+
+/// Tenant portion of a temper://tenant/<tenant>/app/<ref> runtime ref;
+/// empty when the ref has another shape.
+fn runtime_tenant_from_ref(runtime_ref: &str) -> String {
+    runtime_ref
+        .strip_prefix("temper://tenant/")
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn stage_prompt_role(stage_fields: &Value) -> &'static str {
+    if stage_requires_datadog(stage_fields) {
+        "telemetry_evaluator"
+    } else {
+        "evaluator"
+    }
 }
 
 fn evaluation_stage_guidance(stage_fields: &Value) -> &'static str {
@@ -136,7 +156,7 @@ fn simulated_user_prompt(
     runtime_ref: &str,
     app_ref: &str,
     variant_summary: &str,
-    temper_api_base: &str,
+    runtime_target: &OrganismRuntimeTarget,
 ) -> String {
     format!(
         "Act as an AI simulated user for a Directed Evolution trial.\n\
@@ -151,14 +171,17 @@ SimulatedUserId: {simulated_user_id}\n\
 RunIndex: {run_index}\n\
 StageName: {}\n\
 StageKind: {}\n\
-TemperApiBase: {temper_api_base}\n\
+TemperApiBase: {}\n\
+RuntimeTenant: {}\n\
+RuntimeAuthEnvVars: {}\n\
 RuntimeRef: {runtime_ref}\n\
 Persona: {}\n\
 Goal: {goal}\n\
 VariantSummary: {variant_summary}\n\n\
 TemperObservationHeaders:\n{}\n\n\
-Use the live app only. If RuntimeRef is a temper://tenant/<tenant>/app/<app_ref> value, send \
-x-tenant-id for that tenant and include the TemperObservationHeaders on every app/runtime request. \
+Use the live app only, through TemperApiBase with X-Tenant-Id: RuntimeTenant. Resolve a bearer \
+token from the RuntimeAuthEnvVars names in order; never print the token. Include the \
+TemperObservationHeaders on every app/runtime request. \
 Start runtime probing at /tdata and /tdata/$metadata; a 404 from / or decorative app routes is not \
 a blocker when the OData runtime works. Only use status=blocked when /tdata and /tdata/$metadata are \
 unreachable for the parsed runtime tenant, or when the live app behavior prevents the user journey. \
@@ -167,6 +190,9 @@ Return JSON with status=observed|blocked, summary, journey, observations, intent
 Use blocker_kind=none|runtime-access|app-behavior|ambiguous.",
         field_str(stage_fields, &["StageName"]),
         field_str(stage_fields, &["StageKind"]),
+        runtime_target.base_url,
+        runtime_target.tenant,
+        runtime_target.auth_env_vars,
         persona,
         directed_evolution_header_block(
             direction_id,
@@ -182,6 +208,8 @@ Use blocker_kind=none|runtime-access|app-behavior|ambiguous.",
             &run_index.to_string(),
             runtime_ref,
             app_ref,
+            &runtime_target.tenant,
+            "simulated_user",
         ),
     )
 }
@@ -200,6 +228,8 @@ fn directed_evolution_header_block(
     run_index: &str,
     runtime_ref: &str,
     app_ref: &str,
+    tenant: &str,
+    role: &str,
 ) -> String {
     let metadata = json!({
         "de.direction_id": direction_id,
@@ -215,6 +245,8 @@ fn directed_evolution_header_block(
         "de.simulated_user_id": simulated_user_id,
         "de.runtime_ref": runtime_ref,
         "de.app_ref": app_ref,
+        "de.tenant": tenant,
+        "de.role": role,
     });
     format!("X-Temper-Observe-Metadata: {metadata}")
 }
@@ -471,10 +503,23 @@ mod prompt_tests {
             "3",
             "temper://tenant/de-variant/app/nerdsane/agent-answers@abc",
             "nerdsane/agent-answers@abc",
+            "agent-answers-seed",
+            "simulated_user",
         );
 
         assert!(headers.contains("X-Temper-Observe-Metadata:"));
         assert!(headers.contains("\"de.persona_index\":\"2\""));
         assert!(headers.contains("\"de.run_index\":\"3\""));
+        assert!(headers.contains("\"de.tenant\":\"agent-answers-seed\""));
+        assert!(headers.contains("\"de.role\":\"simulated_user\""));
+    }
+
+    #[test]
+    fn runtime_tenant_parses_from_temper_ref() {
+        assert_eq!(
+            runtime_tenant_from_ref("temper://tenant/de-variant-x/app/o/a@1"),
+            "de-variant-x"
+        );
+        assert_eq!(runtime_tenant_from_ref("o/a@1"), "");
     }
 }

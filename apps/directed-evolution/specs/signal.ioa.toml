@@ -9,8 +9,8 @@ name = "RecordSignal"
 kind = "input"
 from = ["Recorded"]
 effect = [{ type = "trigger", name = "signal_recorded" }]
-params = ["Source", "SignalKind", "OrganismId", "Summary", "EvidenceArtifactId", "CorrelationJson"]
-hint = "Record a raw observation before observer-worker interpretation."
+params = ["Source", "SignalKind", "OrganismId", "Summary", "EvidenceArtifactId", "CorrelationJson", "Fingerprint"]
+hint = "Record a raw observation before observer-worker interpretation. Fingerprint enables dedup: repeated findings collapse onto the first signal."
 
 [[action.triggers]]
 name = "signal_recorded"
