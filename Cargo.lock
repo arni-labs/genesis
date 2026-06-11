@@ -102,6 +102,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "genesis-git-auth"
+version = "0.0.1"
+dependencies = [
+ "base64",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "genesis-git-object"
 version = "0.0.1"
 
@@ -120,6 +130,7 @@ name = "git_receive_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-auth",
  "genesis-git-object",
  "serde",
  "serde_json",
