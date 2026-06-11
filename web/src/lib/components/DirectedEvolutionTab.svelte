@@ -9,10 +9,14 @@
     Minus,
     PlayCircle,
     Plus,
-    RefreshCw
+    RefreshCw,
+    Settings2
   } from '@lucide/svelte';
-  import { Badge, Button } from '$lib/components/ui';
-  import type { DirectedEvolutionSnapshot } from '$lib/directedEvolution';
+  import { Badge, Button, Input } from '$lib/components/ui';
+  import type {
+    ConfigureOrganismRuntimeInput,
+    DirectedEvolutionSnapshot
+  } from '$lib/directedEvolution';
   import type { DirectedEvolutionAppContext } from '$lib/directedEvolutionContext';
 
   type BadgeTone = 'neutral' | 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'danger';
@@ -28,6 +32,7 @@
     onCopy: (value: string, label: string) => void;
     onStartSimulatedUsers?: (input: { userCount: number; runsPerUser: number }) => Promise<number>;
     onStartObserver?: () => Promise<string>;
+    onConfigureRuntime?: (input: ConfigureOrganismRuntimeInput) => Promise<void>;
   };
 
   let {
@@ -39,7 +44,8 @@
     onRefresh,
     onCopy,
     onStartSimulatedUsers,
-    onStartObserver
+    onStartObserver,
+    onConfigureRuntime
   }: Props = $props();
 
   let userCount = $state(3);
@@ -50,15 +56,38 @@
   let observing = $state(false);
   let observeError = $state('');
   let observeSummary = $state('');
+  let runtimeBaseUrlInput = $state('');
+  let runtimeTenantInput = $state('');
+  let datadogServiceInput = $state('');
+  let authEnvVarsInput = $state('');
+  let evaluatorRefInput = $state('');
+  let runtimeFormSeedKey = $state('');
+  let configuringRuntime = $state(false);
+  let configureError = $state('');
+  let configureSummary = $state('');
 
   const activeWorkStatuses = new Set(['Queued', 'Claimed', 'Running']);
   const terminalRunStatuses = new Set(['Succeeded', 'Failed', 'Cancelled']);
 
   let organism = $derived(
+    snapshot?.organisms.find((item) => item.id === context.organismId) ??
     snapshot?.organisms.find((item) => item.appRef === context.seedAppRef) ??
     snapshot?.organisms[0] ??
     null
   );
+
+  // Seed the runtime form from the organism row once per organism;
+  // periodic snapshot refreshes must not clobber in-progress edits.
+  $effect(() => {
+    const key = `${context.appId}:${organism?.id ?? ''}`;
+    if (key === runtimeFormSeedKey) return;
+    runtimeFormSeedKey = key;
+    runtimeBaseUrlInput = context.runtimeBaseUrl;
+    runtimeTenantInput = context.runtimeTenantId;
+    datadogServiceInput = context.runtimeDatadogService;
+    authEnvVarsInput = context.runtimeAuthEnvVars.join(', ');
+    evaluatorRefInput = context.evaluatorRef;
+  });
   let activeEpisodes = $derived(
     snapshot?.episodes.filter((episode) => !terminalRunStatuses.has(episode.status)) ?? []
   );
@@ -200,11 +229,7 @@
     datadogLogsHref(context.runtimeDatadogService, context.runtimeTenantId)
   );
   let runtimeTracesHref = $derived(
-    datadogTracesHref(
-      context.runtimeDatadogService,
-      context.runtimeTenantId,
-      context.runtimeTraceResourceNames
-    )
+    datadogTracesHref(context.runtimeDatadogService, context.runtimeTenantId)
   );
   let runtimeAuthLabel = $derived(
     context.runtimeAuthEnvVars.length ? context.runtimeAuthEnvVars.join(' -> ') : 'No runtime auth env'
@@ -241,6 +266,30 @@
       launchError = error instanceof Error ? error.message : String(error);
     } finally {
       launching = false;
+    }
+  }
+
+  async function saveRuntimeTarget() {
+    if (!onConfigureRuntime || configuringRuntime) return;
+    configuringRuntime = true;
+    configureError = '';
+    configureSummary = '';
+    try {
+      await onConfigureRuntime({
+        runtimeBaseUrl: runtimeBaseUrlInput.trim(),
+        runtimeTenantId: runtimeTenantInput.trim(),
+        datadogService: datadogServiceInput.trim(),
+        runtimeAuthEnvVars: authEnvVarsInput
+          .split(',')
+          .map((name) => name.trim())
+          .filter(Boolean),
+        evaluatorRef: evaluatorRefInput.trim()
+      });
+      configureSummary = 'Runtime target recorded on the organism.';
+    } catch (error) {
+      configureError = error instanceof Error ? error.message : String(error);
+    } finally {
+      configuringRuntime = false;
     }
   }
 
@@ -297,12 +346,9 @@
     return `https://app.datadoghq.com/logs?${params.toString()}`;
   }
 
-  function datadogTracesHref(service: string, tenant: string, resourceNames: string[]): string {
+  function datadogTracesHref(service: string, tenant: string): string {
     if (!service || !tenant) return 'https://app.datadoghq.com/apm/traces';
-    const resourceFilter = resourceNames.length
-      ? ` resource_name:(${resourceNames.join(' OR ')})`
-      : '';
-    const query = `service:${service} @tenant:${tenant} @temper.observation.de.app_ref:*${resourceFilter}`;
+    const query = `service:${service} @tenant:${tenant} @temper.observation.de.app_ref:*`;
     const params = new URLSearchParams({
       query,
       live: 'true'
@@ -317,7 +363,7 @@
       <div class="flex flex-wrap items-center gap-1.5">
         <Badge tone={missionTone} pixel={missionTone === 'success'}>{missionStatus}</Badge>
         <Badge tone="secondary">Control tenant {context.controlTenantId}</Badge>
-        <Badge tone="neutral">Runtime tenant {context.runtimeTenantId}</Badge>
+        <Badge tone="neutral">Runtime tenant {context.runtimeTenantId || 'not configured'}</Badge>
         <Badge tone={context.runtimeBaseUrl ? 'success' : 'warning'}>
           {context.runtimeLabel}
         </Badge>
@@ -332,7 +378,7 @@
         <span class="truncate">Runtime {context.runtimeBaseUrl || 'not configured'}</span>
         <span class="truncate">Datadog service {context.runtimeDatadogService || 'not configured'}</span>
         <span class="truncate">Auth {runtimeAuthLabel}</span>
-        <span class="truncate">Tenant {context.runtimeTenantId}</span>
+        <span class="truncate">Tenant {context.runtimeTenantId || 'not configured'}</span>
       </div>
     </div>
     <div class="flex flex-wrap items-center gap-1.5">
@@ -420,6 +466,105 @@
   </div>
 
   <div class="grid gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+    <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
+      <div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2">
+        <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+          Runtime target
+        </p>
+        <Badge tone={context.configured ? 'success' : 'warning'}>
+          {context.configured ? 'Configured' : 'Not configured'}
+        </Badge>
+      </div>
+      <div class="grid gap-3 p-3">
+        <p class="text-[11.5px] leading-relaxed text-[var(--color-muted)]">
+          The external runtime this organism is exercised against, recorded on the Organism entity.
+          Auth env var names only — secret values never enter Genesis.
+        </p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label class="grid gap-1">
+            <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+              Runtime base URL
+            </span>
+            <Input
+              type="url"
+              bind:value={runtimeBaseUrlInput}
+              placeholder="https://runtime.example.app"
+              aria-label="Runtime base URL"
+            />
+          </label>
+          <label class="grid gap-1">
+            <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+              Runtime tenant
+            </span>
+            <Input
+              bind:value={runtimeTenantInput}
+              placeholder="app-seed"
+              aria-label="Runtime tenant id"
+            />
+          </label>
+          <label class="grid gap-1">
+            <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+              Datadog service
+            </span>
+            <Input
+              bind:value={datadogServiceInput}
+              placeholder="temperpaw"
+              aria-label="Datadog service"
+            />
+          </label>
+          <label class="grid gap-1">
+            <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+              Auth env vars (comma-separated names)
+            </span>
+            <Input
+              bind:value={authEnvVarsInput}
+              placeholder="RUNTIME_API_KEY, TEMPER_API_KEY"
+              aria-label="Runtime auth env var names"
+            />
+          </label>
+          <label class="grid gap-1 sm:col-span-2">
+            <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+              Evaluator ref
+            </span>
+            <Input
+              bind:value={evaluatorRefInput}
+              placeholder="owner/evaluator-app@hash"
+              aria-label="Evaluator ref"
+            />
+          </label>
+        </div>
+        <Button
+          variant="secondary"
+          size="md"
+          disabled={!onConfigureRuntime ||
+            !organism ||
+            configuringRuntime ||
+            !runtimeBaseUrlInput.trim() ||
+            !runtimeTenantInput.trim()}
+          onclick={saveRuntimeTarget}
+          class="w-full"
+        >
+          <Settings2 size={13} />
+          {configuringRuntime ? 'Recording runtime target' : 'Save runtime target'}
+        </Button>
+        {#if !organism}
+          <p class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5 text-[11.5px] text-[var(--color-muted)]">
+            No organism is registered in this control tenant yet, so there is nothing to configure.
+          </p>
+        {/if}
+        {#if configureSummary}
+          <p class="rounded-[var(--radius-xs)] border border-[var(--color-success)]/30 bg-[rgba(34,197,94,0.08)] px-2 py-1.5 text-[11.5px] text-[#166534]">
+            {configureSummary}
+          </p>
+        {/if}
+        {#if configureError}
+          <p class="rounded-[var(--radius-xs)] border border-[var(--color-error)]/30 bg-[rgba(217,45,75,0.08)] px-2 py-1.5 text-[11.5px] text-[#7a1830]">
+            {configureError}
+          </p>
+        {/if}
+      </div>
+    </section>
+
     <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white">
       <div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2">
         <p class="font-mono text-[10px] uppercase tracking-[0.10em] text-[var(--color-faint)]">

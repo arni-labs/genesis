@@ -328,6 +328,7 @@
 
                 {#if edge}
                   {@const mutation = winnerMutation(winner)}
+                  {@const promotedDiffPatch = edge.diffPatch || mutation?.diffPatch || ''}
                   <div class="mt-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] px-2 py-1.5">
                     <div class="flex flex-wrap items-center gap-1.5">
                       <Badge tone="primary">promoted change</Badge>
@@ -354,9 +355,9 @@
                         Runtime: {promotion.runtimeRef}
                       </p>
                     {/if}
-                    {#if mutation?.diffPatch}
+                    {#if promotedDiffPatch}
                       <div class="mt-2">
-                        <UnifiedDiff patch={mutation.diffPatch} maxFiles={5} maxLinesPerFile={22} />
+                        <UnifiedDiff patch={promotedDiffPatch} maxFiles={5} maxLinesPerFile={22} />
                       </div>
                     {/if}
                     <details class="mt-1.5">

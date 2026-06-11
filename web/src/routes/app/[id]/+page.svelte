@@ -21,12 +21,15 @@
   } from '$lib/registry';
   import {
     directedEvolutionContextForApp,
-    directedEvolutionHref
+    directedEvolutionHref,
+    organismForApp
   } from '$lib/directedEvolutionContext';
   import {
+    configureOrganismRuntime,
     loadDirectedEvolutionSnapshot,
     queueSeedObserver,
     queueSeedSimulatedUsers,
+    type ConfigureOrganismRuntimeInput,
     type DirectedEvolutionSnapshot
   } from '$lib/directedEvolution';
   import { parseJsonList, parseJsonMap } from '$lib/api';
@@ -80,7 +83,11 @@
 
   $: appId = decodeURIComponent($page.params.id ?? '');
   $: selectedApp = findAppById(state.snapshot, appId);
-  $: evolutionContext = selectedApp ? directedEvolutionContextForApp(selectedApp) : null;
+  $: evolutionOrganism =
+    selectedApp && evolutionSnapshot ? organismForApp(evolutionSnapshot.organisms, selectedApp) : null;
+  $: evolutionContext = selectedApp
+    ? directedEvolutionContextForApp(selectedApp, evolutionOrganism)
+    : null;
   $: evolutionMissionControlHref = evolutionContext
     ? directedEvolutionHref(evolutionContext, base)
     : `${base}/evolution`;
@@ -149,7 +156,7 @@
     }
   }
 
-  $: if (!evolutionContext && evolutionLoadKey) {
+  $: if (!selectedApp && evolutionLoadKey) {
     evolutionLoadKey = '';
     evolutionSnapshot = null;
     evolutionError = '';
@@ -225,14 +232,23 @@
     void loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey, true);
   }
 
+  async function configureRuntimeTarget(input: ConfigureOrganismRuntimeInput) {
+    if (!evolutionContext) {
+      throw new Error('Directed Evolution state is not loaded yet.');
+    }
+    if (!evolutionOrganism) {
+      throw new Error('No organism is registered for this app yet.');
+    }
+    await configureOrganismRuntime(evolutionOrganism.id, input, evolutionContext.controlTenantId);
+    showToast('Runtime target recorded');
+    await loadEvolutionFor(evolutionContext.controlTenantId, evolutionLoadKey, true);
+  }
+
   async function startSeedSimulatedUsers(input: { userCount: number; runsPerUser: number }) {
     if (!evolutionContext || !evolutionSnapshot) {
       throw new Error('Directed Evolution state is not loaded yet.');
     }
-    const organism =
-      evolutionSnapshot.organisms.find((item) => item.appRef === evolutionContext.seedAppRef) ??
-      evolutionSnapshot.organisms[0] ??
-      null;
+    const organism = evolutionOrganism;
     if (!organism) {
       throw new Error('No active seed organism is available for this app.');
     }
@@ -258,10 +274,7 @@
     if (!evolutionContext || !evolutionSnapshot) {
       throw new Error('Directed Evolution state is not loaded yet.');
     }
-    const organism =
-      evolutionSnapshot.organisms.find((item) => item.appRef === evolutionContext.seedAppRef) ??
-      evolutionSnapshot.organisms[0] ??
-      null;
+    const organism = evolutionOrganism;
     if (!organism) {
       throw new Error('No active seed organism is available for this app.');
     }
@@ -609,6 +622,7 @@
                 onCopy={copyText}
                 onStartSimulatedUsers={startSeedSimulatedUsers}
                 onStartObserver={startSeedObserver}
+                onConfigureRuntime={configureRuntimeTarget}
               />
             {/if}
           </BitsTabs.Content>
