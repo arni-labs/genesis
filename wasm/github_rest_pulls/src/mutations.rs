@@ -288,14 +288,21 @@ pub(crate) fn merge_pull(
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
+    // Dispatch the merge on the Repository entity, not the PullRequest.
+    // Repository.MergePullRequest carries the PR -> Merged transition as a
+    // conditional sub-write (merge_transition), so a content conflict leaves
+    // the PullRequest in Approved — only a clean merge transitions it. The
+    // PullRequest.Merge path would commit the parent Approved -> Merged
+    // transition before the engine runs and discovers the conflict.
     let outcome = odata::post_action(
         ctx,
         &caller_headers,
         &api_base,
-        "PullRequests",
-        &row.id,
-        "Merge",
+        "Repositories",
+        &repository_id,
+        "MergePullRequest",
         &json!({
+            "PullRequestId": row.id,
             "Strategy": strategy,
             "Message": message,
             "ClientRequestId": format!("github-rest-pulls:merge:{}", row.id),

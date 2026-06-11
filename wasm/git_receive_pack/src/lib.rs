@@ -80,7 +80,7 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
     // (ADR-0025). The resolved principal rides the action bridge so
     // Cedar evaluates IngestPack sub-writes as the real caller.
     let auth_env = genesis_git_auth::AuthEnv {
-        temper_api: TEMPER_API,
+        temper_api: &api_base,
         tenant: SYSTEM_TENANT,
         system_principal: SYSTEM_PRINCIPAL,
     };

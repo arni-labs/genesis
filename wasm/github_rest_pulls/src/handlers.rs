@@ -31,7 +31,7 @@ pub(crate) fn open_repo_access(
     route: &Route,
     api_base: &str,
 ) -> Result<Result<RepoAccess, Value>, String> {
-    let env = auth_env();
+    let env = auth_env(api_base);
     let resolved = genesis_git_auth::resolve_principal(ctx, &env, &http.headers);
     let anonymous = resolved.is_anonymous();
     let headers = if anonymous {
@@ -65,7 +65,8 @@ pub(crate) fn resolve_mutating_principal(
     ctx: &Context,
     http: &InboundHttp,
 ) -> Result<Result<Principal, Value>, String> {
-    let env = auth_env();
+    let api_base = http::api_base_from_headers(&http.headers);
+    let env = auth_env(&api_base);
     let principal = genesis_git_auth::resolve_principal(ctx, &env, &http.headers);
     if principal.is_anonymous() {
         return Ok(Err(http::respond_unauthorized(http)?));

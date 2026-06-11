@@ -57,8 +57,9 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let (owner, repo) = repo_parts_from_http(http);
     let repository_id = format!("rp-{owner}-{repo}");
 
+    let api_base = temper_api_from_headers(&http.headers);
     let auth_env = AuthEnv {
-        temper_api: TEMPER_API,
+        temper_api: &api_base,
         tenant: SYSTEM_TENANT,
         system_principal: SYSTEM_PRINCIPAL,
     };
@@ -75,7 +76,6 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     } else {
         resolved
     };
-    let api_base = temper_api_from_headers(&http.headers);
     let refs_rows = fetch_refs_for_repo(ctx, &principal, &repository_id, &api_base)?;
 
     let mut owned: Vec<(String, String)> = refs_rows

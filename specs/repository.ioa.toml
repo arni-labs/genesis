@@ -169,6 +169,11 @@ generated_from = "ref_updates"
 
 [[action.sub_writes]]
 target_entity = "Ref"
+action = "ForceUpdate"
+generated_from = "ref_updates"
+
+[[action.sub_writes]]
+target_entity = "Ref"
 action = "Delete"
 generated_from = "ref_updates"
 

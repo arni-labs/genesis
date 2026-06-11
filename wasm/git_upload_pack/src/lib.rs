@@ -64,8 +64,9 @@ temper_module! {
 /// if none is presented. Production deployments lock down via Cedar
 /// to require a real GitToken; dev quickstarts work without one.
 fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
+    let api_base = temper_api_from_headers(headers);
     let auth_env = genesis_git_auth::AuthEnv {
-        temper_api: TEMPER_API,
+        temper_api: &api_base,
         tenant: SYSTEM_TENANT,
         system_principal: SYSTEM_PRINCIPAL,
     };

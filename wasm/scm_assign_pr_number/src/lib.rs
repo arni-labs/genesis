@@ -179,15 +179,17 @@ fn patch_number(
     pull_request_id: &str,
     number: i64,
 ) -> Result<(), String> {
+    // Dispatch the governed AssignNumber action (not a raw field
+    // PATCH, which does not persist on spec-governed entities).
     let url = format!(
-        "{}/tdata/PullRequests('{}')",
+        "{}/tdata/PullRequests('{}')/Temper.Git.AssignNumber",
         api_base.trim_end_matches('/'),
         pull_request_id.replace('\'', "''")
     );
     let body = json!({ "Number": number }).to_string();
     let resp = ctx
-        .http_call("PATCH", &url, headers, &body)
-        .map_err(|e| format!("patch Number: {e}"))?;
+        .http_call("POST", &url, headers, &body)
+        .map_err(|e| format!("AssignNumber: {e}"))?;
     if (200..300).contains(&resp.status) {
         Ok(())
     } else {
@@ -224,6 +226,10 @@ fn system_headers(ctx: &Context) -> Vec<(String, String)> {
         (
             "X-Temper-Principal-Id".to_string(),
             SYSTEM_PRINCIPAL.to_string(),
+        ),
+        (
+            "X-Temper-Principal-Scopes".to_string(),
+            "admin:repos,pr:write".to_string(),
         ),
         ("X-Temper-Agent-Type".to_string(), "system".to_string()),
     ]

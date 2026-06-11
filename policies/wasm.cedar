@@ -41,7 +41,7 @@ permit(
   resource is HttpEndpoint
 ) when {
   context.module == "scm_assign_pr_number" &&
-  ["GET", "PATCH"].contains(context.method) &&
+  ["GET", "POST"].contains(context.method) &&
   ["127.0.0.1", "localhost"].contains(context.domain)
 };
 

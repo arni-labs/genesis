@@ -132,16 +132,20 @@ fn dispatch(ctx: &Context, http: &InboundHttp, route: &Route) -> Result<Value, S
     }
 }
 
-pub(crate) fn auth_env() -> AuthEnv<'static> {
+/// The token lookup must target the server actually handling this
+/// request: the host-derived base, not a fixed port (a 3000-only
+/// hardcode made token resolution silently degrade to anonymous on
+/// any other port).
+pub(crate) fn auth_env(api_base: &str) -> AuthEnv<'_> {
     AuthEnv {
-        temper_api: TEMPER_API,
+        temper_api: api_base,
         tenant: SYSTEM_TENANT,
         system_principal: SYSTEM_PRINCIPAL,
     }
 }
 
-pub(crate) fn system_headers() -> Vec<(String, String)> {
-    let mut headers = Principal::system(&auth_env()).outbound_headers();
+pub(crate) fn system_headers(api_base: &str) -> Vec<(String, String)> {
+    let mut headers = Principal::system(&auth_env(api_base)).outbound_headers();
     headers.push(("X-Temper-Agent-Type".to_string(), "system".to_string()));
     headers
 }
