@@ -56,3 +56,27 @@ name = "app_registry"
 target = "wasm32-wasip1"
 criticality = "app-required"
 startup_loading = "eager"
+
+[[wasm_modules]]
+name = "scm_assign_pr_number"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "eager"
+
+[[wasm_modules]]
+name = "github_rest_repos"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "eager"
+
+[[wasm_modules]]
+name = "github_rest_refs"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "eager"
+
+[[wasm_modules]]
+name = "github_rest_pulls"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "eager"

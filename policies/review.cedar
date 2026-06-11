@@ -15,24 +15,19 @@ permit(
   principal.scopes.contains("admin:repos")
 };
 
-// --- Submit: any pr:write principal who is NOT the PR author.
+// --- Create: any pr:write principal. The review row is the audit
+// record; author-cannot-approve is enforced where it bites, on
+// PullRequest.Approve (whose resource attrs exist at evaluation time).
+// This previously named a nonexistent "Submit" action and referenced
+// never-injected context, denying review creation for every customer
+// token.
 
 permit(
   principal,
-  action == Action::"Submit",
+  action == Action::"Create",
   resource is Review
 ) when {
-  principal.scopes.contains("pr:write") &&
-  resource.ReviewerPrincipal == principal.id &&
-  context.pullRequestOpenedBy != principal.id
-};
-
-forbid(
-  principal,
-  action == Action::"Submit",
-  resource is Review
-) when {
-  context.pullRequestOpenedBy == principal.id
+  principal.scopes.contains("pr:write")
 };
 
 // --- Dismiss: the reviewer themselves, or admin:repos.

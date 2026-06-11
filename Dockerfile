@@ -25,18 +25,30 @@ RUN cargo build --release --target wasm32-wasip1 \
     -p git_upload_pack \
     -p git_receive_pack \
     -p scm_ingest_pack \
-    -p app_registry
+    -p scm_assign_pr_number \
+    -p app_registry \
+    -p github_rest_repos \
+    -p github_rest_refs \
+    -p github_rest_pulls
 RUN mkdir -p \
     wasm/git_refs_advertise \
     wasm/git_upload_pack \
     wasm/git_receive_pack \
     wasm/scm_ingest_pack \
+    wasm/scm_assign_pr_number \
     wasm/app_registry \
+    wasm/github_rest_repos \
+    wasm/github_rest_refs \
+    wasm/github_rest_pulls \
     && cp target/wasm32-wasip1/release/git_refs_advertise.wasm wasm/git_refs_advertise/git_refs_advertise.wasm \
     && cp target/wasm32-wasip1/release/git_upload_pack.wasm wasm/git_upload_pack/git_upload_pack.wasm \
     && cp target/wasm32-wasip1/release/git_receive_pack.wasm wasm/git_receive_pack/git_receive_pack.wasm \
     && cp target/wasm32-wasip1/release/scm_ingest_pack.wasm wasm/scm_ingest_pack/scm_ingest_pack.wasm \
-    && cp target/wasm32-wasip1/release/app_registry.wasm wasm/app_registry/app_registry.wasm
+    && cp target/wasm32-wasip1/release/scm_assign_pr_number.wasm wasm/scm_assign_pr_number/scm_assign_pr_number.wasm \
+    && cp target/wasm32-wasip1/release/app_registry.wasm wasm/app_registry/app_registry.wasm \
+    && cp target/wasm32-wasip1/release/github_rest_repos.wasm wasm/github_rest_repos/github_rest_repos.wasm \
+    && cp target/wasm32-wasip1/release/github_rest_refs.wasm wasm/github_rest_refs/github_rest_refs.wasm \
+    && cp target/wasm32-wasip1/release/github_rest_pulls.wasm wasm/github_rest_pulls/github_rest_pulls.wasm
 
 RUN cargo build --manifest-path temper/Cargo.toml --profile dist --bin temper
 
