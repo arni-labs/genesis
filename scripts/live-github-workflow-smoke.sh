@@ -511,7 +511,18 @@ if ! grep -qi 'conflict' <<<"$conflict_msg"; then
   printf '409 body does not mention conflict: %s\n' "$conflict_msg" >&2
   exit 1
 fi
-pass 8 "conflicting merge → 409" "PR #${PR_C1} merged; PR #${PR_C2} → 409 \"${conflict_msg}\""
+# The 409 must leave no side effects: a conflicting merge dispatches
+# Repository.MergePullRequest, whose PR -> Merged transition is a sub-write
+# applied only on a clean merge. The PR must still be open/unmerged.
+out="${TMP_DIR}/pr-conflict-two-after-409.json"
+status="$(rest GET "/api/v3/repos/${REPO_PATH}/pulls/${PR_C2}" "$TOKEN_A" "" "$out")"
+assert_status "$status" "200" "GET pulls/${PR_C2} after 409" "$out"
+if [[ "$(json_field "$out" "state")" != "open" || "$(json_field "$out" "merged")" == "true" ]]; then
+  printf 'conflict PR %s wrongly merged after 409: state=%s merged=%s\n' \
+    "$PR_C2" "$(json_field "$out" "state")" "$(json_field "$out" "merged")" >&2
+  exit 1
+fi
+pass 8 "conflicting merge → 409 (no side effect)" "PR #${PR_C1} merged; PR #${PR_C2} → 409 \"${conflict_msg}\"; PR #${PR_C2} still open/unmerged"
 
 # ---------------------------------------------------------------------
 # Step 9 — squash strategy on a third branch → single squash commit.
