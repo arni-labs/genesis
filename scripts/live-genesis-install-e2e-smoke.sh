@@ -259,6 +259,24 @@ ensure_endpoint "he-upload-pack" \
 ensure_endpoint "he-receive-pack" \
   '{"Id":"he-receive-pack","PathPrefix":"/{owner}/{repo}.git/git-receive-pack","Methods":"POST","IntegrationModule":"git_receive_pack","RequiresAuth":false,"TimeoutSecs":300,"MaxFuel":20000000000,"MaxMemory":536870912,"MaxResponseBytes":134217728,"ActionBridgeEntityType":"Repository","ActionBridgeEntityId":"rp-{owner}-{repo}","ActionBridgeAction":"IngestPack","ActionBridgeResponse":"git-receive-pack"}'
 
+# GitHub REST v3 surface (RFC-0004 Slices 2-3). RequiresAuth stays
+# false because the modules resolve GitTokens themselves, exactly like
+# the git wire handlers above.
+ensure_endpoint "he-api-user-repos" \
+  '{"Id":"he-api-user-repos","PathPrefix":"/api/v3/user/repos","Methods":"POST","IntegrationModule":"github_rest_repos","RequiresAuth":false,"TimeoutSecs":60}'
+ensure_endpoint "he-api-repo" \
+  '{"Id":"he-api-repo","PathPrefix":"/api/v3/repos/{owner}/{repo}","Methods":"GET","IntegrationModule":"github_rest_repos","RequiresAuth":false,"TimeoutSecs":60}'
+ensure_endpoint "he-api-branches" \
+  '{"Id":"he-api-branches","PathPrefix":"/api/v3/repos/{owner}/{repo}/branches","Methods":"GET","IntegrationModule":"github_rest_refs","RequiresAuth":false,"TimeoutSecs":60}'
+ensure_endpoint "he-api-git-refs" \
+  '{"Id":"he-api-git-refs","PathPrefix":"/api/v3/repos/{owner}/{repo}/git/refs","Methods":"GET,POST,PATCH,DELETE","IntegrationModule":"github_rest_refs","RequiresAuth":false,"TimeoutSecs":60}'
+ensure_endpoint "he-api-git-ref" \
+  '{"Id":"he-api-git-ref","PathPrefix":"/api/v3/repos/{owner}/{repo}/git/ref","Methods":"GET","IntegrationModule":"github_rest_refs","RequiresAuth":false,"TimeoutSecs":60}'
+ensure_endpoint "he-api-matching-refs" \
+  '{"Id":"he-api-matching-refs","PathPrefix":"/api/v3/repos/{owner}/{repo}/git/matching-refs","Methods":"GET","IntegrationModule":"github_rest_refs","RequiresAuth":false,"TimeoutSecs":60}'
+ensure_endpoint "he-api-pulls" \
+  '{"Id":"he-api-pulls","PathPrefix":"/api/v3/repos/{owner}/{repo}/pulls","Methods":"GET,POST,PATCH,PUT","IntegrationModule":"github_rest_pulls","RequiresAuth":false,"TimeoutSecs":120}'
+
 printf 'Creating Genesis repository %s\n' "$REPO_ID"
 post_json "$TENANT" "/tdata/Repositories" \
   "{\"Id\":$(json_escape "$REPO_ID"),\"OwnerAccountId\":$(json_escape "$OWNER"),\"Name\":$(json_escape "$REPO"),\"Description\":\"Genesis install live E2E app repository\",\"DefaultBranch\":\"main\",\"Visibility\":\"public\"}" \

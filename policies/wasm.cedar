@@ -28,3 +28,19 @@ permit(
   context.method == "GET" &&
   ["127.0.0.1", "localhost"].contains(context.domain)
 };
+
+// PullRequest.Open's number-assignment integration scans the repo's
+// PullRequest rows (GET) and backfills the computed Number onto the
+// opened row (PATCH). Spec-triggered modules pass through the Cedar
+// WASM gate, so both verbs need an explicit local permit
+// (scm_assign_pr_number, RFC-0004 Slice 3).
+
+permit(
+  principal is Agent,
+  action == Action::"http_call",
+  resource is HttpEndpoint
+) when {
+  context.module == "scm_assign_pr_number" &&
+  ["GET", "PATCH"].contains(context.method) &&
+  ["127.0.0.1", "localhost"].contains(context.domain)
+};

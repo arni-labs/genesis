@@ -1,0 +1,15 @@
+[package]
+name = "scm_assign_pr_number"
+description = "WASM integration: assign the per-repo monotonic PullRequest Number on Open."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+temper-wasm-sdk = { workspace = true }
+serde_json = { workspace = true }

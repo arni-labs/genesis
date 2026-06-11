@@ -21,8 +21,13 @@ members = [
     "wasm/git_refs_advertise",
     "wasm/app_registry",
     "wasm/scm_ingest_pack",
+    "wasm/scm_merge_pr",
+    "wasm/scm_assign_pr_number",
     "wasm/git_upload_pack",
     "wasm/git_receive_pack",
+    "wasm/github_rest_repos",
+    "wasm/github_rest_refs",
+    "wasm/github_rest_pulls",
 ]
 
 [workspace.package]

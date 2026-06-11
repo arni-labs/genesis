@@ -163,6 +163,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "github_rest_pulls"
+version = "0.0.1"
+dependencies = [
+ "genesis-git-auth",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
+name = "github_rest_refs"
+version = "0.0.1"
+dependencies = [
+ "genesis-git-auth",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
+name = "github_rest_repos"
+version = "0.0.1"
+dependencies = [
+ "genesis-git-auth",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -225,6 +255,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "scm_assign_pr_number"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "scm_ingest_pack"
 version = "0.0.1"
 dependencies = [
@@ -235,6 +273,18 @@ dependencies = [
  "sha2",
  "temper-wasm-sdk",
  "tg-wire",
+]
+
+[[package]]
+name = "scm_merge_pr"
+version = "0.0.1"
+dependencies = [
+ "base64",
+ "genesis-git-object",
+ "serde",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
 ]
 
 [[package]]
