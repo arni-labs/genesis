@@ -325,3 +325,40 @@ mod tests {
         assert_eq!(counts.ambiguous_blocked, 1);
     }
 }
+
+#[test]
+fn threshold_scalar_is_upper_bound() {
+    let metrics = json!({ "regressions": 2 });
+    assert!(threshold_violation(&metrics, "regressions", &json!(0)).is_some());
+    assert!(threshold_violation(&metrics, "regressions", &json!(5)).is_none());
+}
+
+#[test]
+fn threshold_min_enforces_lower_bound() {
+    let metrics = json!({ "success_rate": 0.4 });
+    let violation = threshold_violation(&metrics, "success_rate", &json!({ "min": 0.8 }));
+    assert!(violation.expect("min violated").contains("fell below minimum"));
+    assert!(threshold_violation(&metrics, "success_rate", &json!({ "min": 0.2 })).is_none());
+}
+
+#[test]
+fn threshold_min_and_max_combine() {
+    let metrics = json!({ "latency_ms": 900 });
+    assert!(threshold_violation(&metrics, "latency_ms", &json!({ "min": 1, "max": 500 })).is_some());
+    assert!(threshold_violation(&metrics, "latency_ms", &json!({ "min": 1, "max": 1000 })).is_none());
+}
+
+#[test]
+fn threshold_bool_requires_exact_value() {
+    let metrics = json!({ "goal_success": false });
+    let violation = threshold_violation(&metrics, "goal_success", &json!(true));
+    assert!(violation.expect("bool violated").contains("violated required value true"));
+    let metrics = json!({ "goal_success": true });
+    assert!(threshold_violation(&metrics, "goal_success", &json!(true)).is_none());
+}
+
+#[test]
+fn threshold_missing_metric_is_not_a_violation() {
+    let metrics = json!({});
+    assert!(threshold_violation(&metrics, "absent", &json!({ "min": 1 })).is_none());
+}
