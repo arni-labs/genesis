@@ -17,6 +17,7 @@ members = [
     "registry",
     "wire",
     "crates/git_object",
+    "crates/git_auth",
     "wasm/git_refs_advertise",
     "wasm/app_registry",
     "wasm/scm_ingest_pack",
