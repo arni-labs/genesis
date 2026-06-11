@@ -37,6 +37,16 @@ permit(
   principal.scopes.contains("repo:read") ||
   principal.scopes.contains("repo:write")
 };
+// The git wire protocol modules (refs-advertise, upload-pack) read
+// refs under the trusted system/admin identity to build the
+// advertisement and pack; the repository-level access was already
+// resolved. Per-repo confidentiality for anonymous callers awaits
+// kernel visibility-context injection (recorded residual).
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is Ref
+);
 
 // --- Create + fast-forward Update: repo:write.
 
@@ -71,6 +81,46 @@ permit(
 ) when {
   principal has action_context &&
   principal.action_context == "composite:App.PublishNewVersion"
+};
+
+// --- Repository.IngestPack (git push): the parent action is Cedar-gated
+//     on the push path (repo:write); its declared ref sub-writes carry the
+//     composite action_context. CAS Create, fast-forward Update, and Delete
+//     are authorized as one governed intent. Non-FF ForceUpdate is gated
+//     separately on the `force` scope below — the ingest WASM only emits a
+//     ForceUpdate sub-write after an ancestry walk proves the update is
+//     non-fast-forward, so this is where force-push protection is enforced.
+permit(
+  principal,
+  action in [Action::"Create", Action::"Update", Action::"Delete"],
+  resource is Ref
+) when {
+  principal has action_context &&
+  principal.action_context == "composite:Repository.IngestPack"
+};
+
+// Non-fast-forward push (ForceUpdate sub-write) additionally requires the
+// `force` scope — the carried token scopes gate history rewrites.
+permit(
+  principal,
+  action == Action::"ForceUpdate",
+  resource is Ref
+) when {
+  principal has action_context &&
+  principal.action_context == "composite:Repository.IngestPack" &&
+  principal.scopes.contains("force")
+};
+
+// The server-side merge engine (scm_merge_pr, ADR-0024) advances the
+// target ref as a declared sub-write of Repository.MergePullRequest;
+// the parent action is Cedar-gated on pr:merge.
+permit(
+  principal,
+  action in [Action::"Create", Action::"Update"],
+  resource is Ref
+) when {
+  principal has action_context &&
+  principal.action_context == "composite:Repository.MergePullRequest"
 };
 
 // --- ForceUpdate: repo:write AND `force`.

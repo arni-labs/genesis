@@ -123,6 +123,39 @@ permit(
   principal.scopes.contains("repo:write")
 };
 
+// The git wire protocol modules read object rows under the trusted
+// system/admin identity to stream packs.
+
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is Blob
+);
+
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is Tree
+);
+
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is TreeEntry
+);
+
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is Commit
+);
+
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is Tag
+);
+
 // --- Writes: only system principals (integrations) may create object
 //     rows. Human / agent writes flow through Repository actions
 //     (WriteFile, BatchWriteFiles, IngestPack); integrations return
@@ -139,9 +172,29 @@ permit(
 permit(
   principal,
   action in [Action::"Create"],
+  resource is Blob
+) when {
+  principal has action_context &&
+  (principal.action_context == "composite:Repository.IngestPack" ||
+   principal.action_context == "composite:Repository.MergePullRequest")
+};
+
+permit(
+  principal,
+  action in [Action::"Create"],
   resource is Tree
 ) when {
   principal.agent_type == "system"
+};
+
+permit(
+  principal,
+  action in [Action::"Create"],
+  resource is Tree
+) when {
+  principal has action_context &&
+  (principal.action_context == "composite:Repository.IngestPack" ||
+   principal.action_context == "composite:Repository.MergePullRequest")
 };
 
 permit(
@@ -155,7 +208,35 @@ permit(
 permit(
   principal,
   action in [Action::"Create"],
+  resource is TreeEntry
+) when {
+  principal has action_context &&
+  (principal.action_context == "composite:Repository.IngestPack" ||
+   principal.action_context == "composite:Repository.MergePullRequest")
+};
+
+permit(
+  principal,
+  action in [Action::"Create"],
   resource is Commit
+) when {
+  principal.agent_type == "system"
+};
+
+permit(
+  principal,
+  action in [Action::"Create"],
+  resource is Commit
+) when {
+  principal has action_context &&
+  (principal.action_context == "composite:Repository.IngestPack" ||
+   principal.action_context == "composite:Repository.MergePullRequest")
+};
+
+permit(
+  principal,
+  action in [Action::"Create"],
+  resource is Tag
 ) when {
   principal.agent_type == "system"
 };
@@ -165,5 +246,7 @@ permit(
   action in [Action::"Create"],
   resource is Tag
 ) when {
-  principal.agent_type == "system"
+  principal has action_context &&
+  (principal.action_context == "composite:Repository.IngestPack" ||
+   principal.action_context == "composite:Repository.MergePullRequest")
 };

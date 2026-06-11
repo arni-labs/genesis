@@ -195,7 +195,7 @@ fn apply_review_transition(
     if row.status == "Open" {
         let hop = odata::post_action(
             ctx,
-            &system_headers(),
+            &system_headers(api_base),
             api_base,
             "PullRequests",
             &row.id,

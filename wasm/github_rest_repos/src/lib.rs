@@ -82,9 +82,13 @@ fn route_of(path: &str, http: &InboundHttp) -> Route {
     Route::Unknown
 }
 
-fn auth_env() -> AuthEnv<'static> {
+/// The token lookup must target the server actually handling this
+/// request: the host-derived base, not a fixed port (a 3000-only
+/// hardcode made token resolution silently degrade to anonymous on
+/// any other port).
+fn auth_env(api_base: &str) -> AuthEnv<'_> {
     AuthEnv {
-        temper_api: TEMPER_API,
+        temper_api: api_base,
         tenant: SYSTEM_TENANT,
         system_principal: SYSTEM_PRINCIPAL,
     }
@@ -93,8 +97,8 @@ fn auth_env() -> AuthEnv<'static> {
 /// MarkProvisioned is spec-gated to the system role (Cedar:
 /// `principal.agent_type == "system"`); it is the provisioning
 /// callback, not a caller-visible action.
-fn system_headers() -> Vec<(String, String)> {
-    let mut headers = Principal::system(&auth_env()).outbound_headers();
+fn system_headers(api_base: &str) -> Vec<(String, String)> {
+    let mut headers = Principal::system(&auth_env(api_base)).outbound_headers();
     headers.push(("X-Temper-Agent-Type".to_string(), "system".to_string()));
     headers
 }
@@ -128,7 +132,8 @@ fn parse_create_request(body: &Value) -> Result<CreateRequest, &'static str> {
 }
 
 fn create_repository(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
-    let env = auth_env();
+    let api_base_owned = http::api_base_from_headers(&http.headers);
+    let env = auth_env(&api_base_owned);
     let principal = genesis_git_auth::resolve_principal(ctx, &env, &http.headers);
     if principal.is_anonymous() {
         return http::respond_unauthorized(http);
@@ -152,7 +157,7 @@ fn create_repository(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     // GitHub answers 422 when the name is taken on the account; check
     // before dispatching so a duplicate doesn't surface as a confusing
     // state-machine error.
-    if odata::get_entity(ctx, &system_headers(), &api_base, "Repositories", &repository_id)?
+    if odata::get_entity(ctx, &system_headers(&api_base), &api_base, "Repositories", &repository_id)?
         .is_some()
     {
         return http::respond_error(http, 422, "name already exists on this account");
@@ -165,7 +170,7 @@ fn create_repository(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     }
 
     let Some(row) =
-        odata::get_entity(ctx, &system_headers(), &api_base, "Repositories", &repository_id)?
+        odata::get_entity(ctx, &system_headers(&api_base), &api_base, "Repositories", &repository_id)?
     else {
         return http::respond_error(http, 500, "Repository row vanished after creation");
     };
@@ -215,7 +220,7 @@ fn dispatch_create_and_provision(
 
     let provision = odata::post_action(
         ctx,
-        &system_headers(),
+        &system_headers(api_base),
         api_base,
         "Repositories",
         repository_id,
@@ -239,13 +244,14 @@ fn get_repository(
     owner: &str,
     repo: &str,
 ) -> Result<Value, String> {
-    let env = auth_env();
+    let api_base_owned = http::api_base_from_headers(&http.headers);
+    let env = auth_env(&api_base_owned);
     let resolved = genesis_git_auth::resolve_principal(ctx, &env, &http.headers);
     let anonymous = resolved.is_anonymous();
     // Anonymous reads mirror git_refs_advertise: the internal row read
     // runs as the system principal, then visibility gates the result.
     let read_headers = if anonymous {
-        system_headers()
+        system_headers(&http::api_base_from_headers(&http.headers))
     } else {
         resolved.outbound_headers()
     };

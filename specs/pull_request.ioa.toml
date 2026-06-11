@@ -44,6 +44,14 @@ hint = "Transition from Draft to Open. Triggers scm_assign_pr_number to compute 
 effect = [{ type = "trigger", name = "scm_assign_pr_number" }]
 
 [[action]]
+name = "AssignNumber"
+kind = "input"
+from = ["Open"]
+to = "Open"
+params = ["Number"]
+hint = "Backfill the per-repo sequential PR Number. Dispatched by scm_assign_pr_number after Open; a self-loop so the field persists through the governed action path (a raw OData PATCH does not persist on spec-governed entities)."
+
+[[action]]
 name = "UpdateHead"
 kind = "input"
 from = ["Open", "UnderReview", "ChangesRequested", "Approved"]
@@ -79,35 +87,23 @@ from = ["Approved", "ChangesRequested"]
 to = "UnderReview"
 params = ["ReviewId", "Reason"]
 
+# The PR-side merge transition. Pure governed state change — no integration,
+# no sub-writes. The merge engine (objects + target-ref advance) is owned
+# solely by Repository.MergePullRequest (ADR-0024), which applies this action
+# as a declared sub-write only after a clean merge. Keeping a trigger here
+# would re-enter scm_merge_pr when that sub-write fires, double-merging.
 [[action]]
 name = "Merge"
-kind = "Composite"
+kind = "input"
 from = ["Approved"]
 to = "Merged"
 params = ["Strategy", "Message", "ClientRequestId", "MergeCommitSha"]
-record_parent_event = false
-hint = "Apply SourceRef onto TargetRef. Strategy: merge | squash | ff (ADR-0024). Writes the merge objects and advances TargetRef atomically; content conflicts refuse with a merge-conflict error."
-effect = [{ type = "trigger", name = "scm_merge_pr" }]
+hint = "Mark the PR merged. Repository.MergePullRequest produces the merge objects and advances TargetRef, then applies this transition as a sub-write."
 
 [[action.cedar_gate]]
 principal = "request.principal"
 resource = "this"
 action = "PullRequest::Merge"
-
-[[action.sub_writes]]
-target_entity = "Tree"
-action = "Create"
-generated_from = "merge_objects"
-
-[[action.sub_writes]]
-target_entity = "Commit"
-action = "Create"
-generated_from = "merge_objects"
-
-[[action.sub_writes]]
-target_entity = "Ref"
-action = "Update"
-generated_from = "merge_ref_advance"
 
 [[action]]
 name = "Close"
@@ -152,11 +148,3 @@ module = "scm_assign_pr_number"
 [integration.config]
 timeout_secs = 5
 
-[[integration]]
-name = "scm_merge_pr"
-trigger = "scm_merge_pr"
-type = "wasm"
-module = "scm_merge_pr"
-
-[integration.config]
-timeout_secs = 120

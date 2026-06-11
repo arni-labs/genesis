@@ -23,6 +23,8 @@ use temper_wasm_sdk::prelude::*;
 use tg_wire::pack;
 
 const TEMPER_API: &str = "http://127.0.0.1:3000";
+const SYSTEM_TENANT: &str = "default";
+const SYSTEM_PRINCIPAL: &str = "scm-ingest-pack";
 const FIELD_INLINE_MAX_BYTES: usize = 131_072;
 const FIELD_OVERFLOW_BLOB_PREFIX: &str = "field-overflow/sha256/";
 const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
@@ -387,7 +389,7 @@ fn fetch_commit_parents(
 ) -> Vec<String> {
     let entity_id = object_entity_id(repository_id, sha);
     let url = format!("{api_base}/tdata/Commits('{entity_id}')");
-    let Ok(resp) = ctx.http_call("GET", &url, &[], "") else {
+    let Ok(resp) = ctx.http_call("GET", &url, &internal_read_headers(), "") else {
         return Vec::new();
     };
     if !(200..400).contains(&resp.status) {
@@ -459,7 +461,7 @@ fn fetch_open_pull_requests_for_source_ref(
         urlencode(&filter)
     );
     let resp = ctx
-        .http_call("GET", &url, &[], "")
+        .http_call("GET", &url, &internal_read_headers(), "")
         .map_err(|e| format!("fetch PullRequests: {e}"))?;
     if !(200..400).contains(&resp.status) {
         return Err(format!("PullRequests status {}", resp.status));
@@ -553,7 +555,7 @@ fn fetch_existing_object_body(
     );
     let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
     let resp = ctx
-        .http_call("GET", &url, &[], "")
+        .http_call("GET", &url, &internal_read_headers(), "")
         .map_err(|e| format!("fetch {set}({sha}): {e}"))?;
     if !(200..400).contains(&resp.status) {
         return Err(format!("{set}({sha}) status {}", resp.status));
@@ -591,6 +593,25 @@ fn temper_api_base(ctx: &Context) -> String {
         .map(|value| value.trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| TEMPER_API.to_string())
+}
+
+/// Headers for this integration's internal OData reads (PR-head lookup,
+/// delta-base, ancestry). The parent Repository.IngestPack action was
+/// already Cedar-gated on the push path; these reads run under the
+/// module's trusted server-side identity rather than anonymous, which
+/// would be denied and fail the whole composite (the module is not an
+/// InboundHttp handler, so it has no caller headers to forward).
+fn internal_read_headers() -> Vec<(String, String)> {
+    alloc::vec![
+        ("X-Tenant-Id".to_string(), SYSTEM_TENANT.to_string()),
+        ("X-Temper-Principal-Kind".to_string(), "admin".to_string()),
+        ("X-Temper-Principal-Id".to_string(), SYSTEM_PRINCIPAL.to_string()),
+        (
+            "X-Temper-Principal-Scopes".to_string(),
+            "admin:repos,repo:read,repo:write,pr:write".to_string(),
+        ),
+        ("X-Temper-Agent-Type".to_string(), "system".to_string()),
+    ]
 }
 
 fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
