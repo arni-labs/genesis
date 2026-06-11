@@ -13,6 +13,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use genesis_git_auth::{AuthEnv, Principal};
 use temper_wasm_sdk::http_stream::InboundHttp;
 use temper_wasm_sdk::prelude::*;
 use tg_wire::{AdvertisedRef, Service, advertise_info_refs};
@@ -20,9 +21,6 @@ use tg_wire::{AdvertisedRef, Service, advertise_info_refs};
 pub(crate) const TEMPER_API: &str = "http://127.0.0.1:3000";
 pub(crate) const SYSTEM_TENANT: &str = "default";
 pub(crate) const SYSTEM_PRINCIPAL: &str = "git-refs-advertise";
-
-mod auth;
-pub(crate) use auth::Principal;
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
@@ -59,7 +57,24 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let (owner, repo) = repo_parts_from_http(http);
     let repository_id = format!("rp-{owner}-{repo}");
 
-    let principal = effective_principal(ctx, &http.headers);
+    let auth_env = AuthEnv {
+        temper_api: TEMPER_API,
+        tenant: SYSTEM_TENANT,
+        system_principal: SYSTEM_PRINCIPAL,
+    };
+    let resolved = genesis_git_auth::resolve_principal(ctx, &auth_env, &http.headers);
+    // Push advertisement starts a governed mutation: anonymous callers
+    // get the standard smart-HTTP challenge so git prompts for
+    // credentials and retries (ADR-0025). Fetch advertisement keeps
+    // the development fallback to the system principal.
+    if matches!(service, Service::ReceivePack) && resolved.is_anonymous() {
+        return respond_unauthorized(http);
+    }
+    let principal = if resolved.is_anonymous() {
+        Principal::system(&auth_env)
+    } else {
+        resolved
+    };
     let api_base = temper_api_from_headers(&http.headers);
     let refs_rows = fetch_refs_for_repo(ctx, &principal, &repository_id, &api_base)?;
 
@@ -249,15 +264,6 @@ fn add_symbolic_head_advertisement(refs: &mut Vec<(String, String)>, default_bra
     }
 }
 
-fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
-    let resolved = auth::resolve_principal(ctx, headers);
-    if resolved.is_anonymous() {
-        Principal::system()
-    } else {
-        resolved
-    }
-}
-
 fn temper_api_from_headers(headers: &[(String, String)]) -> String {
     headers
         .iter()
@@ -294,6 +300,30 @@ fn respond_text(
         .finish()
         .map_err(|e| format!("response_body close: {e}"))?;
     Ok(json!({ "status": status }))
+}
+
+/// Standard git smart-HTTP challenge (ADR-0025): a 401 with
+/// `WWW-Authenticate` makes the git client prompt for credentials and
+/// retry the advertisement instead of failing outright.
+fn respond_unauthorized(http: &InboundHttp) -> Result<Value, String> {
+    http.submit_response_head(
+        401,
+        &[
+            ("content-type", "text/plain"),
+            ("WWW-Authenticate", "Basic realm=\"Genesis\""),
+        ],
+    )
+    .map_err(|e| format!("submit_response_head: {e}"))?;
+    let mut writer = http.response_body();
+    writer
+        .write_all_chunk(
+            b"authentication required: supply a GitToken as Basic username or Bearer token\n",
+        )
+        .map_err(|e| format!("response_body write: {e}"))?;
+    writer
+        .finish()
+        .map_err(|e| format!("response_body close: {e}"))?;
+    Ok(json!({ "status": 401 }))
 }
 
 fn query_param(http: &InboundHttp, key: &str) -> Option<String> {
