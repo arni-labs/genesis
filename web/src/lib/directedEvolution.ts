@@ -533,6 +533,13 @@ Before your first non-metadata runtime request, choose a short UserIntent that s
 
 The runtime may require authentication. Resolve a bearer token from these environment variables in order: ${runtimeAuthEnvText}. Never print, log, or return the token. If a token is available, include Authorization: Bearer <token> on every TemperApiBase /tdata request. If no token is available and the runtime returns 401, return status=blocked with blocker_kind=runtime-access and say that the runtime credential is missing.
 
+Before deciding the runtime is blocked, run an authenticated access smoke against the live runtime:
+- Check whether at least one listed auth env var is set, without printing its value.
+- Request TemperApiBase + "/tdata/$metadata" with X-Tenant-Id and Authorization: Bearer <token>.
+- Request TemperApiBase + "/tdata/Questions?$top=1" with the same headers.
+- If you use a shell, quote URLs containing "$metadata" with single quotes or escape the dollar sign so the shell does not expand it.
+- Only report blocker_kind=runtime-access when the exact authenticated requests still return 401/403 or no token is available.
+
 Include these headers on every /tdata runtime request:
 X-Tenant-Id: ${input.runtimeTenantId}
 X-Temper-Observe-Metadata: ${JSON.stringify(promptedObservationMetadata)}
