@@ -1,0 +1,26 @@
+# scm_merge_pr — server-side merge engine (ADR-0024).
+#
+# Triggered by `PullRequest.Merge` and `Repository.MergePullRequest`.
+# Produces a Composite `sub_writes` envelope: new Commit/Tree rows,
+# a Ref compare-and-set advance, and (when repository-triggered) the
+# PullRequest.Merge transition. Never mutates state directly.
+
+[package]
+name = "scm_merge_pr"
+description = "WASM integration: server-side PR merge engine (ff / squash / merge) producing composite sub-writes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+temper-wasm-sdk = { workspace = true }
+genesis-git-object = { path = "../../crates/git_object" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
