@@ -72,6 +72,57 @@ permit(
   principal.scopes.contains("admin:repos")
 };
 
+// Authenticated read access by scope: the visibility conditions above
+// reference repository context the kernel does not yet inject, so they
+// error and never apply. repo:read tokens may read git object rows;
+// anonymous visibility is gated by the wire/REST modules against the
+// Repository row. Per-repo confidentiality for token holders awaits
+// kernel context injection (recorded residual).
+permit(
+  principal,
+  action in [Action::"read", Action::"list"],
+  resource is Blob
+) when {
+  principal.scopes.contains("repo:read") ||
+  principal.scopes.contains("repo:write")
+};
+
+permit(
+  principal,
+  action in [Action::"read", Action::"list"],
+  resource is Tree
+) when {
+  principal.scopes.contains("repo:read") ||
+  principal.scopes.contains("repo:write")
+};
+
+permit(
+  principal,
+  action in [Action::"read", Action::"list"],
+  resource is TreeEntry
+) when {
+  principal.scopes.contains("repo:read") ||
+  principal.scopes.contains("repo:write")
+};
+
+permit(
+  principal,
+  action in [Action::"read", Action::"list"],
+  resource is Commit
+) when {
+  principal.scopes.contains("repo:read") ||
+  principal.scopes.contains("repo:write")
+};
+
+permit(
+  principal,
+  action in [Action::"read", Action::"list"],
+  resource is Tag
+) when {
+  principal.scopes.contains("repo:read") ||
+  principal.scopes.contains("repo:write")
+};
+
 // --- Writes: only system principals (integrations) may create object
 //     rows. Human / agent writes flow through Repository actions
 //     (WriteFile, BatchWriteFiles, IngestPack); integrations return

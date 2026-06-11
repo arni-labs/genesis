@@ -28,6 +28,31 @@ permit(
 // --- Create: any principal with repo:write creating under their own
 //     account, or admin:repos creating under any account.
 
+// --- Row creation (POST /tdata/Repositories): repo:write. The
+// own-owner condition lives on the spec Create action; row attrs are
+// empty at create time.
+permit(
+  principal,
+  action == Action::"create",
+  resource is Repository
+) when {
+  principal.scopes.contains("repo:write") ||
+  principal.scopes.contains("admin:repos")
+};
+
+// Resource attributes are empty while the Create action itself is
+// evaluated, so the own-owner condition above can never hold at
+// create time; repo:write suffices until the kernel injects action
+// params as resource attributes (recorded residual). The REST module
+// derives the owner from the caller server-side.
+permit(
+  principal,
+  action == Action::"Create",
+  resource is Repository
+) when {
+  principal.scopes.contains("repo:write")
+};
+
 permit(
   principal,
   action == Action::"Create",

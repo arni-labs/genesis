@@ -14,6 +14,17 @@ permit(
 
 // --- Create/Open: pr:write + principal is OpenedBy, or admin:repos.
 
+// --- Row creation (POST /tdata/PullRequests): pr:write. Authorship
+// conditions live on the spec actions; row attrs are empty at create.
+permit(
+  principal,
+  action == Action::"create",
+  resource is PullRequest
+) when {
+  principal.scopes.contains("pr:write") ||
+  principal.scopes.contains("admin:repos")
+};
+
 permit(
   principal,
   action in [Action::"Create", Action::"Open"],

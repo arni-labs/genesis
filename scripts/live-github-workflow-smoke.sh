@@ -113,7 +113,7 @@ admin_headers=(
   -H "X-Tenant-Id: ${TENANT}"
   -H "X-Temper-Principal-Kind: admin"
   -H "X-Temper-Principal-Id: operator"
-  -H "X-Temper-Principal-Scopes: admin:repos admin:owners admin:tokens repo:write pr:write"
+  -H "X-Temper-Principal-Scopes: admin:platform admin:repos admin:owners admin:tokens repo:write pr:write"
   -H "X-Temper-Agent-Type: admin"
 )
 
