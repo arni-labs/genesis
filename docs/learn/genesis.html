@@ -155,6 +155,8 @@
   svg .w{fill:var(--surface)}
   svg .lab{font-size:11px;letter-spacing:.1em;fill:var(--muted)}
   svg .labv{font-size:11px;letter-spacing:.1em;fill:var(--vermilion);font-weight:600}
+  svg .sl{font-size:11.5px;fill:var(--cream)}
+  svg .labb{font-size:11px;letter-spacing:.1em;fill:var(--blue);font-weight:600}
 
   /* ---------- deep dives ---------- */
   details{
@@ -170,7 +172,8 @@
   details summary::before{content:"+  ";color:var(--vermilion);font-weight:600}
   details[open] summary::before{content:"\2212  "}
   details summary:hover{background:var(--cream)}
-  details .dd{padding:6px 26px 18px;max-width:820px}
+  details .dd{padding:6px 26px 18px;max-width:820px;overflow-x:auto}
+  details .dd code{overflow-wrap:anywhere}
   details .dd p{margin-bottom:16px}
 
   ul.list{margin:0 0 20px 22px}
@@ -369,7 +372,7 @@
         <!-- router strip -->
         <rect class="boxi" x="50" y="180" width="840" height="66"></rect>
         <text class="h w" x="66" y="206">kernel HTTP router — HttpEndpoint entities, longest-prefix path match</text>
-        <text class="s" x="66" y="228" fill="#E8DDC9">action-bridge dispatch: the entity action runs Cedar-evaluated as the resolved caller (bridge_principal, temper ADR-0138)</text>
+        <text class="sl" x="66" y="228">action-bridge dispatch: the entity action runs Cedar-evaluated as the resolved caller (bridge_principal, temper ADR-0138)</text>
 
         <line class="wire" x1="470" y1="246" x2="470" y2="272" marker-end="url(#ah1)"></line>
 
@@ -563,7 +566,7 @@
 
         <rect class="boxi" x="40" y="348" width="860" height="48"></rect>
         <text class="t w" x="56" y="368">event log ▸ RefUpdated{ repo, refs/heads/main, c4a1f00 → 9f2e3aa, principal: agent-A, scopes, t }</text>
-        <text class="s" x="56" y="386" fill="#E8DDC9">every transition is an event; current state is a projection — this row is the audit surface</text>
+        <text class="sl" x="56" y="386">every transition is an event; current state is a projection — this row is the audit surface</text>
       </svg>
     </div>
     <div class="explainer">
@@ -662,18 +665,18 @@
         <!-- read path -->
         <rect class="boxb" x="660" y="36" width="240" height="66"></rect>
         <text class="h w" x="676" y="64">clone read path</text>
-        <text class="s" x="676" y="84" fill="#F2EBDD">git_upload_pack, per object</text>
+        <text class="sl" x="676" y="84">git_upload_pack, per object</text>
 
         <path class="wire" d="M780,102 L780,406 L600,406" stroke="#365C8D" marker-end="url(#ah3b)"></path>
-        <text class="lab" x="792" y="404" fill="#365C8D">1 — CACHE</text>
+        <text class="labb" x="612" y="398">1 — CACHE</text>
         <path class="wire" d="M740,102 L740,258 L600,258" stroke="#365C8D" marker-end="url(#ah3b)"></path>
-        <text class="lab" x="748" y="252" fill="#365C8D">2 — CONTENT REF</text>
-        <path class="wire" d="M700,102 L700,120 L632,120 L632,98 L600,98" stroke="#365C8D" marker-end="url(#ah3b)"></path>
-        <text class="lab" x="640" y="142" fill="#365C8D">3 — LEGACY INLINE</text>
+        <text class="labb" x="612" y="250">2 — CONTENT REF</text>
+        <path class="wire" d="M700,102 L700,130 L600,130" stroke="#365C8D" marker-end="url(#ah3b)"></path>
+        <text class="labb" x="610" y="150">3 — LEGACY INLINE</text>
 
-        <text class="s" x="660" y="470">misses fall through; a legacy-inline</text>
-        <text class="s" x="660" y="488">hit backfills store + cache —</text>
-        <text class="s" x="660" y="506">non-destructive migration, no rewrite job</text>
+        <text class="s" x="620" y="470">misses fall through; a legacy-inline hit</text>
+        <text class="s" x="620" y="488">backfills store + cache — non-destructive</text>
+        <text class="s" x="620" y="506">migration, no rewrite job (ADR-0011 pattern)</text>
 
         <text class="t" x="40" y="510">write path: pack ingest writes row + content + cache in one composite pass.</text>
         <text class="s" x="40" y="534">the row owns the hash; the store and the cache are projections addressed by it — one source of truth holds.</text>
@@ -800,13 +803,13 @@
         </defs>
         <rect class="box" x="40" y="24" width="270" height="62"></rect>
         <text class="h" x="56" y="50">PUT …/pulls/{n}/merge</text>
-        <text class="s" x="56" y="70">gh pr merge — reachable only from Approved</text>
+        <text class="s" x="56" y="70">gh pr merge — only from Approved</text>
 
         <line class="wire" x1="310" y1="55" x2="360" y2="55" marker-end="url(#ah4)"></line>
 
-        <rect class="box" x="360" y="24" width="300" height="62"></rect>
+        <rect class="box" x="360" y="24" width="330" height="62"></rect>
         <text class="h" x="376" y="50">scm_merge_pr (composite producer)</text>
-        <text class="s" x="376" y="70">merge base: bounded, paged commit-DAG walk</text>
+        <text class="s" x="376" y="70">merge base via bounded, paged DAG walk</text>
 
         <line class="wire" x1="420" y1="86" x2="170" y2="142" marker-end="url(#ah4)"></line>
         <line class="wire" x1="500" y1="86" x2="480" y2="142" marker-end="url(#ah4)"></line>
@@ -842,7 +845,7 @@
         <text class="t w" x="626" y="388">HTTP 409 — names the conflicting paths</text>
         <text class="t w" x="626" y="406">remedy: rebase or merge locally,</text>
         <text class="t w" x="626" y="424">push, retry.</text>
-        <text class="s" x="626" y="444" fill="#F2EBDD">refusal, never a wrong merge commit</text>
+        <text class="sl" x="626" y="444">refusal, never a wrong merge commit</text>
 
         <line class="wire" x1="170" y1="230" x2="170" y2="362" marker-end="url(#ah4)"></line>
         <line class="wire" x1="470" y1="230" x2="470" y2="362" marker-end="url(#ah4)"></line>
@@ -851,7 +854,7 @@
         <text class="h" x="56" y="388">on success — proven sub-write shapes</text>
         <text class="t" x="56" y="410">Commit/Tree rows → CAS ref advance → PullRequest.Merge transition</text>
         <text class="t" x="56" y="428">→ new objects written into the raw-object cache (next clone is warm)</text>
-        <text class="s" x="56" y="447">every engine merge is re-performed with real git in tests — SHAs must match</text>
+        <text class="s" x="56" y="447">every engine merge re-performed with real git — SHAs must match</text>
       </svg>
     </div>
     <div class="explainer">
@@ -935,115 +938,115 @@
 
         <!-- loop-back path along top/right border -->
         <path class="wire" d="M920,476 L932,476 L932,14 L165,14 L165,30" stroke="#2F6B45" marker-end="url(#ah5g)"></path>
-        <text class="sg" x="408" y="32">new parent version — the loop closes</text>
+        <text class="sg" x="408" y="34">new parent version — the loop closes</text>
 
-        <rect class="boxg" x="30" y="30" width="280" height="84"></rect>
+        <rect class="boxg" x="30" y="30" width="320" height="84"></rect>
         <text class="h w" x="46" y="58">running organism</text>
-        <text class="s" x="46" y="78" fill="#F2EBDD">external runtime (ADR-0026 target on the row:</text>
-        <text class="s" x="46" y="94" fill="#F2EBDD">base URL · tenant · Datadog service · auth env names)</text>
+        <text class="sl" x="46" y="78">external runtime — ADR-0026 target:</text>
+        <text class="sl" x="46" y="94">base URL · tenant · Datadog · auth names</text>
 
         <line class="wire" x1="130" y1="114" x2="130" y2="158" marker-end="url(#ah5)"></line>
 
         <!-- row 1: discovery -->
-        <rect class="box" x="30" y="158" width="200" height="76"></rect>
+        <rect class="box" x="30" y="158" width="230" height="76"></rect>
         <text class="h" x="44" y="184">signals</text>
-        <text class="s" x="44" y="204">scheduled scout sweeps of Datadog</text>
-        <text class="s" x="44" y="220">fingerprint dedup — one, not spam</text>
+        <text class="s" x="44" y="204">scout sweeps of Datadog;</text>
+        <text class="s" x="44" y="220">fingerprint dedup — no spam</text>
 
-        <line class="wire" x1="230" y1="196" x2="262" y2="196" marker-end="url(#ah5)"></line>
-        <rect class="box" x="262" y="158" width="166" height="76"></rect>
-        <text class="h" x="276" y="184">observer</text>
-        <text class="s" x="276" y="204">signals are not</text>
-        <text class="s" x="276" y="220">conclusions</text>
+        <line class="wire" x1="260" y1="196" x2="290" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="box" x="290" y="158" width="160" height="76"></rect>
+        <text class="h" x="304" y="184">observer</text>
+        <text class="s" x="304" y="204">signals are not</text>
+        <text class="s" x="304" y="220">conclusions</text>
 
-        <line class="wire" x1="428" y1="196" x2="458" y2="196" marker-end="url(#ah5)"></line>
-        <rect class="box" x="458" y="158" width="150" height="76"></rect>
-        <text class="h" x="472" y="184">pressures</text>
-        <text class="s" x="472" y="204">repair · growth ·</text>
-        <text class="s" x="472" y="220">ux · policy · data</text>
+        <line class="wire" x1="450" y1="196" x2="480" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="box" x="480" y="158" width="150" height="76"></rect>
+        <text class="h" x="494" y="184">pressures</text>
+        <text class="s" x="494" y="204">repair · growth ·</text>
+        <text class="s" x="494" y="220">ux · policy · data</text>
 
-        <line class="wire" x1="608" y1="196" x2="636" y2="196" marker-end="url(#ah5)"></line>
-        <rect class="box" x="636" y="158" width="136" height="76"></rect>
-        <text class="h" x="650" y="184">directions</text>
-        <text class="s" x="650" y="204">provenance,</text>
-        <text class="s" x="650" y="220">risk, lane</text>
+        <line class="wire" x1="630" y1="196" x2="650" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="box" x="650" y="158" width="120" height="76"></rect>
+        <text class="h" x="664" y="184">directions</text>
+        <text class="s" x="664" y="204">provenance,</text>
+        <text class="s" x="664" y="220">risk, lane</text>
 
-        <line class="wire" x1="772" y1="196" x2="798" y2="196" marker-end="url(#ah5)"></line>
-        <rect class="boxc" x="798" y="158" width="122" height="76"></rect>
-        <text class="h" x="810" y="184">gate</text>
-        <text class="s" x="810" y="204">autonomy policy</text>
-        <text class="s" x="810" y="220">or human approval</text>
+        <line class="wire" x1="770" y1="196" x2="800" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="boxc" x="800" y="158" width="120" height="76"></rect>
+        <text class="h" x="812" y="184">gate</text>
+        <text class="s" x="812" y="204">autonomy policy</text>
+        <text class="s" x="812" y="220">or human gate</text>
 
         <path class="wire" d="M859,234 L859,270 L820,308" marker-end="url(#ah5)"></path>
-        <text class="lab" x="660" y="290">SUBMITEPISODESTARTREQUEST — THE CONTRACT, MATERIALIZED</text>
+        <text class="lab" x="380" y="290">SUBMITEPISODESTARTREQUEST — THE CONTRACT, MATERIALIZED</text>
 
         <!-- row 2: episode (right to left) -->
         <rect class="box" x="700" y="308" width="220" height="84"></rect>
         <text class="h" x="714" y="334">episode</text>
-        <text class="s" x="714" y="354">frozen contract: simulated-user plan ·</text>
-        <text class="s" x="714" y="370">selection protocol · evaluator ref</text>
+        <text class="s" x="714" y="354">frozen contract: sim-user</text>
+        <text class="s" x="714" y="370">plan · protocol · evaluator</text>
 
-        <line class="wire" x1="700" y1="350" x2="668" y2="350" marker-end="url(#ah5)"></line>
-        <rect class="box" x="514" y="308" width="154" height="84"></rect>
-        <text class="h" x="528" y="334">generation(s)</text>
-        <text class="s" x="528" y="354">follow-ups seeded by</text>
-        <text class="s" x="528" y="370">elimination evidence</text>
+        <line class="wire" x1="700" y1="350" x2="690" y2="350" marker-end="url(#ah5)"></line>
+        <rect class="box" x="530" y="308" width="160" height="84"></rect>
+        <text class="h" x="544" y="334">generation(s)</text>
+        <text class="s" x="544" y="354">follow-ups seeded by</text>
+        <text class="s" x="544" y="370">elimination evidence</text>
 
-        <line class="wire" x1="514" y1="350" x2="482" y2="350" marker-end="url(#ah5)"></line>
-        <rect class="box" x="306" y="308" width="176" height="84"></rect>
-        <text class="h" x="320" y="334">variants + mutations</text>
-        <text class="s" x="320" y="354">diff patches, rendered;</text>
-        <text class="s" x="320" y="370">isolated variant tenants</text>
+        <line class="wire" x1="530" y1="350" x2="500" y2="350" marker-end="url(#ah5)"></line>
+        <rect class="box" x="310" y="308" width="190" height="84"></rect>
+        <text class="h" x="324" y="334">variants</text>
+        <text class="s" x="324" y="354">mutation diff patches;</text>
+        <text class="s" x="324" y="370">isolated variant tenants</text>
 
-        <line class="wire" x1="306" y1="350" x2="274" y2="350" marker-end="url(#ah5)"></line>
-        <rect class="box" x="30" y="308" width="244" height="84"></rect>
+        <line class="wire" x1="310" y1="350" x2="280" y2="350" marker-end="url(#ah5)"></line>
+        <rect class="box" x="30" y="308" width="250" height="84"></rect>
         <text class="h" x="44" y="334">trials + evaluation stages</text>
-        <text class="s" x="44" y="354">simulated users observe; evaluators judge</text>
-        <text class="s" x="44" y="370">telemetry evidence is fail-closed</text>
+        <text class="s" x="44" y="354">users observe; evaluators judge</text>
+        <text class="s" x="44" y="370">telemetry evidence fail-closed</text>
 
         <line class="wire" x1="130" y1="392" x2="130" y2="436" marker-end="url(#ah5)"></line>
 
         <!-- row 3: selection -->
-        <rect class="box" x="30" y="436" width="244" height="80"></rect>
+        <rect class="box" x="30" y="436" width="250" height="80"></rect>
         <text class="h" x="44" y="462">mechanical eliminations</text>
-        <text class="s" x="44" y="482">declared thresholds enforced by the</text>
-        <text class="s" x="44" y="498">router — no talking past them</text>
+        <text class="s" x="44" y="482">declared thresholds enforced</text>
+        <text class="s" x="44" y="498">by the router; no talking past</text>
 
-        <line class="wire" x1="274" y1="476" x2="306" y2="476" marker-end="url(#ah5)"></line>
-        <rect class="box" x="306" y="436" width="200" height="80"></rect>
-        <text class="h" x="320" y="462">selection</text>
-        <text class="s" x="320" y="482">frozen protocol; the human</text>
-        <text class="s" x="320" y="498">does not override winners</text>
+        <line class="wire" x1="280" y1="476" x2="310" y2="476" marker-end="url(#ah5)"></line>
+        <rect class="box" x="310" y="436" width="210" height="80"></rect>
+        <text class="h" x="324" y="462">selection</text>
+        <text class="s" x="324" y="482">frozen protocol; the human</text>
+        <text class="s" x="324" y="498">does not override winners</text>
 
-        <line class="wire" x1="506" y1="476" x2="538" y2="476" marker-end="url(#ah5)"></line>
-        <rect class="box" x="538" y="436" width="190" height="80"></rect>
-        <text class="h" x="552" y="462">promotion</text>
-        <text class="s" x="552" y="482">pinned Genesis ref +</text>
-        <text class="s" x="552" y="498">hot-load install</text>
+        <line class="wire" x1="520" y1="476" x2="550" y2="476" marker-end="url(#ah5)"></line>
+        <rect class="box" x="550" y="436" width="190" height="80"></rect>
+        <text class="h" x="564" y="462">promotion</text>
+        <text class="s" x="564" y="482">pinned Genesis ref +</text>
+        <text class="s" x="564" y="498">hot-load install</text>
 
-        <line class="wire" x1="728" y1="476" x2="758" y2="476" marker-end="url(#ah5)"></line>
-        <rect class="boxg" x="758" y="436" width="162" height="80"></rect>
-        <text class="h w" x="772" y="462">lineage edge</text>
-        <text class="s" x="772" y="482" fill="#F2EBDD">parent → child, with</text>
-        <text class="s" x="772" y="498" fill="#F2EBDD">episode + diff</text>
+        <line class="wire" x1="740" y1="476" x2="770" y2="476" marker-end="url(#ah5)"></line>
+        <rect class="boxg" x="770" y="436" width="150" height="80"></rect>
+        <text class="h w" x="784" y="462">lineage edge</text>
+        <text class="sl" x="784" y="482">parent → child,</text>
+        <text class="sl" x="784" y="498">episode + diff</text>
 
         <!-- execution bridge -->
         <rect class="bound" x="30" y="568" width="610" height="138"></rect>
         <text class="lab" x="46" y="592">EXECUTION PLANE — SHARED temperpaw/paw-orchestration ENTITIES</text>
-        <rect class="box" x="46" y="606" width="180" height="66"></rect>
+        <rect class="box" x="46" y="606" width="196" height="66"></rect>
         <text class="h" x="58" y="630">WorkItem</text>
-        <text class="s" x="58" y="648">Queued → Claimed →</text>
-        <text class="s" x="58" y="663">Running → Succeeded/Failed</text>
-        <line class="wire" x1="226" y1="639" x2="256" y2="639" marker-end="url(#ah5)"></line>
-        <rect class="box" x="256" y="606" width="186" height="66"></rect>
-        <text class="h" x="268" y="630">paw-codex-worker</text>
-        <text class="s" x="268" y="648">operator's machine;</text>
-        <text class="s" x="268" y="663">each run is a WorkerRun</text>
-        <line class="wire" x1="442" y1="639" x2="472" y2="639" marker-end="url(#ah5)"></line>
-        <rect class="box" x="472" y="606" width="152" height="66"></rect>
-        <text class="h" x="484" y="630">WorkItemReceipt</text>
-        <text class="s" x="484" y="648">result router →</text>
-        <text class="s" x="484" y="663">domain state</text>
+        <text class="s" x="58" y="648">Queued → Claimed → Running</text>
+        <text class="s" x="58" y="663">→ Succeeded / Failed</text>
+        <line class="wire" x1="242" y1="639" x2="260" y2="639" marker-end="url(#ah5)"></line>
+        <rect class="box" x="260" y="606" width="186" height="66"></rect>
+        <text class="h" x="272" y="630">paw-codex-worker</text>
+        <text class="s" x="272" y="648">operator's machine;</text>
+        <text class="s" x="272" y="663">each run is a WorkerRun</text>
+        <line class="wire" x1="446" y1="639" x2="476" y2="639" marker-end="url(#ah5)"></line>
+        <rect class="box" x="476" y="606" width="152" height="66"></rect>
+        <text class="h" x="488" y="630">WorkItemReceipt</text>
+        <text class="s" x="488" y="648">result router →</text>
+        <text class="s" x="488" y="663">domain state</text>
 
         <line class="wired" x1="335" y1="516" x2="335" y2="568"></line>
         <text class="s" x="46" y="734">observer · variant generator · simulated user · evaluators · selector — every agent step runs as a work item;</text>
@@ -1055,10 +1058,10 @@
         <text class="t w" x="684" y="620">Directions</text>
         <text class="t w" x="684" y="640">Direction Detail</text>
         <text class="t w" x="684" y="660">Organism Genealogy</text>
-        <text class="s" x="684" y="684" fill="#E8DDC9">renders from live entity state only;</text>
-        <text class="s" x="684" y="699" fill="#E8DDC9">negotiation happens in chat</text>
+        <text class="sl" x="684" y="684">renders from live entity state</text>
+        <text class="sl" x="684" y="699">only; negotiation stays in chat</text>
 
-        <text class="s" x="46" y="786">organisms run on external runtimes (Agent Answers: TemperPaw production) — control plane, execution, and runtime stay separate planes.</text>
+        <text class="s" x="46" y="786">organisms run on external runtimes (Agent Answers: TemperPaw production) — control, execution, and runtime stay separate.</text>
       </svg>
     </div>
     <div class="explainer">
