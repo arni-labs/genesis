@@ -44,3 +44,20 @@ permit(
   ["GET", "PATCH"].contains(context.method) &&
   ["127.0.0.1", "localhost"].contains(context.domain)
 };
+
+// PullRequest.Merge / Repository.MergePullRequest's merge engine
+// (scm_merge_pr, ADR-0024) walks the Commit DAG and reads Refs/Trees/
+// Blobs over local OData GETs. It returns Composite sub-write data
+// only; the kernel applies the writes. (Its raw-object cache PUTs go
+// to the local _internal/blobs endpoint, which the kernel's WASM gate
+// already exempts.)
+
+permit(
+  principal is Agent,
+  action == Action::"http_call",
+  resource is HttpEndpoint
+) when {
+  context.module == "scm_merge_pr" &&
+  context.method == "GET" &&
+  ["127.0.0.1", "localhost"].contains(context.domain)
+};

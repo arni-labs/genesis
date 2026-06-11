@@ -64,6 +64,12 @@ criticality = "app-required"
 startup_loading = "eager"
 
 [[wasm_modules]]
+name = "scm_merge_pr"
+target = "wasm32-wasip1"
+criticality = "app-required"
+startup_loading = "eager"
+
+[[wasm_modules]]
 name = "github_rest_repos"
 target = "wasm32-wasip1"
 criticality = "app-required"
