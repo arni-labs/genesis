@@ -134,7 +134,8 @@ jobs:
       # use), readiness probe mirrored from their wait_for_server.
       - name: Boot Genesis
         run: |
-          TEMPER_OS_APPS_DIR="$PWD" \
+          mkdir -p "${RUNNER_TEMP}/os-apps" && ln -sfn "$PWD" "${RUNNER_TEMP}/os-apps/temper-git"
+          TEMPER_OS_APPS_DIR="${RUNNER_TEMP}/os-apps" \
           TURSO_URL="file:${RUNNER_TEMP}/genesis-workflow-gate.db" \
           nohup temper/target/release/temper serve \
             --port "$GENESIS_PORT" --storage turso --no-observe --app temper-git \

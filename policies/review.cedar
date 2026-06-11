@@ -24,6 +24,14 @@ permit(
 
 permit(
   principal,
+  action == Action::"create",
+  resource is Review
+) when {
+  principal.scopes.contains("pr:write")
+};
+
+permit(
+  principal,
   action == Action::"Create",
   resource is Review
 ) when {
