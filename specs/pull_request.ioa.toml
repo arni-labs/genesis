@@ -81,12 +81,33 @@ params = ["ReviewId", "Reason"]
 
 [[action]]
 name = "Merge"
-kind = "input"
+kind = "Composite"
 from = ["Approved"]
 to = "Merged"
-params = ["Strategy", "Message", "ClientRequestId"]
-hint = "Apply SourceRef onto TargetRef. Strategy: merge | squash | rebase. Writes MergedCommit and advances TargetRef atomically."
+params = ["Strategy", "Message", "ClientRequestId", "MergeCommitSha"]
+record_parent_event = false
+hint = "Apply SourceRef onto TargetRef. Strategy: merge | squash | ff (ADR-0024). Writes the merge objects and advances TargetRef atomically; content conflicts refuse with a merge-conflict error."
 effect = [{ type = "trigger", name = "scm_merge_pr" }]
+
+[[action.cedar_gate]]
+principal = "request.principal"
+resource = "this"
+action = "PullRequest::Merge"
+
+[[action.sub_writes]]
+target_entity = "Tree"
+action = "Create"
+generated_from = "merge_objects"
+
+[[action.sub_writes]]
+target_entity = "Commit"
+action = "Create"
+generated_from = "merge_objects"
+
+[[action.sub_writes]]
+target_entity = "Ref"
+action = "Update"
+generated_from = "merge_ref_advance"
 
 [[action]]
 name = "Close"
