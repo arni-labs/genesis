@@ -28,3 +28,36 @@ permit(
   context.method == "GET" &&
   ["127.0.0.1", "localhost"].contains(context.domain)
 };
+
+// PullRequest.Open's number-assignment integration scans the repo's
+// PullRequest rows (GET) and backfills the computed Number onto the
+// opened row (PATCH). Spec-triggered modules pass through the Cedar
+// WASM gate, so both verbs need an explicit local permit
+// (scm_assign_pr_number, RFC-0004 Slice 3).
+
+permit(
+  principal is Agent,
+  action == Action::"http_call",
+  resource is HttpEndpoint
+) when {
+  context.module == "scm_assign_pr_number" &&
+  ["GET", "POST"].contains(context.method) &&
+  ["127.0.0.1", "localhost"].contains(context.domain)
+};
+
+// PullRequest.Merge / Repository.MergePullRequest's merge engine
+// (scm_merge_pr, ADR-0024) walks the Commit DAG and reads Refs/Trees/
+// Blobs over local OData GETs. It returns Composite sub-write data
+// only; the kernel applies the writes. (Its raw-object cache PUTs go
+// to the local _internal/blobs endpoint, which the kernel's WASM gate
+// already exempts.)
+
+permit(
+  principal is Agent,
+  action == Action::"http_call",
+  resource is HttpEndpoint
+) when {
+  context.module == "scm_merge_pr" &&
+  context.method == "GET" &&
+  ["127.0.0.1", "localhost"].contains(context.domain)
+};

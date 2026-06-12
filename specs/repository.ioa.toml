@@ -89,12 +89,38 @@ hint = "Create a new Ref pointing at the same commit as FromRef."
 
 [[action]]
 name = "MergePullRequest"
-kind = "input"
+kind = "Composite"
 from = ["Active"]
 to = "Active"
 params = ["PullRequestId", "Strategy", "Message", "ClientRequestId"]
-hint = "Apply a PullRequest's source_ref onto target_ref. Strategy is one of merge, squash, rebase. Emits a MergedCommit + advances target_ref."
+record_parent_event = false
+hint = "Apply a PullRequest's source_ref onto target_ref. Strategy: merge | squash | ff (ADR-0024). Emits the merge objects, advances target_ref, and transitions the PullRequest atomically."
 effect = [{ type = "trigger", name = "scm_merge_pr" }]
+
+[[action.cedar_gate]]
+principal = "request.principal"
+resource = "this"
+action = "Repository::MergePullRequest"
+
+[[action.sub_writes]]
+target_entity = "Tree"
+action = "Create"
+generated_from = "merge_objects"
+
+[[action.sub_writes]]
+target_entity = "Commit"
+action = "Create"
+generated_from = "merge_objects"
+
+[[action.sub_writes]]
+target_entity = "Ref"
+action = "Update"
+generated_from = "merge_ref_advance"
+
+[[action.sub_writes]]
+target_entity = "PullRequest"
+action = "Merge"
+generated_from = "merge_transition"
 
 [[action]]
 name = "IngestPack"
@@ -139,6 +165,11 @@ generated_from = "ref_updates"
 [[action.sub_writes]]
 target_entity = "Ref"
 action = "Update"
+generated_from = "ref_updates"
+
+[[action.sub_writes]]
+target_entity = "Ref"
+action = "ForceUpdate"
 generated_from = "ref_updates"
 
 [[action.sub_writes]]

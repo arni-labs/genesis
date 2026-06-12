@@ -389,3 +389,22 @@ fn escape_odata_id(id: &str) -> String {
 fn short_id(id: &str) -> String {
     id.chars().take(10).collect()
 }
+
+/// OData string literal: single quotes double inside quoted literals.
+fn odata_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+/// Percent-encode a query-string component (unreserved set per RFC 3986).
+fn urlencode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}

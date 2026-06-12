@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genesis — Architecture Explainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:ital,wght@0,400;0,600;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14110D;
+    --plate:#201B16;
+    --near-black:#11100E;
+    --paper:#E8DDC9;
+    --surface:#FFF8E8;
+    --cream:#F2EBDD;
+    --muted:#6D6253;
+    --vermilion:#B33524;
+    --blue:#365C8D;
+    --green:#2F6B45;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Newsreader',Georgia,serif;
+    font-size:18px;
+    line-height:1.62;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+  .prose{max-width:760px}
+
+  /* ---------- typography ---------- */
+  h1,h2,h3{
+    font-family:'Libre Caslon Condensed',Georgia,serif;
+    letter-spacing:-0.02em;
+    line-height:1.04;
+    color:var(--ink);
+    font-weight:700;
+  }
+  h1{font-size:clamp(56px,9vw,104px)}
+  h2{font-size:clamp(34px,5vw,52px);padding-top:8px}
+  h3{font-size:clamp(22px,3vw,27px);font-weight:600;padding-top:28px;margin-bottom:10px}
+  p{margin:0 0 20px}
+  a{color:var(--blue);text-decoration-thickness:1px;text-underline-offset:3px}
+  strong{font-weight:600}
+  em{font-style:italic}
+  code,kbd{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:.84em;
+    background:var(--cream);
+    padding:1px 6px;
+  }
+  blockquote{
+    margin:28px 0;
+    padding:22px 26px 16px;
+    background:var(--surface);
+    font-size:20px;
+    font-style:italic;
+  }
+  blockquote .attr{display:block;font-style:normal;margin-top:6px}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  .kicker{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);
+  }
+  .kicker .no{color:var(--vermilion);font-weight:600}
+  .accentbar{width:64px;height:6px;background:var(--vermilion);margin:18px 0 26px}
+
+  /* ---------- masthead ---------- */
+  header.mast{padding:84px 0 36px}
+  header.mast .sub{
+    font-size:clamp(20px,2.6vw,25px);
+    max-width:780px;margin-top:18px;
+  }
+  header.mast .meta{
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--muted);
+    margin-top:26px;letter-spacing:.04em;
+  }
+
+  /* ---------- plate index (nav) ---------- */
+  nav.idx{padding:10px 0 8px}
+  nav.idx ol{
+    list-style:none;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
+    gap:10px;
+  }
+  nav.idx a{
+    display:block;background:var(--surface);color:var(--ink);
+    text-decoration:none;padding:16px 18px 14px;
+    font-family:'IBM Plex Mono',monospace;font-size:14px;line-height:1.4;
+  }
+  nav.idx a:hover{background:var(--near-black);color:var(--surface)}
+  nav.idx a:hover .n{color:var(--surface)}
+  nav.idx .n{color:var(--vermilion);font-weight:600;margin-right:10px}
+
+  .controls{display:flex;gap:12px;margin:26px 0 4px;flex-wrap:wrap}
+  button.btn{
+    font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:.04em;
+    background:var(--near-black);color:var(--surface);
+    border:none;border-radius:0;padding:12px 20px;cursor:pointer;
+  }
+  button.btn:hover{background:var(--vermilion)}
+
+  /* ---------- sections ---------- */
+  section{padding:96px 0 8px}
+  section .lede{font-size:21px}
+
+  /* ---------- diagram plates ---------- */
+  .plate{
+    background:var(--cream);
+    box-shadow:8px 8px 0 var(--plate);
+    padding:30px 22px 22px;
+    margin:40px 0 0;
+    overflow-x:auto;
+  }
+  .plate .platelabel{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--vermilion);font-weight:600;
+    padding:0 4px 14px;
+  }
+  .plate svg{display:block;width:100%;height:auto;min-width:880px}
+  .explainer{
+    background:var(--surface);
+    padding:26px 28px 12px;
+    margin:24px 0 0;
+    max-width:none;
+  }
+  .explainer .platelabel{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);font-weight:600;
+    display:block;padding-bottom:12px;
+  }
+
+  /* ---------- svg ---------- */
+  svg text{font-family:'IBM Plex Mono',monospace;fill:var(--ink)}
+  svg .box{fill:var(--surface);stroke:var(--plate);stroke-width:1.5}
+  svg .boxc{fill:var(--cream);stroke:var(--plate);stroke-width:1.5}
+  svg .boxi{fill:var(--near-black)}
+  svg .boxv{fill:var(--vermilion)}
+  svg .boxb{fill:var(--blue)}
+  svg .boxg{fill:var(--green)}
+  svg .bound{fill:none;stroke:var(--plate);stroke-width:1.5;stroke-dasharray:6 5}
+  svg .wire{stroke:var(--plate);stroke-width:1.6;fill:none}
+  svg .wired{stroke:var(--plate);stroke-width:1.4;fill:none;stroke-dasharray:4 4}
+  svg .wirev{stroke:var(--vermilion);stroke-width:1.8;fill:none}
+  svg .h{font-size:14.5px;font-weight:600}
+  svg .t{font-size:12.5px}
+  svg .s{font-size:11.5px;fill:var(--muted)}
+  svg .sv{font-size:11.5px;fill:var(--vermilion);font-weight:600}
+  svg .sg{font-size:11.5px;fill:var(--green);font-weight:600}
+  svg .w{fill:var(--surface)}
+  svg .lab{font-size:11px;letter-spacing:.1em;fill:var(--muted)}
+  svg .labv{font-size:11px;letter-spacing:.1em;fill:var(--vermilion);font-weight:600}
+  svg .sl{font-size:11.5px;fill:var(--cream)}
+  svg .labb{font-size:11px;letter-spacing:.1em;fill:var(--blue);font-weight:600}
+
+  /* ---------- deep dives ---------- */
+  details{
+    background:var(--surface);
+    margin:18px 0;
+  }
+  details summary{
+    font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;
+    letter-spacing:.02em;cursor:pointer;list-style:none;
+    padding:20px 24px;
+  }
+  details summary::-webkit-details-marker{display:none}
+  details summary::before{content:"+  ";color:var(--vermilion);font-weight:600}
+  details[open] summary::before{content:"\2212  "}
+  details summary:hover{background:var(--cream)}
+  details .dd{padding:6px 26px 18px;max-width:820px;overflow-x:auto}
+  details .dd code{overflow-wrap:anywhere}
+  details .dd p{margin-bottom:16px}
+
+  ul.list{margin:0 0 20px 22px}
+  ul.list li{margin-bottom:10px}
+  ol.list{margin:0 0 20px 24px}
+  ol.list li{margin-bottom:10px}
+
+  /* ---------- mechanism cards ---------- */
+  .mechs{display:grid;grid-template-columns:1fr;gap:14px;margin:28px 0 8px}
+  .mech{background:var(--surface);padding:24px 26px 12px}
+  .mech .name{
+    font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;
+    padding-bottom:8px;display:block;
+  }
+  .mech .name .no{color:var(--vermilion);margin-right:10px}
+  .mech p{margin-bottom:12px}
+  .mech .why{font-style:italic}
+  .mech .why b{font-style:normal;font-weight:600;color:var(--vermilion);font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.08em}
+
+  /* ---------- tables ---------- */
+  table{
+    border-collapse:collapse;width:100%;margin:20px 0 24px;
+    font-size:16.5px;
+  }
+  th{
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.1em;
+    text-transform:uppercase;text-align:left;color:var(--surface);
+    background:var(--near-black);padding:12px 14px;font-weight:600;
+  }
+  td{padding:12px 14px;vertical-align:top}
+  tbody tr:nth-child(odd){background:var(--surface)}
+  tbody tr:nth-child(even){background:var(--cream)}
+  td code{background:transparent;padding:0}
+
+  /* ---------- deferral cards ---------- */
+  .defer{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin:28px 0 8px}
+  .defer .card{background:var(--surface);padding:24px 24px 10px}
+  .defer .card .name{
+    font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:16px;
+    display:block;padding-bottom:10px;color:var(--vermilion);
+  }
+  .defer .card p{font-size:17px;margin-bottom:12px}
+
+  footer{
+    margin-top:110px;background:var(--near-black);color:var(--cream);
+    padding:60px 0 70px;
+  }
+  footer .kicker{color:var(--cream);opacity:.75}
+  footer p{max-width:820px}
+  footer .src{font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:2;color:var(--cream)}
+
+  @media (max-width:720px){
+    body{font-size:17px}
+    .wrap{padding:0 18px}
+    header.mast{padding:56px 0 28px}
+    section{padding:68px 0 8px}
+    .plate{box-shadow:5px 5px 0 var(--plate);padding:22px 14px 14px}
+    blockquote{padding:18px 18px 12px}
+    table{font-size:15px}
+  }
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap">
+    <span class="kicker">Architecture Plates · 2026-06-11 · grounded in VISION.md, RFC-0001/0004/0005, ADR-0011/0024/0025/0026/0027, PARITY.md</span>
+    <h1>Genesis</h1>
+    <p class="sub">A Temper-native, GitHub-compatible git server. Every git object is a governed
+    entity in one authoritative event log; any standard <code>git</code> client works unchanged.</p>
+    <p class="meta">Seven plates, ten minutes at the top level. Deep dives fold out under each one.</p>
+  </div>
+</header>
+
+<nav class="idx">
+  <div class="wrap">
+    <ol>
+      <li><a href="#what"><span class="n">01</span>What Genesis is</a></li>
+      <li><a href="#substrate"><span class="n">02</span>The substrate</a></li>
+      <li><a href="#objects"><span class="n">03</span>Objects as entities</a></li>
+      <li><a href="#storage"><span class="n">04</span>Storage tiers &amp; speed</a></li>
+      <li><a href="#workflow"><span class="n">05</span>The workflow layer</a></li>
+      <li><a href="#evolution"><span class="n">06</span>Directed Evolution</a></li>
+      <li><a href="#deferred"><span class="n">07</span>Deliberately deferred</a></li>
+    </ol>
+    <div class="controls">
+      <button class="btn" id="expandAll" type="button">Expand all deep dives</button>
+      <button class="btn" id="collapseAll" type="button">Collapse all</button>
+    </div>
+  </div>
+</nav>
+
+<main>
+
+<!-- ============================================================ 01 -->
+<section id="what">
+  <div class="wrap">
+    <span class="kicker"><span class="no">01</span> · One screen</span>
+    <h2>What Genesis is</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">Genesis is a version-control server built on the Temper kernel.
+      It speaks git's smart-HTTP wire protocol byte-for-byte and a structural subset of
+      GitHub's REST v3, so <code>git</code> and <code>gh</code> work against it unmodified —
+      but there are no bare repos on disk. Every git object — blob, tree, commit, ref,
+      tag — is an IOA entity with its own state machine, and pull requests, reviews, and
+      comments live in the same model as the objects they point at.</p>
+
+      <p>It exists for a specific workload. VISION.md calls it the Dark Factory:</p>
+
+      <blockquote>"software systems where autonomous agents produce code continuously, at
+      machine rate, with humans supervising through an evolution record rather than a
+      ticket queue."
+      <span class="attr"><span class="kicker">— VISION.md</span></span></blockquote>
+
+      <p>Three mismatches between that workload and the standard git + GitHub deployment
+      motivated the design — VISION is careful to call them mismatches, not defects:</p>
+
+      <ul class="list">
+        <li><strong>The primary writer is a program, not a human.</strong> Agents here run
+        sandboxed, without network sockets or a forkable git binary, reaching out through
+        capability-scoped host functions. Implementing smart-HTTP inside the sandbox is large;
+        handing the sandbox a git binary undoes the isolation; neither integrates with the
+        system's authorization and audit machinery.</li>
+        <li><strong>Repository state lives in two places.</strong> Objects on a filesystem,
+        PRs and reviews in a database behind a separate API. Every feature touching both must
+        reconcile them. Here they share one substrate.</li>
+        <li><strong>The audit record is partial.</strong> Git's reflog is local; GitHub's
+        activity feed wasn't designed as a primary operational query surface. For a Dark
+        Factory operator, "what did which agent do on which repository in the last hour"
+        is the common case — it wants to run against the authoritative log.</li>
+      </ul>
+
+      <p>Since the 2026-05-18 scope expansion, Genesis is also the <strong>app registry</strong>:
+      apps are content-addressed (<code>owner/app@hash</code>), forkable with recorded lineage,
+      installable into tenants, and servable in a multi-tenant commons mode. Genesis is the
+      canonical home for Temper-native app bundles — production TemperPaw and Katagami installs
+      come from it at pinned refs.</p>
+
+      <p>VISION keeps its own honesty: whether this beats a well-configured GitHub organization
+      is an open question. What is not in question is that the wire is byte-exact — if a
+      third-party tool works against github.com, it should work against Genesis, and if it
+      doesn't, that's a bug.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 02 -->
+<section id="substrate">
+  <div class="wrap">
+    <span class="kicker"><span class="no">02</span> · Containers</span>
+    <h2>The substrate</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">One <code>temper serve</code> process. HTTP arrives at the kernel's
+      router, which matches the path against registered <code>HttpEndpoint</code> entities
+      and dispatches the bound WASM module. The handlers terminate the foreign wire —
+      git pkt-lines, pack streams, REST JSON — and everything they persist goes back through
+      OData <em>as the resolved caller</em>, so Cedar evaluates the real principal, not a
+      system bridge.</p>
+    </div>
+
+    <div class="plate">
+      <span class="platelabel">Plate 02 — container view (C4 level 2)</span>
+      <svg viewBox="0 0 940 724" role="img" aria-label="Container diagram: git and gh clients, TemperPaw installer, and the Genesis web UI talk HTTPS to one temper serve process. Inside it, the kernel HTTP router matches HttpEndpoint entities and dispatches WASM protocol handlers, which call back into the Temper kernel over OData. The kernel persists to a Postgres event store and a blob store.">
+        <defs>
+          <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#201B16"></path>
+          </marker>
+        </defs>
+        <!-- actors -->
+        <rect class="box" x="30" y="14" width="290" height="72"></rect>
+        <text class="h" x="46" y="42">git / gh client</text>
+        <text class="s" x="46" y="62">unchanged binaries — smart HTTP wire,</text>
+        <text class="s" x="46" y="76">REST /api/v3</text>
+
+        <rect class="box" x="350" y="14" width="270" height="72"></rect>
+        <text class="h" x="366" y="42">TemperPaw installer</text>
+        <text class="s" x="366" y="62">pinned bundle fetch — installs</text>
+        <text class="s" x="366" y="76">never clone (ADR-0011)</text>
+
+        <rect class="box" x="650" y="14" width="260" height="72"></rect>
+        <text class="h" x="666" y="42">Genesis web UI</text>
+        <text class="s" x="666" y="62">registry views + Mission Control,</text>
+        <text class="s" x="666" y="76">reads entity state over OData</text>
+
+        <line class="wire" x1="175" y1="86" x2="175" y2="142" marker-end="url(#ah1)"></line>
+        <line class="wire" x1="485" y1="86" x2="485" y2="142" marker-end="url(#ah1)"></line>
+        <line class="wired" x1="780" y1="86" x2="780" y2="142" marker-end="url(#ah1)"></line>
+        <text class="lab" x="190" y="120">HTTPS</text>
+
+        <!-- process boundary -->
+        <rect class="bound" x="20" y="142" width="900" height="424"></rect>
+        <text class="lab" x="36" y="164">GENESIS DEPLOYMENT — ONE temper serve PROCESS (RAILWAY: --storage postgres)</text>
+
+        <!-- router strip -->
+        <rect class="boxi" x="50" y="180" width="840" height="66"></rect>
+        <text class="h w" x="66" y="206">kernel HTTP router — HttpEndpoint entities, longest-prefix path match</text>
+        <text class="sl" x="66" y="228">action-bridge dispatch: the entity action runs Cedar-evaluated as the resolved caller (bridge_principal, temper ADR-0138)</text>
+
+        <line class="wire" x1="470" y1="246" x2="470" y2="272" marker-end="url(#ah1)"></line>
+
+        <!-- handlers band -->
+        <rect class="boxc" x="50" y="272" width="840" height="146"></rect>
+        <text class="lab" x="66" y="294">WASM PROTOCOL HANDLERS (wasm32-wasip1 — every handler is a WASM integration; no host-side shortcuts)</text>
+        <rect class="box" x="66" y="306" width="152" height="44"></rect>
+        <text class="t" x="76" y="326">git_refs_</text>
+        <text class="t" x="76" y="341">advertise</text>
+        <rect class="box" x="228" y="306" width="152" height="44"></rect>
+        <text class="t" x="238" y="326">git_upload_</text>
+        <text class="t" x="238" y="341">pack</text>
+        <rect class="box" x="390" y="306" width="152" height="44"></rect>
+        <text class="t" x="400" y="326">git_receive_</text>
+        <text class="t" x="400" y="341">pack</text>
+        <rect class="box" x="552" y="306" width="160" height="44"></rect>
+        <text class="t" x="562" y="326">github_rest_*</text>
+        <text class="s" x="562" y="341">repos·refs·pulls</text>
+        <rect class="box" x="722" y="306" width="152" height="44"></rect>
+        <text class="t" x="732" y="326">app_registry</text>
+        <text class="s" x="732" y="341">+ bundle export</text>
+        <text class="lab" x="66" y="378">COMPOSITE PRODUCERS:</text>
+        <rect class="box" x="252" y="362" width="150" height="40"></rect>
+        <text class="t" x="262" y="386">scm_ingest_pack</text>
+        <rect class="box" x="412" y="362" width="140" height="40"></rect>
+        <text class="t" x="422" y="386">scm_merge_pr</text>
+        <rect class="box" x="562" y="362" width="180" height="40"></rect>
+        <text class="t" x="572" y="386">scm_assign_pr_number</text>
+
+        <line class="wire" x1="470" y1="418" x2="470" y2="448" marker-end="url(#ah1)"></line>
+        <text class="lab" x="486" y="438">INTERNAL ODATA CALLS — AS THE RESOLVED PRINCIPAL</text>
+
+        <!-- kernel band -->
+        <rect class="box" x="50" y="448" width="840" height="100"></rect>
+        <text class="h" x="66" y="474">Temper kernel (vendored at temper/, pinned submodule)</text>
+        <rect class="boxc" x="66" y="490" width="206" height="42"></rect>
+        <text class="t" x="76" y="508">entity actors +</text>
+        <text class="t" x="76" y="523">state machines</text>
+        <rect class="boxc" x="282" y="490" width="196" height="42"></rect>
+        <text class="t" x="292" y="508">authoritative</text>
+        <text class="t" x="292" y="523">event log</text>
+        <rect class="boxc" x="488" y="490" width="190" height="42"></rect>
+        <text class="t" x="498" y="508">Cedar policy engine</text>
+        <text class="s" x="498" y="523">gates every action</text>
+        <rect class="boxc" x="688" y="490" width="186" height="42"></rect>
+        <text class="t" x="698" y="508">OData surface</text>
+        <text class="s" x="698" y="523">the only internal API</text>
+
+        <!-- stores -->
+        <line class="wire" x1="280" y1="566" x2="280" y2="612" marker-end="url(#ah1)"></line>
+        <text class="lab" x="296" y="596">APPEND EVENTS / READ PROJECTIONS</text>
+        <line class="wire" x1="690" y1="566" x2="690" y2="612" marker-end="url(#ah1)"></line>
+        <text class="lab" x="706" y="596">CONTENT BY HASH</text>
+
+        <rect class="box" x="110" y="612" width="330" height="86"></rect>
+        <text class="h" x="126" y="640">Postgres event store</text>
+        <text class="s" x="126" y="660">events + projections; rows stay</text>
+        <text class="s" x="126" y="675">metadata-sized (ADR-0027)</text>
+
+        <rect class="box" x="510" y="612" width="360" height="86"></rect>
+        <text class="h" x="526" y="640">BlobStore — S3/R2 or local FS</text>
+        <text class="s" x="526" y="660">object content · raw-object cache ·</text>
+        <text class="s" x="526" y="675">staged overflow fields</text>
+      </svg>
+    </div>
+    <div class="explainer">
+      <span class="platelabel">Reading the plate</span>
+      <p>The load-bearing idea is the dispatch shape. <code>HttpEndpoint</code> is a
+      first-class kernel entity (RFC-0001's K-1 kernel delta): registering one extends the
+      router's match set, so terminating a foreign wire protocol is configuration, not a
+      kernel patch. The handlers in the middle band are the only code that knows pkt-lines,
+      pack format, or GitHub JSON shapes; the kernel below them knows only entities, events,
+      policies, and OData. The arrow between the two carries the second load-bearing idea:
+      handlers resolve the caller's <code>GitToken</code> themselves and pass a
+      <code>bridge_principal</code> down, so every entity action a push or merge triggers is
+      Cedar-evaluated as the actual agent — the audit row names who did it, with which scopes.</p>
+    </div>
+
+    <details>
+      <summary>Component level — the push path</summary>
+      <div class="dd">
+        <ol class="list">
+          <li><code>git_receive_pack</code> resolves the principal first: SHA-256 the bearer
+          token, look up the <code>GitToken</code> row over <code>/tdata/GitTokens</code>.
+          Anonymous push gets the standard git smart-HTTP 401 challenge. Successful resolution
+          fires <code>GitToken.MarkUsed</code> — best-effort, so usage telemetry never blocks
+          a push (ADR-0025).</li>
+          <li>The incoming pack is stream-parsed — including OFS/REF delta entries and thin
+          packs on the ingest side — each object decompressed, SHA-1'd, and shaped into a
+          Blob/Tree/Commit/Tag row.</li>
+          <li><code>scm_ingest_pack</code> persists the rows as composite sub-writes and
+          classifies each ref command: a bounded ancestry walk from the new tip toward the
+          advertised old tip decides <code>Ref.Update</code> versus
+          <code>Ref.ForceUpdate</code> (§05).</li>
+          <li>Per-ref status goes back on the wire: <code>ok refname</code> or
+          <code>ng refname &lt;reason&gt;</code>.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details>
+      <summary>Component level — the clone path</summary>
+      <div class="dd">
+        <ol class="list">
+          <li><code>git_refs_advertise</code> emits the pkt-line advertisement; byte parity
+          against <code>git-http-backend</code> output is tested, not asserted
+          (<code>wire/tests/git_parity.rs</code>).</li>
+          <li><code>git_upload_pack</code> parses <code>want</code>/<code>have</code>
+          (NAK-only v0 — multi_ack and shallow negotiation are recorded follow-ups), walks the
+          reachable object set with paged prefetch, and streams a pack-v2 of full objects with
+          side-band-64k framing.</li>
+          <li>Object bodies come from the raw-object cache first (§04); if a historically
+          inconsistent repo advertises a ref whose target is not a stored commit, upload-pack
+          answers with a git protocol <code>ERR</code> pkt-line instead of hanging the client
+          (ADR-0011).</li>
+        </ol>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why a kernel action bridge instead of an HTTP framework</summary>
+      <div class="dd">
+        <p>Genesis's hard rules forbid host-side Rust handlers: every protocol surface is a
+        WASM integration, dispatched through Temper's generic machinery. The payoff is that
+        the git server inherits the kernel's whole governance story for free — Cedar on every
+        transition, the event log as the audit surface, OData as the single query plane —
+        and the kernel gains a generic reverse-proxy-into-entity-actions primitive any other
+        Temper consumer can reuse. The cost is real too: byte-exact git serialization becomes
+        Genesis's responsibility, verified continuously against the real <code>git</code>
+        binary.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================================================ 03 -->
+<section id="objects">
+  <div class="wrap">
+    <span class="kicker"><span class="no">03</span> · The core bet</span>
+    <h2>Objects as entities with state machines</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">A blob is a row, created by an action that carries canonical bytes and
+      a content hash. For Blob, Tree, Commit, and Tag the entity <code>Id</code> <em>is</em>
+      the SHA-1 — an OData GET by id is the natural git-object-by-hash lookup. Objects are
+      immutable once hashed (<code>Durable</code> is their only state), with the integrity
+      invariant <code>Id == sha1(CanonicalBytes)</code> checked on read.</p>
+      <p>The only mutable git surface is the ref — and ref updates are compare-and-swap
+      transitions. At machine rate, two agents pushing the same branch must produce one
+      accepted update and one cleanly rejected one, never a silent last-write-wins.</p>
+    </div>
+
+    <div class="plate">
+      <span class="platelabel">Plate 03 — compare-and-swap refs, and the event each transition leaves</span>
+      <svg viewBox="0 0 940 412" role="img" aria-label="Two agents concurrently push to refs/heads/main. Agent A's Ref.Update with the matching previous SHA is applied; agent B's update with a stale previous SHA is rejected at the state level. Both outcomes append events to the authoritative log.">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#201B16"></path>
+          </marker>
+          <marker id="ah2v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#B33524"></path>
+          </marker>
+        </defs>
+        <rect class="box" x="320" y="20" width="300" height="74"></rect>
+        <text class="h" x="338" y="48">Ref · refs/heads/main</text>
+        <text class="t" x="338" y="68">TargetCommitSha = c4a1f00</text>
+        <text class="s" x="338" y="84">status: Active</text>
+
+        <rect class="box" x="40" y="150" width="250" height="64"></rect>
+        <text class="h" x="56" y="176">agent A — push</text>
+        <text class="t" x="56" y="196">Update(prev c4a1f00 → 9f2e3aa)</text>
+
+        <rect class="box" x="650" y="150" width="250" height="64"></rect>
+        <text class="h" x="666" y="176">agent B — concurrent push</text>
+        <text class="t" x="666" y="196">Update(prev c4a1f00 → 77d0bce)</text>
+
+        <path class="wire" d="M165,150 L165,120 L320,120 L320,98" marker-end="url(#ah2)"></path>
+        <text class="lab" x="180" y="140">1 — PRECONDITION HOLDS</text>
+        <path class="wirev" d="M775,150 L775,120 L620,120 L620,98" marker-end="url(#ah2v)"></path>
+        <text class="labv" x="640" y="140">2 — STALE PREVIOUS SHA</text>
+
+        <rect class="boxg" x="40" y="244" width="380" height="58"></rect>
+        <text class="t w" x="56" y="268">applied — tip is now 9f2e3aa,</text>
+        <text class="t w" x="56" y="286">RefUpdated event appended</text>
+
+        <rect class="boxv" x="500" y="244" width="400" height="58"></rect>
+        <text class="t w" x="516" y="268">cleanly rejected at the state level —</text>
+        <text class="t w" x="516" y="286">agent B pulls, rebases, retries</text>
+
+        <text class="s" x="40" y="330">non-fast-forward with a *correct* old SHA? classified as Ref.ForceUpdate — Cedar requires the `force` scope (§05)</text>
+
+        <rect class="boxi" x="40" y="348" width="860" height="48"></rect>
+        <text class="t w" x="56" y="368">event log ▸ RefUpdated{ repo, refs/heads/main, c4a1f00 → 9f2e3aa, principal: agent-A, scopes, t }</text>
+        <text class="sl" x="56" y="386">every transition is an event; current state is a projection — this row is the audit surface</text>
+      </svg>
+    </div>
+    <div class="explainer">
+      <span class="platelabel">Reading the plate</span>
+      <p>The CAS precondition lives in the entity's state machine, not in handler code:
+      <code>Ref.Update(PreviousCommitSha, NewCommitSha)</code> rejects at the state level
+      when the current SHA doesn't match. That puts concurrency control, policy
+      (<code>ForceUpdate</code> needs the <code>force</code> scope), and audit on the same
+      transition. The dark strip at the bottom is why the whole bet is worth it: the question
+      "which commits did this agent produce in the last hour, and what did the policy engine
+      decide about each" is a log query with the same filters and indexes as every other
+      query in the system — not a filesystem walk joined to a separate audit store.</p>
+    </div>
+
+    <details>
+      <summary>The state machines, entity by entity</summary>
+      <div class="dd">
+        <table>
+          <thead><tr><th>Entity</th><th>States</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>Blob / Tree / Commit / Tag</code></td><td>Durable</td><td>Immutable once hashed; <code>Id</code> is the SHA-1; <code>Id == sha1(CanonicalBytes)</code> asserted on read.</td></tr>
+            <tr><td><code>Ref</code></td><td>Active → Deleted</td><td>CAS <code>Update</code>; <code>ForceUpdate</code> gated by the <code>force</code> scope; deleted refs kept for audit.</td></tr>
+            <tr><td><code>Repository</code></td><td>Provisioning → Active → Archived</td><td>Owns convenience actions like <code>WriteFile</code> / <code>BatchWriteFiles</code> that emit commits + ref advances.</td></tr>
+            <tr><td><code>PullRequest</code></td><td>Draft → Open → UnderReview → Approved / ChangesRequested → Merged / Closed</td><td>Same event log as the commits it points at; merge reachable only from Approved.</td></tr>
+            <tr><td><code>GitToken</code></td><td>Active → Revoked</td><td>SHA-256-hashed secret; scopes bound what Cedar permits; <code>MarkUsed</code> leaves a usage trail.</td></tr>
+          </tbody>
+        </table>
+        <p>Tree entries are child rows with git's exact mode vocabulary
+        (<code>100644</code>, <code>100755</code>, <code>040000</code>, <code>120000</code>,
+        <code>160000</code>), sorted by git's canonical byte ordering — invariants declared
+        on the entity, not conventions in code.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Why the event log is the audit surface</summary>
+      <div class="dd">
+        <p>Git already works this way locally — the reflog is an event log — but the server
+        usually isn't authoritative about history. Here every state change on every entity is
+        an event, and current state is a projection over them. That buys replay for debugging,
+        queryable history beyond any audit window, and an exact answer to VISION's "what
+        happened on this repo at 3am last Tuesday." The recorded cost: log infrastructure is
+        work GitHub has already solved at scale, and Genesis takes it on deliberately.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================================================ 04 -->
+<section id="storage">
+  <div class="wrap">
+    <span class="kicker"><span class="no">04</span> · Where bytes live</span>
+    <h2>Storage tiers and the five speed mechanisms</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">ADR-0027 settled the storage split: entity rows carry metadata plus a
+      content-addressed reference; all git object <em>content</em> lives in the object store.
+      The row remains the authority — it owns the hash; store and cache are projections
+      addressed by it. One source of truth, three places bytes can be read from.</p>
+    </div>
+
+    <div class="plate">
+      <span class="platelabel">Plate 04 — storage tiers and the clone read order</span>
+      <svg viewBox="0 0 940 560" role="img" aria-label="Three storage tiers: entity rows in the Postgres event store hold metadata and a content reference; the kernel BlobStore holds object content; a raw-object cache in the same BlobStore holds ready-to-emit bodies. The clone read path tries the cache first, then the content reference, then legacy inline rows, backfilling as it goes.">
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#201B16"></path>
+          </marker>
+          <marker id="ah3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#365C8D"></path>
+          </marker>
+        </defs>
+
+        <rect class="box" x="40" y="36" width="560" height="124"></rect>
+        <text class="h" x="58" y="64">TIER 1 — entity row (Postgres event store)</text>
+        <text class="t" x="58" y="88">Id = SHA-1 of canonical bytes — the authority</text>
+        <text class="t" x="58" y="108">parsed metadata: parents · author · message · tree entries · sizes</text>
+        <text class="s" x="58" y="130">ContentRef → content-addressed reference; inline threshold for</text>
+        <text class="s" x="58" y="146">object content is zero (ADR-0027)</text>
+
+        <rect class="box" x="40" y="208" width="560" height="100"></rect>
+        <text class="h" x="58" y="236">TIER 2 — object store (kernel BlobStore)</text>
+        <text class="t" x="58" y="260">canonical object content, addressed by the row's hash</text>
+        <text class="s" x="58" y="282">S3/R2 or local FS; per-tenant via vault blob_endpoint</text>
+
+        <rect class="box" x="40" y="356" width="560" height="100"></rect>
+        <text class="h" x="58" y="384">TIER 3 — raw-object cache (same BlobStore)</text>
+        <text class="t" x="58" y="408">git-objects/{repository_id}/{sha}.b64 — ready-to-emit bodies</text>
+        <text class="s" x="58" y="430">pack ingest fills it on write; reads backfill older objects (ADR-0011)</text>
+
+        <line class="wire" x1="320" y1="160" x2="320" y2="208" marker-end="url(#ah3)"></line>
+        <text class="lab" x="334" y="190">CONTENTREF RESOLVES TO</text>
+        <line class="wire" x1="320" y1="308" x2="320" y2="356" marker-end="url(#ah3)"></line>
+        <text class="lab" x="334" y="338">SAME BACKEND, CACHE KEYSPACE</text>
+
+        <!-- read path -->
+        <rect class="boxb" x="660" y="36" width="240" height="66"></rect>
+        <text class="h w" x="676" y="64">clone read path</text>
+        <text class="sl" x="676" y="84">git_upload_pack, per object</text>
+
+        <path class="wire" d="M780,102 L780,406 L600,406" stroke="#365C8D" marker-end="url(#ah3b)"></path>
+        <text class="labb" x="612" y="398">1 — CACHE</text>
+        <path class="wire" d="M740,102 L740,258 L600,258" stroke="#365C8D" marker-end="url(#ah3b)"></path>
+        <text class="labb" x="612" y="250">2 — CONTENT REF</text>
+        <path class="wire" d="M700,102 L700,130 L600,130" stroke="#365C8D" marker-end="url(#ah3b)"></path>
+        <text class="labb" x="610" y="150">3 — LEGACY INLINE</text>
+
+        <text class="s" x="620" y="470">misses fall through; a legacy-inline hit</text>
+        <text class="s" x="620" y="488">backfills store + cache — non-destructive</text>
+        <text class="s" x="620" y="506">migration, no rewrite job (ADR-0011 pattern)</text>
+
+        <text class="t" x="40" y="510">write path: pack ingest writes row + content + cache in one composite pass.</text>
+        <text class="s" x="40" y="534">the row owns the hash; the store and the cache are projections addressed by it — one source of truth holds.</text>
+      </svg>
+    </div>
+    <div class="explainer">
+      <span class="platelabel">Reading the plate</span>
+      <p>Before ADR-0027, content at or under 128&nbsp;KiB sat base64-inline on the row — which
+      meant the authoritative event log was hauling file bytes it never needed for replay
+      semantics, and row reads paid for content when only metadata was wanted. Dropping the
+      inline threshold for object content to zero keeps the log lean. The migration is the
+      same non-destructive pattern ADR-0011 established: new writes use the new shape, reads
+      of pre-change rows resolve the legacy inline value and opportunistically backfill the
+      store — nothing rewrites history, no migration job runs.</p>
+    </div>
+
+    <p class="prose" style="margin-top:36px"><strong>Five mechanisms make this fast.</strong>
+    Each exists because a specific path was slow or fragile; none is speculative.</p>
+
+    <div class="mechs">
+      <div class="mech">
+        <span class="name"><span class="no">M1</span>raw-object cache</span>
+        <p>Ready-to-emit object bodies at <code>git-objects/{repository_id}/{sha}.b64</code>,
+        filled by pack ingest on write and backfilled by reads of older objects.</p>
+        <p class="why"><b>WHY</b> — the clone path should not pay entity reads per object.
+        Upload-pack reads the cache first and falls back to entity/field lookup only on a
+        miss, so new repos are clone-ready immediately and old repos get faster without a
+        destructive migration.</p>
+      </div>
+      <div class="mech">
+        <span class="name"><span class="no">M2</span>pinned-bundle install</span>
+        <p><code>GET /api/genesis/apps/{owner}/{name}/versions/{hash}/bundle</code> returns the
+        resolved app/dependency closure plus deterministic package files. Git fallback is off
+        by default (an env flag re-enables it for admin recovery).</p>
+        <p class="why"><b>WHY</b> — installs don't clone. Using clone as the install primitive
+        made a large app pay git negotiation, object walking, pack emission, checkout, full
+        reconcile, WASM persistence, and TemperFS bootstrap in one synchronous path that
+        surfaced as a 120–300&nbsp;s timeout.</p>
+      </div>
+      <div class="mech">
+        <span class="name"><span class="no">M3</span>field overflow staging</span>
+        <p>Field values over 128&nbsp;KiB (<code>FIELD_INLINE_MAX_BYTES = 131_072</code>) are
+        staged to the BlobStore; the row holds a content-addressed reference. ADR-0027 drops
+        that threshold to zero for git object content; the 128&nbsp;KiB line remains for
+        non-object fields such as staged <code>PackBytes</code>.</p>
+        <p class="why"><b>WHY</b> — WASM host-call buffers are finite. Values that ride
+        host-call responses must stay bounded, or one large file breaks the dispatch
+        machinery rather than degrading gracefully.</p>
+      </div>
+      <div class="mech">
+        <span class="name"><span class="no">M4</span>paged upload-pack prefetch</span>
+        <p>The pack-emission prefetch pages its selected object fields instead of asking OData
+        for everything at once.</p>
+        <p class="why"><b>WHY</b> — a large repo's worth of object fields in one OData payload
+        can overflow the WASM host-call response buffer. Paging bounds every response, so repo
+        size never becomes a protocol failure.</p>
+      </div>
+      <div class="mech">
+        <span class="name"><span class="no">M5</span>digest-aware reconcile</span>
+        <p>An app that is already installed, whose bundle digest and runtime state match, is
+        adopted by recording Genesis provenance — specs, WASM, content, and seed bootstrap are
+        not replayed.</p>
+        <p class="why"><b>WHY</b> — warm restarts were re-installing everything; legacy rows
+        without provenance repeatedly attempted first-time reconciles. Skipping unchanged
+        pinned refs makes restart cost proportional to what actually changed.</p>
+      </div>
+    </div>
+
+    <details>
+      <summary>Measured behavior on production</summary>
+      <div class="dd">
+        <p>ADR-0011's verification record includes the Railway live clone smoke on a real
+        production app: <code>temperpaw/paw-patrol</code> cold clone ~3&nbsp;s, warm clone
+        under 1&nbsp;s, plus a read-only performance smoke
+        (<code>scripts/live-genesis-clone-performance-smoke.sh</code>) measuring
+        <code>ls-remote</code>, info/refs first byte, tiny clone, and large warm clone.
+        Upload-pack emits phase timing — request parsing, reachable-object walking, pack
+        emission — so a slow clone is attributable instead of opaque. The
+        Genesis-vs-GitHub benchmark in <code>docs/PERFORMANCE.md</code> is the standing bar;
+        §07 explains what happens if clone misses it.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================================================ 05 -->
+<section id="workflow">
+  <div class="wrap">
+    <span class="kicker"><span class="no">05</span> · RFC-0004</span>
+    <h2>The workflow layer</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">The PR, review, and merge entity model — with Cedar rules like
+      "the author of a PR cannot approve it" — was merged long before anything could call it.
+      RFC-0004 is the layer that makes those state machines reachable from real tooling, and
+      it closes two enforcement holes first: push performed no authentication, and
+      non-fast-forward updates were never classified, so force-push protection existed on
+      paper only.</p>
+      <p>Auth lands first deliberately: every endpoint added afterward is <em>born</em> behind
+      the token model instead of retrofitted. Push resolves the caller's
+      <code>GitToken</code> (Basic username, <code>Bearer</code>, or gh-style
+      <code>token</code> forms), challenges anonymous pushes with the standard 401, and passes
+      the resolved principal through the action bridge so Cedar evaluates the real agent
+      (temper ADR-0138). Force classification is an ancestry walk: if the advertised old tip
+      is not an ancestor of the new tip, the sub-write dispatches
+      <code>Ref.ForceUpdate</code>, which Cedar only permits with the <code>force</code>
+      scope. Fast-forward pushes — the overwhelmingly common case — pay one ancestor check
+      that terminates quickly on the first-parent chain.</p>
+      <p>On top of that sit the REST shims (<code>/api/v3</code>: repos, branches, refs,
+      pulls, reviews, merge — each shipped endpoint shape-tested against a recorded
+      github.com fixture) and the one genuinely hard piece: the server-side merge engine.</p>
+    </div>
+
+    <div class="plate">
+      <span class="platelabel">Plate 05 — scm_merge_pr: three strategies, one refusal</span>
+      <svg viewBox="0 0 940 478" role="img" aria-label="A merge request flows into scm_merge_pr, which computes the merge base by a bounded paged DAG walk and executes fast-forward, squash, or merge. A merge with divergent content returns HTTP 409; successful strategies write objects via composite sub-writes, advance the ref by CAS, and warm the raw-object cache.">
+        <defs>
+          <marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#201B16"></path>
+          </marker>
+          <marker id="ah4v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#B33524"></path>
+          </marker>
+        </defs>
+        <rect class="box" x="40" y="24" width="270" height="62"></rect>
+        <text class="h" x="56" y="50">PUT …/pulls/{n}/merge</text>
+        <text class="s" x="56" y="70">gh pr merge — only from Approved</text>
+
+        <line class="wire" x1="310" y1="55" x2="360" y2="55" marker-end="url(#ah4)"></line>
+
+        <rect class="box" x="360" y="24" width="330" height="62"></rect>
+        <text class="h" x="376" y="50">scm_merge_pr (composite producer)</text>
+        <text class="s" x="376" y="70">merge base via bounded, paged DAG walk</text>
+
+        <line class="wire" x1="420" y1="86" x2="170" y2="142" marker-end="url(#ah4)"></line>
+        <line class="wire" x1="500" y1="86" x2="480" y2="142" marker-end="url(#ah4)"></line>
+        <line class="wire" x1="590" y1="86" x2="760" y2="142" marker-end="url(#ah4)"></line>
+
+        <rect class="box" x="40" y="142" width="260" height="88"></rect>
+        <text class="h" x="56" y="168">fast-forward</text>
+        <text class="t" x="56" y="190">base tip is ancestor of head</text>
+        <text class="s" x="56" y="210">CAS ref advance — no new objects</text>
+
+        <rect class="box" x="340" y="142" width="260" height="88"></rect>
+        <text class="h" x="356" y="168">squash</text>
+        <text class="t" x="356" y="190">one single-parent commit</text>
+        <text class="s" x="356" y="210">tree = the PR head's tree</text>
+
+        <rect class="box" x="640" y="142" width="260" height="88"></rect>
+        <text class="h" x="656" y="168">merge</text>
+        <text class="t" x="656" y="190">one two-parent commit</text>
+        <text class="s" x="656" y="210">only if clean at tree level</text>
+
+        <line class="wirev" x1="770" y1="230" x2="770" y2="268" marker-end="url(#ah4v)"></line>
+
+        <rect class="boxc" x="610" y="268" width="320" height="58"></rect>
+        <text class="t" x="626" y="292">same path modified on both sides</text>
+        <text class="t" x="626" y="310">since the merge base?</text>
+
+        <line class="wirev" x1="770" y1="326" x2="770" y2="362" marker-end="url(#ah4v)"></line>
+        <text class="labv" x="784" y="350">YES</text>
+        <path class="wire" d="M610,297 L560,297 L560,362" marker-end="url(#ah4)"></path>
+        <text class="lab" x="520" y="350">NO</text>
+
+        <rect class="boxv" x="610" y="362" width="320" height="92"></rect>
+        <text class="t w" x="626" y="388">HTTP 409 — names the conflicting paths</text>
+        <text class="t w" x="626" y="406">remedy: rebase or merge locally,</text>
+        <text class="t w" x="626" y="424">push, retry.</text>
+        <text class="sl" x="626" y="444">refusal, never a wrong merge commit</text>
+
+        <line class="wire" x1="170" y1="230" x2="170" y2="362" marker-end="url(#ah4)"></line>
+        <line class="wire" x1="470" y1="230" x2="470" y2="362" marker-end="url(#ah4)"></line>
+
+        <rect class="box" x="40" y="362" width="540" height="92"></rect>
+        <text class="h" x="56" y="388">on success — proven sub-write shapes</text>
+        <text class="t" x="56" y="410">Commit/Tree rows → CAS ref advance → PullRequest.Merge transition</text>
+        <text class="t" x="56" y="428">→ new objects written into the raw-object cache (next clone is warm)</text>
+        <text class="s" x="56" y="447">every engine merge re-performed with real git — SHAs must match</text>
+      </svg>
+    </div>
+    <div class="explainer">
+      <span class="platelabel">Reading the plate</span>
+      <p>The merge engine is the riskiest code in a system whose product is byte-exact
+      compatibility — it is the one place the <em>server</em> authors new git objects. The
+      design keeps the risk box small: the byte primitives
+      (<code>commit_canonical_bytes</code>, <code>tree_canonical_bytes</code> in
+      <code>crates/git_object</code>) were already hash-parity-tested including two-parent
+      merge commits, the sub-write shapes were already proven by pack ingest, and the merge
+      is accepted only when the three-way resolution is clean at tree level — no path
+      modified on both sides since the base. Divergent content gets a 409 that says exactly
+      what to do. Refusal beats guessing because the failure mode of refusal is a retry,
+      while the failure mode of guessing is a wrong merge commit in a permanent,
+      content-addressed history — and agents already have working conflict tooling locally
+      (ADR-0024).</p>
+    </div>
+
+    <details>
+      <summary>The REST surface, endpoint by endpoint</summary>
+      <div class="dd">
+        <table>
+          <thead><tr><th>Endpoint</th><th>Entity action</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/v3/user/repos</code></td><td><code>Repository</code> create + auto-provision (closes RFC-0002's Slice C)</td></tr>
+            <tr><td><code>GET /repos/{o}/{r}</code> · <code>GET …/branches</code></td><td>Repository / Ref read projections</td></tr>
+            <tr><td><code>GET/POST/DELETE …/git/refs[/…]</code></td><td><code>Ref.Create</code> / <code>Ref.Update</code> / <code>Ref.Delete</code></td></tr>
+            <tr><td><code>POST …/pulls</code></td><td><code>PullRequest.Create</code> + <code>Open</code>; <code>scm_assign_pr_number</code> assigns max(Number)+1 per repo</td></tr>
+            <tr><td><code>GET/PATCH …/pulls[/{n}]</code></td><td>projection · <code>Close</code> / title-body updates</td></tr>
+            <tr><td><code>POST …/pulls/{n}/reviews</code></td><td><code>Review.Create</code> + <code>Approve</code> / <code>RequestChanges</code></td></tr>
+            <tr><td><code>PUT …/pulls/{n}/merge</code></td><td><code>PullRequest.Merge</code> via <code>scm_merge_pr</code></td></tr>
+          </tbody>
+        </table>
+        <p>Shape compatibility is hard rule 7: every shipped endpoint carries a test comparing
+        a recorded github.com fixture with the Genesis response — field names, types,
+        required-field presence.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Cedar rules that switched from paper to live</summary>
+      <div class="dd">
+        <p>With callers in place, the dormant policies became enforcement: the author of a PR
+        cannot approve it (the CI gate exercises this with a second token), merge is reachable
+        only from <code>Approved</code>, anonymous push is challenged, non-fast-forward
+        without the <code>force</code> scope is denied, and deleting or force-updating the
+        default branch keeps its deny policy. One intended behavior change rode along:
+        existing automation that rewrites history must re-mint tokens with the
+        <code>force</code> scope (ADR-0025 calls this out explicitly).</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================================================ 06 -->
+<section id="evolution">
+  <div class="wrap">
+    <span class="kicker"><span class="no">06</span> · RFC-0005</span>
+    <h2>Directed Evolution, riding the substrate</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">Directed Evolution improves a running application the way a breeder
+      improves an organism: under explicit, recorded selection pressure. It is not a separate
+      system bolted onto Genesis — the control plane is itself a Genesis app
+      (<code>apps/directed-evolution</code>), every concept a Temper entity with a state
+      machine, installed by pinned refs and iterated by hot load. Genesis stores evolution
+      state and app versions; it never runs agent work itself.</p>
+    </div>
+
+    <div class="plate">
+      <span class="platelabel">Plate 06 — the evolution loop, the execution bridge, and what watches it</span>
+      <svg viewBox="0 0 940 800" role="img" aria-label="The Directed Evolution loop: a running organism on an external runtime emits signals, an observer interprets them into pressures and directions, an autonomy policy or human gate starts an episode with a frozen contract, generations produce variants that face trials and evaluation stages, mechanical eliminations and selection pick a winner, and promotion creates a new organism version with a lineage edge back to the organism. Below, the execution bridge of shared work items and the local worker; at right, Mission Control reading entity state.">
+        <defs>
+          <marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#201B16"></path>
+          </marker>
+          <marker id="ah5g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#2F6B45"></path>
+          </marker>
+        </defs>
+
+        <!-- loop-back path along top/right border -->
+        <path class="wire" d="M920,476 L932,476 L932,14 L165,14 L165,30" stroke="#2F6B45" marker-end="url(#ah5g)"></path>
+        <text class="sg" x="408" y="34">new parent version — the loop closes</text>
+
+        <rect class="boxg" x="30" y="30" width="320" height="84"></rect>
+        <text class="h w" x="46" y="58">running organism</text>
+        <text class="sl" x="46" y="78">external runtime — ADR-0026 target:</text>
+        <text class="sl" x="46" y="94">base URL · tenant · Datadog · auth names</text>
+
+        <line class="wire" x1="130" y1="114" x2="130" y2="158" marker-end="url(#ah5)"></line>
+
+        <!-- row 1: discovery -->
+        <rect class="box" x="30" y="158" width="230" height="76"></rect>
+        <text class="h" x="44" y="184">signals</text>
+        <text class="s" x="44" y="204">scout sweeps of Datadog;</text>
+        <text class="s" x="44" y="220">fingerprint dedup — no spam</text>
+
+        <line class="wire" x1="260" y1="196" x2="290" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="box" x="290" y="158" width="160" height="76"></rect>
+        <text class="h" x="304" y="184">observer</text>
+        <text class="s" x="304" y="204">signals are not</text>
+        <text class="s" x="304" y="220">conclusions</text>
+
+        <line class="wire" x1="450" y1="196" x2="480" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="box" x="480" y="158" width="150" height="76"></rect>
+        <text class="h" x="494" y="184">pressures</text>
+        <text class="s" x="494" y="204">repair · growth ·</text>
+        <text class="s" x="494" y="220">ux · policy · data</text>
+
+        <line class="wire" x1="630" y1="196" x2="650" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="box" x="650" y="158" width="120" height="76"></rect>
+        <text class="h" x="664" y="184">directions</text>
+        <text class="s" x="664" y="204">provenance,</text>
+        <text class="s" x="664" y="220">risk, lane</text>
+
+        <line class="wire" x1="770" y1="196" x2="800" y2="196" marker-end="url(#ah5)"></line>
+        <rect class="boxc" x="800" y="158" width="120" height="76"></rect>
+        <text class="h" x="812" y="184">gate</text>
+        <text class="s" x="812" y="204">autonomy policy</text>
+        <text class="s" x="812" y="220">or human gate</text>
+
+        <path class="wire" d="M859,234 L859,270 L820,308" marker-end="url(#ah5)"></path>
+        <text class="lab" x="380" y="290">SUBMITEPISODESTARTREQUEST — THE CONTRACT, MATERIALIZED</text>
+
+        <!-- row 2: episode (right to left) -->
+        <rect class="box" x="700" y="308" width="220" height="84"></rect>
+        <text class="h" x="714" y="334">episode</text>
+        <text class="s" x="714" y="354">frozen contract: sim-user</text>
+        <text class="s" x="714" y="370">plan · protocol · evaluator</text>
+
+        <line class="wire" x1="700" y1="350" x2="690" y2="350" marker-end="url(#ah5)"></line>
+        <rect class="box" x="530" y="308" width="160" height="84"></rect>
+        <text class="h" x="544" y="334">generation(s)</text>
+        <text class="s" x="544" y="354">follow-ups seeded by</text>
+        <text class="s" x="544" y="370">elimination evidence</text>
+
+        <line class="wire" x1="530" y1="350" x2="500" y2="350" marker-end="url(#ah5)"></line>
+        <rect class="box" x="310" y="308" width="190" height="84"></rect>
+        <text class="h" x="324" y="334">variants</text>
+        <text class="s" x="324" y="354">mutation diff patches;</text>
+        <text class="s" x="324" y="370">isolated variant tenants</text>
+
+        <line class="wire" x1="310" y1="350" x2="280" y2="350" marker-end="url(#ah5)"></line>
+        <rect class="box" x="30" y="308" width="250" height="84"></rect>
+        <text class="h" x="44" y="334">trials + evaluation stages</text>
+        <text class="s" x="44" y="354">users observe; evaluators judge</text>
+        <text class="s" x="44" y="370">telemetry evidence fail-closed</text>
+
+        <line class="wire" x1="130" y1="392" x2="130" y2="436" marker-end="url(#ah5)"></line>
+
+        <!-- row 3: selection -->
+        <rect class="box" x="30" y="436" width="250" height="80"></rect>
+        <text class="h" x="44" y="462">mechanical eliminations</text>
+        <text class="s" x="44" y="482">declared thresholds enforced</text>
+        <text class="s" x="44" y="498">by the router; no talking past</text>
+
+        <line class="wire" x1="280" y1="476" x2="310" y2="476" marker-end="url(#ah5)"></line>
+        <rect class="box" x="310" y="436" width="210" height="80"></rect>
+        <text class="h" x="324" y="462">selection</text>
+        <text class="s" x="324" y="482">frozen protocol; the human</text>
+        <text class="s" x="324" y="498">does not override winners</text>
+
+        <line class="wire" x1="520" y1="476" x2="550" y2="476" marker-end="url(#ah5)"></line>
+        <rect class="box" x="550" y="436" width="190" height="80"></rect>
+        <text class="h" x="564" y="462">promotion</text>
+        <text class="s" x="564" y="482">pinned Genesis ref +</text>
+        <text class="s" x="564" y="498">hot-load install</text>
+
+        <line class="wire" x1="740" y1="476" x2="770" y2="476" marker-end="url(#ah5)"></line>
+        <rect class="boxg" x="770" y="436" width="150" height="80"></rect>
+        <text class="h w" x="784" y="462">lineage edge</text>
+        <text class="sl" x="784" y="482">parent → child,</text>
+        <text class="sl" x="784" y="498">episode + diff</text>
+
+        <!-- execution bridge -->
+        <rect class="bound" x="30" y="568" width="610" height="138"></rect>
+        <text class="lab" x="46" y="592">EXECUTION PLANE — SHARED temperpaw/paw-orchestration ENTITIES</text>
+        <rect class="box" x="46" y="606" width="196" height="66"></rect>
+        <text class="h" x="58" y="630">WorkItem</text>
+        <text class="s" x="58" y="648">Queued → Claimed → Running</text>
+        <text class="s" x="58" y="663">→ Succeeded / Failed</text>
+        <line class="wire" x1="242" y1="639" x2="260" y2="639" marker-end="url(#ah5)"></line>
+        <rect class="box" x="260" y="606" width="186" height="66"></rect>
+        <text class="h" x="272" y="630">paw-codex-worker</text>
+        <text class="s" x="272" y="648">operator's machine;</text>
+        <text class="s" x="272" y="663">each run is a WorkerRun</text>
+        <line class="wire" x1="446" y1="639" x2="476" y2="639" marker-end="url(#ah5)"></line>
+        <rect class="box" x="476" y="606" width="152" height="66"></rect>
+        <text class="h" x="488" y="630">WorkItemReceipt</text>
+        <text class="s" x="488" y="648">result router →</text>
+        <text class="s" x="488" y="663">domain state</text>
+
+        <line class="wired" x1="335" y1="516" x2="335" y2="568"></line>
+        <text class="s" x="46" y="734">observer · variant generator · simulated user · evaluators · selector — every agent step runs as a work item;</text>
+        <text class="s" x="46" y="752">Genesis queues, a local worker claims and runs (Codex today), structured results route back through the receipt.</text>
+
+        <!-- mission control -->
+        <rect class="boxi" x="668" y="568" width="252" height="138"></rect>
+        <text class="h w" x="684" y="596">MISSION CONTROL</text>
+        <text class="t w" x="684" y="620">Directions</text>
+        <text class="t w" x="684" y="640">Direction Detail</text>
+        <text class="t w" x="684" y="660">Organism Genealogy</text>
+        <text class="sl" x="684" y="684">renders from live entity state</text>
+        <text class="sl" x="684" y="699">only; negotiation stays in chat</text>
+
+        <text class="s" x="46" y="786">organisms run on external runtimes (Agent Answers: TemperPaw production) — control, execution, and runtime stay separate.</text>
+      </svg>
+    </div>
+    <div class="explainer">
+      <span class="platelabel">Reading the plate</span>
+      <p>Follow the green line: a promoted winner becomes the new parent version, and the
+      loop closes on the same organism. Three planes keep responsibilities clean. The
+      <strong>control plane</strong> is entity state in Genesis — signals (scout sweeps of
+      Datadog per organism runtime service, fingerprint-deduped so a repeating error makes one
+      signal, not direction spam), pressures, directions, episodes, trials, eliminations,
+      promotions, lineage. The <strong>execution plane</strong> is the bridge band: Genesis
+      queues shared work items; a local worker claims and runs them; structured results route
+      back through a receipt entity into a WASM router. The <strong>runtime plane</strong> is
+      wherever the organism actually runs — its target (base URL, tenant, Datadog service,
+      auth env-var <em>names</em>, never values) is data on the Organism row, so a second
+      organism needs one governed configuration action, not a code change (ADR-0026). Mission
+      Control observes all of it from entities alone; if live data is missing, it says so
+      rather than synthesizing.</p>
+    </div>
+
+    <details>
+      <summary>Episode contracts are frozen, and why that matters</summary>
+      <div class="dd">
+        <p>The human gate is chat negotiation materialized into one entity action:
+        <code>SubmitEpisodeStartRequest</code> carries the full contract — adaptation goal,
+        viability constraints, metrics, evaluation stages, elimination rules, scoring rules,
+        selection statement. Before trials queue, the <code>SimulatedUserPlan</code> and
+        <code>SelectionProtocol</code> must be frozen (Draft → Active → Frozen); there is no
+        silent fallback to synthetic personas. No variant may modify its own evaluators,
+        stages, or rules. The point is that selection is only meaningful if the criteria
+        can't drift while the contest runs — and if the human disagrees with a winner, the
+        contract was wrong: stop, revise, run another episode. Manual winner overrides are
+        explicitly rejected.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>The proof-surface discipline</summary>
+      <div class="dd">
+        <ul class="list">
+          <li><strong>Simulated users observe; evaluators judge.</strong> Simulated-user work
+          items target <code>Trial</code> entities and may only record journeys, observations,
+          friction, and blockers. Stage pass/fail belongs to evaluator roles targeting
+          <code>StageResult</code>. A variant cannot pass because a simulated user said
+          "passed."</li>
+          <li><strong>Telemetry is fail-closed.</strong> A stage that declares Datadog-measured
+          evidence fails unless the evaluator records structured evidence: query, time window,
+          result count, interpretation, and what a zero result means. Raw links are
+          secondary.</li>
+          <li><strong>Thresholds are mechanical.</strong> Declared hard limits in elimination
+          rules are enforced by the result router after evaluator output is parsed — an agent
+          may explain a judgment, but it cannot talk its way past a declared threshold.</li>
+          <li><strong>Every elimination explains itself</strong>: a dead variant has a
+          readable cause, linked evidence, and the rules that killed it.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>Autonomy lanes — what proceeds without a human</summary>
+      <div class="dd">
+        <table>
+          <thead><tr><th>Lane</th><th>Starts without human?</th><th>Promotes without human?</th></tr></thead>
+          <tbody>
+            <tr><td>Bounded repair</td><td>Yes</td><td>Yes, if all viability constraints pass and blast radius is bounded</td></tr>
+            <tr><td>Supervised repair</td><td>Yes</td><td>No, unless pre-authorized</td></tr>
+            <tr><td>Directed growth</td><td>No</td><td>Yes, after the human-approved contract completes — no manual override</td></tr>
+            <tr><td>UX change</td><td>No</td><td>No, unless pre-authorized</td></tr>
+            <tr><td>Policy change</td><td>No</td><td>No</td></tr>
+          </tbody>
+        </table>
+        <p>Mission Control always shows the active lane, why it was chosen, what may proceed
+        automatically, and what is blocked on the human. Automation is visible by design.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Observability correlation, mechanically</summary>
+      <div class="dd">
+        <p>Local workers and the deployed server emit to the same Datadog backend, and the
+        join is mechanical rather than prompt-text: the kernel's observation-metadata support
+        (temper ADR-0041) accepts an <code>X-Temper-Observe-Metadata</code> header and stamps
+        <code>temper.observation.*</code> attributes onto spans and events. Directed Evolution
+        join fields ride that channel — tenant, episode, direction, generation, variant,
+        stage, trial, persona/run, work item, app ref, runtime ref, role. Key results are
+        always materialized into entities; the UI never depends on opaque Datadog links, and
+        Datadog is evidence, never a decision-maker.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================================================ 07 -->
+<section id="deferred">
+  <div class="wrap">
+    <span class="kicker"><span class="no">07</span> · Recorded, not silent</span>
+    <h2>Deliberately deferred</h2>
+    <div class="accentbar"></div>
+    <div class="prose">
+      <p class="lede">PARITY.md keeps the honest ledger: every "works" row names the test or
+      smoke that proves it, and what isn't built is a recorded decision with a trigger for
+      revisiting — not an omission discovered later.</p>
+    </div>
+
+    <div class="defer">
+      <div class="card">
+        <span class="name">pack delta emission</span>
+        <p>Clones currently ship full objects — roughly 5× the wire size of a delta pack.
+        Ingest already handles deltas; emission is the deferred half.</p>
+        <p><em>Trigger:</em> the Genesis-vs-GitHub benchmark in <code>docs/PERFORMANCE.md</code>.
+        If clone latency misses the at-least-match bar and wire size is the dominant lever,
+        delta emission comes into scope. Conditional, not abandoned.</p>
+      </div>
+      <div class="card">
+        <span class="name">webhook delivery</span>
+        <p>The <code>Webhook</code> entity exists (<code>specs/webhook.ioa.toml</code>); the
+        delivery side is RFC-0001 Phase 2. Until then, the event log itself is the
+        observation surface — which for agent operators is the primary one anyway.</p>
+      </div>
+      <div class="card">
+        <span class="name">GraphQL v4</span>
+        <p>RFC-0001 Phase 3. REST covers the agent toolchain (<code>gh</code> speaks REST for
+        the workflow surface Genesis ships); GraphQL serves humans and modern CLIs and waits
+        until the REST surface is proven.</p>
+      </div>
+      <div class="card">
+        <span class="name">3-way content merge</span>
+        <p>A deliberate divergence, not a gap: GitHub would merge non-overlapping hunks in
+        the same file; Genesis returns 409 and tells the caller to resolve locally. The
+        engine's failure mode stays refusal, never a wrong merge commit. Full blob-level
+        merge is ADR-0024's recorded follow-up.</p>
+      </div>
+    </div>
+
+    <details>
+      <summary>Other recorded follow-ups</summary>
+      <div class="dd">
+        <ul class="list">
+          <li><code>multi_ack</code> / shallow negotiation — upload-pack is NAK-only v0.</li>
+          <li>Rebase merge method — returns 409 with an instructive error; ADR-0024 records it.</li>
+          <li>Fine-grained per-repo permissions and collaborator roles — scope strings only
+          today; the owner model follows RFC-0003.</li>
+          <li>Commons rate-limit enforcement (RFC-0003 Phase 6), multi-GB blob chunking,
+          Git LFS, publisher signing, multi-commons federation.</li>
+          <li>The always-on Evolution Agent (continuous watcher, cross-project aggregation) —
+          a separate future effort with its own RFC.</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="kicker">Sources — every claim above is grounded here</span>
+    <p class="src" style="margin-top:18px">
+      VISION.md · docs/rfc/0001-architecture.md · docs/rfc/0004-github-workflow-layer.md ·
+      docs/rfc/0005-directed-evolution.md · docs/adr/0011 (clone performance) ·
+      docs/adr/0024 (merge strategies) · docs/adr/0025 (push auth + force classification) ·
+      docs/adr/0026 (organism runtime targets) · docs/adr/0027 (blob content in object store) ·
+      docs/PARITY.md · crates/git_auth/src/lib.rs (bridge principal)
+    </p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var all = document.querySelectorAll('details');
+    var ex = document.getElementById('expandAll');
+    var co = document.getElementById('collapseAll');
+    if (ex) ex.addEventListener('click', function () {
+      all.forEach(function (d) { d.open = true; });
+    });
+    if (co) co.addEventListener('click', function () {
+      all.forEach(function (d) { d.open = false; });
+    });
+  })();
+</script>
+
+</body>
+</html>

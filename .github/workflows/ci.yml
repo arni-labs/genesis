@@ -71,3 +71,96 @@ jobs:
 
       - name: Playwright E2E
         run: npm run test:e2e
+
+  # RFC-0004 Slice 5 — the GitHub workflow round-trip gate. Boots a
+  # real Genesis (same WASM + serve invocation the Dockerfile and the
+  # managed live smokes use) and runs the full clone → push → PR →
+  # review → merge (merge/squash) → conflict-409 → force-scope flow
+  # with real git plus the /api/v3 REST surface. PRs that break the
+  # round-trip do not merge (CLAUDE.md hard rule 6/7).
+  workflow-gate:
+    name: GitHub Workflow Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: rust
+    env:
+      GENESIS_PORT: "3188"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # Mirror the Dockerfile rust-builder stage: pinned 1.92 stable
+      # for both the wasm32-wasip1 modules and the Temper kernel.
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92"
+          targets: wasm32-wasip1
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev clang libclang-dev libjemalloc-dev libz3-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+            temper/target/
+          key: ${{ runner.os }}-cargo-workflow-gate-${{ hashFiles('Cargo.lock', 'temper/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-workflow-gate-
+
+      # Same module list + packaged-artifact layout as the Dockerfile;
+      # the OS-app loader reads wasm/<name>/<name>.wasm per app.toml.
+      - name: Build Genesis WASM integrations
+        run: |
+          modules="git_refs_advertise git_upload_pack git_receive_pack scm_ingest_pack scm_assign_pr_number scm_merge_pr app_registry github_rest_repos github_rest_refs github_rest_pulls"
+          build_args=""
+          for module in $modules; do build_args="$build_args -p $module"; done
+          cargo build --release --target wasm32-wasip1 $build_args
+          for module in $modules; do
+            cp "target/wasm32-wasip1/release/${module}.wasm" "wasm/${module}/${module}.wasm"
+          done
+
+      - name: Build Temper kernel
+        run: cargo build --manifest-path temper/Cargo.toml --release --bin temper
+
+      # README "Local Run" serve invocation; turso storage on a local
+      # file (the same TURSO_URL=file: pattern the managed live smokes
+      # use), readiness probe mirrored from their wait_for_server.
+      - name: Boot Genesis
+        run: |
+          mkdir -p "${RUNNER_TEMP}/os-apps" && ln -sfn "$PWD" "${RUNNER_TEMP}/os-apps/temper-git"
+          TEMPER_OS_APPS_DIR="${RUNNER_TEMP}/os-apps" \
+          TURSO_URL="file:${RUNNER_TEMP}/genesis-workflow-gate.db" \
+          nohup temper/target/release/temper serve \
+            --port "$GENESIS_PORT" --storage turso --no-observe --app temper-git \
+            > "${RUNNER_TEMP}/genesis-server.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/genesis-server.pid"
+          deadline=$((SECONDS + 300))
+          until curl -fsS -H "X-Tenant-Id: default" "http://127.0.0.1:${GENESIS_PORT}/tdata/Apps?\$top=1" > /dev/null 2>&1; do
+            if ! kill -0 "$(cat "${RUNNER_TEMP}/genesis-server.pid")" 2> /dev/null; then
+              echo "Genesis server exited during boot" >&2
+              tail -200 "${RUNNER_TEMP}/genesis-server.log" >&2
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Genesis server not ready within 300s" >&2
+              tail -200 "${RUNNER_TEMP}/genesis-server.log" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: GitHub workflow round-trip smoke
+        env:
+          TEMPER_URL: http://127.0.0.1:${{ env.GENESIS_PORT }}
+        run: scripts/live-github-workflow-smoke.sh
+
+      - name: Server log on failure
+        if: failure()
+        run: tail -300 "${RUNNER_TEMP}/genesis-server.log" || true

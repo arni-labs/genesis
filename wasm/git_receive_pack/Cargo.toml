@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 temper-wasm-sdk = { workspace = true }
 genesis-git-object = { path = "../../crates/git_object" }
+genesis-git-auth = { path = "../../crates/git_auth" }
 tg-wire = { path = "../../wire" }
 serde = { workspace = true }
 serde_json = { workspace = true }

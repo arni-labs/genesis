@@ -14,6 +14,16 @@
 //
 // Read: the token's own principal, or admin:tokens.
 
+// --- Module-internal token resolution: the wire/REST WASM handlers
+// look tokens up under their own admin-kind module identity (no
+// customer scopes). Without this, every authenticated caller silently
+// degraded to anonymous and MarkUsed never fired.
+permit(
+  principal is Admin,
+  action in [Action::"read", Action::"list"],
+  resource is GitToken
+);
+
 permit(
   principal,
   action in [Action::"read", Action::"list"],
@@ -24,6 +34,18 @@ permit(
 };
 
 // --- Create: own-principal tokens + admin:tokens scope.
+
+// --- Row creation (POST /tdata/GitTokens): operator-only. Resource
+// attributes are not populated at row-create time, so per-principal
+// ownership conditions live on the spec actions below.
+permit(
+  principal,
+  action == Action::"create",
+  resource is GitToken
+) when {
+  principal.scopes.contains("admin:tokens") &&
+  principal.agent_type == "admin"
+};
 
 permit(
   principal,
@@ -58,6 +80,14 @@ permit(
 };
 
 // --- MarkUsed: system principal only (auth integration).
+
+// The auth resolver fires MarkUsed under the module's admin-kind
+// identity (no agent_type header on its internal calls).
+permit(
+  principal is Admin,
+  action == Action::"MarkUsed",
+  resource is GitToken
+);
 
 permit(
   principal,

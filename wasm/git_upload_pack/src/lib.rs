@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use genesis_git_auth::Principal;
 use std::time::Instant;
 use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp, streaming_call};
 use temper_wasm_sdk::prelude::*;
@@ -25,9 +26,6 @@ pub(crate) const SYSTEM_TENANT: &str = "default";
 pub(crate) const SYSTEM_PRINCIPAL: &str = "git-upload-pack";
 const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
 const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
-
-mod auth;
-pub(crate) use auth::Principal;
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
@@ -66,9 +64,15 @@ temper_module! {
 /// if none is presented. Production deployments lock down via Cedar
 /// to require a real GitToken; dev quickstarts work without one.
 fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
-    let resolved = auth::resolve_principal(ctx, headers);
+    let api_base = temper_api_from_headers(headers);
+    let auth_env = genesis_git_auth::AuthEnv {
+        temper_api: &api_base,
+        tenant: SYSTEM_TENANT,
+        system_principal: SYSTEM_PRINCIPAL,
+    };
+    let resolved = genesis_git_auth::resolve_principal(ctx, &auth_env, headers);
     if resolved.is_anonymous() {
-        Principal::system()
+        Principal::system(&auth_env)
     } else {
         resolved
     }

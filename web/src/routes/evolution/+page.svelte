@@ -9,17 +9,19 @@
     FileDiff,
     GitCompareArrows,
     ListChecks,
+    PlayCircle,
     RefreshCw,
     ShieldCheck,
     X
   } from '@lucide/svelte';
   import Topbar from '$lib/components/Topbar.svelte';
+  import EvidenceCard from '$lib/components/directed-evolution/EvidenceCard.svelte';
   import EvolutionEpisodePanel from '$lib/components/directed-evolution/EvolutionEpisodePanel.svelte';
   import EvolutionLineagePolicy from '$lib/components/directed-evolution/EvolutionLineagePolicy.svelte';
   import MetricTile from '$lib/components/directed-evolution/MetricTile.svelte';
   import PanelTitle from '$lib/components/directed-evolution/PanelTitle.svelte';
   import VariantInspectCard from '$lib/components/directed-evolution/VariantInspectCard.svelte';
-  import { Badge, Button } from '$lib/components/ui';
+  import { Badge, Button, Input } from '$lib/components/ui';
   import { loadRegistry, registryStore } from '$lib/registry';
   import {
     dismissDirection,
@@ -29,6 +31,7 @@
     pinViabilityConstraint,
     resumeEpisode,
     stopEpisode,
+    submitEpisodeStartRequest,
     type DirectedEvolutionSnapshot,
     type EvolutionDirection,
     type EvolutionEliminationRule,
@@ -36,6 +39,7 @@
     type EvolutionEvidenceArtifact,
     type EvolutionMetricDefinition,
     type EvolutionMutation,
+    type EvolutionOrganism,
     type EvolutionScoringRule,
     type EvolutionSelectionProtocol,
     type EvolutionSimulatedUserPlan,
@@ -96,6 +100,11 @@
   let error = '';
   let actionBusy = '';
   let selectedEpisodeId = '';
+  let selectedDirectionId = '';
+  let approveDirectionId = '';
+  let approveAdaptationGoal = '';
+  let approveHumanNotes = '';
+  let approveEvaluatorRef = '';
   let activeView: EvolutionView = 'detail';
   let inspectedVariantId = '';
   let comparedVariantIds: string[] = [];
@@ -135,6 +144,11 @@
   $: selectedDirection = selectedEpisode
     ? activeDirections.find((direction) => direction.id === selectedEpisode.directionId) ?? null
     : null;
+  $: drillInDirection =
+    activeDirections.find((direction) => direction.id === selectedDirectionId) ??
+    selectedDirection ??
+    activeDirections[0] ??
+    null;
   $: selectedPromotion = selectedEpisode
     ? promotions.find((promotion) => promotion.id === selectedEpisode.promotionId) ??
       promotions.find((promotion) => promotion.episodeId === selectedEpisode.id) ??
@@ -313,12 +327,52 @@
   }
 
   function selectDirection(direction: EvolutionDirection) {
+    selectedDirectionId = direction.id;
     const episode =
       (snapshot?.episodes ?? []).find((item) => item.id === direction.episodeId) ??
       (snapshot?.episodes ?? []).find((item) => item.directionId === direction.id);
     if (episode) {
       selectEpisode(episode.id);
     }
+  }
+
+  function directionOrganism(direction: EvolutionDirection): EvolutionOrganism | null {
+    return organisms.find((item) => item.id === direction.organismId) ?? organism;
+  }
+
+  function directionApprovable(direction: EvolutionDirection): boolean {
+    return direction.status === 'Proposed' && directionEpisodes(direction).length === 0;
+  }
+
+  function openApproveForm(direction: EvolutionDirection) {
+    approveDirectionId = direction.id;
+    approveAdaptationGoal = direction.proposedAdaptationGoal || direction.summary || '';
+    approveHumanNotes = '';
+    approveEvaluatorRef = directionOrganism(direction)?.evaluatorRef ?? '';
+  }
+
+  function closeApproveForm() {
+    approveDirectionId = '';
+  }
+
+  function approveAndStartEpisode(direction: EvolutionDirection) {
+    const organismRow = directionOrganism(direction);
+    void runControl(`approve-${direction.id}`, async () => {
+      await submitEpisodeStartRequest(
+        {
+          directionId: direction.id,
+          organismId: direction.organismId || organismRow?.id || '',
+          parentVersionId: organismRow?.organismVersionId || '',
+          autonomyLane: direction.autonomyLane,
+          adaptationGoal: approveAdaptationGoal.trim(),
+          humanNotes: approveHumanNotes.trim(),
+          evaluatorRef: approveEvaluatorRef.trim(),
+          reason: 'Direction approved from Genesis Mission Control'
+        },
+        directedEvolutionTenantId
+      );
+      approveDirectionId = '';
+    });
   }
 
   function shortId(value: string, length = 10): string {
@@ -1013,7 +1067,7 @@
                       <button
                         type="button"
                         class={`min-w-0 rounded-[var(--radius-sm)] border bg-white p-3 text-left transition-colors ${
-                          selectedDirection?.id === direction.id
+                          drillInDirection?.id === direction.id
                             ? 'border-[var(--color-primary)]/35 shadow-[var(--shadow-xs)]'
                             : 'border-[var(--color-border-soft)] hover:border-[var(--color-primary)]/25'
                         }`}
@@ -1046,16 +1100,102 @@
                 <div class="grid gap-3">
                   <section class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3">
                     <PanelTitle icon={Activity} title="Basis Drill-In" />
-                    {#if selectedDirection}
-                      {@const pressuresForDirection = directionPressures(selectedDirection)}
-                      {@const signalsForDirection = directionSignals(selectedDirection)}
-                      {@const evidenceForDirection = directionEvidence(selectedDirection)}
+                    {#if drillInDirection}
+                      {@const pressuresForDirection = directionPressures(drillInDirection)}
+                      {@const signalsForDirection = directionSignals(drillInDirection)}
+                      {@const evidenceForDirection = directionEvidence(drillInDirection)}
                       <h3 class="mt-3 text-[16px] font-semibold tracking-tight text-[var(--color-ink)]">
-                        {selectedDirection.title || shortId(selectedDirection.id)}
+                        {drillInDirection.title || shortId(drillInDirection.id)}
                       </h3>
                       <p class="mt-1 text-[12px] leading-relaxed text-[var(--color-muted)]">
-                        {selectedDirection.proposedAdaptationGoal || selectedDirection.summary || 'No proposed Adaptation Goal recorded.'}
+                        {drillInDirection.proposedAdaptationGoal || drillInDirection.summary || 'No proposed Adaptation Goal recorded.'}
                       </p>
+                      {#if directionApprovable(drillInDirection)}
+                        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                          <Button
+                            variant="primary"
+                            size="md"
+                            disabled={Boolean(actionBusy)}
+                            onclick={() =>
+                              approveDirectionId === drillInDirection.id
+                                ? closeApproveForm()
+                                : openApproveForm(drillInDirection)}
+                          >
+                            <PlayCircle size={13} />
+                            Approve & start episode
+                          </Button>
+                          <Button
+                            size="md"
+                            disabled={Boolean(actionBusy)}
+                            onclick={() =>
+                              void runControl(`dismiss-${drillInDirection.id}`, () =>
+                                dismissDirection(
+                                  drillInDirection.id,
+                                  'Dismissed from Genesis Mission Control',
+                                  directedEvolutionTenantId
+                                )
+                              )}
+                          >
+                            <X size={13} />
+                            {actionBusy === `dismiss-${drillInDirection.id}` ? 'Dismissing' : 'Dismiss'}
+                          </Button>
+                        </div>
+                        {#if approveDirectionId === drillInDirection.id}
+                          <div class="mt-2 grid gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] bg-[var(--color-surface-soft)] p-2">
+                            <label class="grid gap-1">
+                              <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                                Adaptation goal
+                              </span>
+                              <textarea
+                                bind:value={approveAdaptationGoal}
+                                rows="3"
+                                class="w-full resize-y rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-1.5 font-sans text-[12px] tracking-tight text-[var(--color-ink)] placeholder:text-[var(--color-faint)] focus-visible:border-[var(--color-secondary)]/45 focus-visible:outline-none"
+                                placeholder="What this episode must achieve"
+                                aria-label="Adaptation goal"
+                              ></textarea>
+                            </label>
+                            <label class="grid gap-1">
+                              <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                                Human notes
+                              </span>
+                              <Input
+                                bind:value={approveHumanNotes}
+                                placeholder="Optional context for the episode contract"
+                                aria-label="Human notes"
+                              />
+                            </label>
+                            <label class="grid gap-1">
+                              <span class="font-mono text-[9.5px] uppercase tracking-[0.10em] text-[var(--color-faint)]">
+                                Evaluator ref
+                              </span>
+                              <Input
+                                bind:value={approveEvaluatorRef}
+                                placeholder="owner/evaluator-app@hash"
+                                aria-label="Evaluator ref"
+                              />
+                            </label>
+                            <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
+                              Lane {drillInDirection.autonomyLane || 'growth-human-gated'} · organism {shortId(drillInDirection.organismId || directionOrganism(drillInDirection)?.id || '', 14)}
+                            </p>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                              <Button
+                                variant="primary"
+                                size="md"
+                                disabled={Boolean(actionBusy) || !approveAdaptationGoal.trim()}
+                                onclick={() => approveAndStartEpisode(drillInDirection)}
+                              >
+                                <PlayCircle size={13} />
+                                {actionBusy === `approve-${drillInDirection.id}`
+                                  ? 'Submitting episode start request'
+                                  : 'Submit episode start request'}
+                              </Button>
+                              <Button size="md" disabled={Boolean(actionBusy)} onclick={closeApproveForm}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        {/if}
+                      {/if}
                       <div class="mt-3 grid gap-2 md:grid-cols-3">
                         <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] p-2">
                           <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Signals</p>
@@ -1075,11 +1215,13 @@
                         </div>
                         <div class="rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] p-2">
                           <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Evidence</p>
-                          {#each evidenceForDirection.slice(0, 4) as artifact (artifact.id)}
-                            <p class="mt-1 line-clamp-2 text-[11px] text-[var(--color-ink-soft)]">{artifact.summary || artifact.interpretation || artifact.uri}</p>
-                          {:else}
-                            <p class="mt-1 text-[11px] text-[var(--color-faint)]">No evidence summaries.</p>
-                          {/each}
+                          <div class="mt-1">
+                            {#each evidenceForDirection.slice(0, 4) as artifact (artifact.id)}
+                              <EvidenceCard {artifact} {shortId} />
+                            {:else}
+                              <p class="text-[11px] text-[var(--color-faint)]">No evidence records.</p>
+                            {/each}
+                          </div>
                         </div>
                       </div>
                     {:else}
@@ -1235,18 +1377,15 @@
                   {/if}
                   {#if selectedEpisode}
                     <section
-                      aria-label="Agent Answers live proof gate"
+                      aria-label="Episode live proof gate"
                       class="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white p-3"
                     >
                       <div class="flex flex-wrap items-center justify-between gap-2">
-                        <PanelTitle icon={ShieldCheck} title="Agent Answers Proof Gate" />
+                        <PanelTitle icon={ShieldCheck} title="Live Proof Gate" />
                         <Badge tone={selectedEpisodeProofReady ? 'success' : 'warning'}>
                           {selectedEpisodeProofReady ? 'ready' : 'pending'}
                         </Badge>
                       </div>
-                      <p class="mt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-faint)]">
-                        directed-evolution-agent-answers-live-proof.sh
-                      </p>
                       <div class="mt-3 grid gap-1.5">
                         {#each selectedEpisodeProofGates as gate (gate.label)}
                           <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[var(--radius-xs)] border border-[var(--color-border-soft)] px-2 py-1.5">

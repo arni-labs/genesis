@@ -46,6 +46,8 @@ const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
 const FIELD_OVERFLOW_SIZE_KEY: &str = "__temper_blob_size";
 const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
 pub(crate) const TEMPER_API: &str = "http://127.0.0.1:3000";
+pub(crate) const SYSTEM_TENANT: &str = "default";
+pub(crate) const SYSTEM_PRINCIPAL: &str = "git-receive-pack";
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
@@ -72,6 +74,21 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
     let repo = http.params.get("repo").cloned().unwrap_or_default();
     let repository_id = format!("rp-{owner}-{repo}");
     let api_base = temper_api_from_headers(&http.headers);
+
+    // Push is a governed mutation: resolve the GitToken principal and
+    // reject anonymous callers with the standard smart-HTTP challenge
+    // (ADR-0025). The resolved principal rides the action bridge so
+    // Cedar evaluates IngestPack sub-writes as the real caller.
+    let auth_env = genesis_git_auth::AuthEnv {
+        temper_api: &api_base,
+        tenant: SYSTEM_TENANT,
+        system_principal: SYSTEM_PRINCIPAL,
+    };
+    let principal = genesis_git_auth::resolve_principal(ctx, &auth_env, &http.headers);
+    if principal.is_anonymous() {
+        return respond_unauthorized();
+    }
+    genesis_git_auth::mark_token_used(ctx, &auth_env, &principal);
 
     // Stream the request body. We read the command list bytes
     // (pkt-line framed; ends at a 0000 flush), then buffer the raw
@@ -130,6 +147,7 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
 
     Ok(json!({
         "action_params": action_params,
+        "bridge_principal": principal.bridge_principal_json(),
         "git_receive_pack": {
             "refs": refs,
             "sideband": sideband,
@@ -137,6 +155,22 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
             "pack_bytes": pack_bytes.len(),
             "repository_id": repository_id,
         },
+    }))
+}
+
+/// Bridge short-circuit 401 (temper ADR-0138): on action-bridge routes
+/// the kernel formats responses, so the challenge must travel through
+/// `bridge_response` rather than a guest-submitted head. The empty
+/// `action_params` marks the structured result shape the kernel
+/// requires before honoring control keys.
+fn respond_unauthorized() -> Result<Value, String> {
+    Ok(json!({
+        "action_params": {},
+        "bridge_response": {
+            "status": 401,
+            "headers": { "WWW-Authenticate": "Basic realm=\"Genesis\"" },
+            "body": "authentication required: supply a GitToken as Basic username or Bearer token\n",
+        }
     }))
 }
 

@@ -23,6 +23,8 @@ use temper_wasm_sdk::prelude::*;
 use tg_wire::pack;
 
 const TEMPER_API: &str = "http://127.0.0.1:3000";
+const SYSTEM_TENANT: &str = "default";
+const SYSTEM_PRINCIPAL: &str = "scm-ingest-pack";
 const FIELD_INLINE_MAX_BYTES: usize = 131_072;
 const FIELD_OVERFLOW_BLOB_PREFIX: &str = "field-overflow/sha256/";
 const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
@@ -42,6 +44,10 @@ temper_module! {
             Some(pack_bytes) => parse_pack_objects(&ctx, &api_base, &repository_id, &pack_bytes)?,
             None => Vec::new(),
         };
+
+        let pack_parents = pack_commit_parents(&objects);
+        let ref_updates =
+            classify_force_updates(&ctx, &api_base, &repository_id, &pack_parents, ref_updates);
 
         let mut sub_writes = Vec::new();
         for obj in objects {
@@ -284,6 +290,128 @@ fn parse_ref_updates(repository_id: &str, params: &Value) -> Result<Vec<RefSubWr
     Ok(out)
 }
 
+/// Upper bound on the ancestry walk that classifies a ref update as
+/// fast-forward vs force. Past this budget the update is treated as a
+/// force-push: undecidable history rewrites must require the `force`
+/// scope rather than slip through (ADR-0025).
+const ANCESTRY_WALK_MAX_COMMITS: usize = 4096;
+
+fn pack_commit_parents(
+    objects: &[pack::PackObject],
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut parents = std::collections::BTreeMap::new();
+    for obj in objects {
+        if obj.kind != pack::ObjectKind::Commit {
+            continue;
+        }
+        let sha = sha_from_prefix(obj.kind.header_prefix(), &obj.data);
+        if let Ok(commit) = genesis_git_object::parse_commit(&obj.data) {
+            parents.insert(sha, commit.parents);
+        }
+    }
+    parents
+}
+
+/// Reclassify plain `Update` sub-writes whose old tip is not an
+/// ancestor of the new tip as `ForceUpdate`, so Cedar's `force` scope
+/// gate becomes real on the push path (ADR-0025).
+fn classify_force_updates(
+    ctx: &Context,
+    api_base: &str,
+    repository_id: &str,
+    pack_parents: &std::collections::BTreeMap<String, Vec<String>>,
+    mut ref_updates: Vec<RefSubWrite>,
+) -> Vec<RefSubWrite> {
+    for update in &mut ref_updates {
+        if update.action != "Update" {
+            continue;
+        }
+        let fast_forward = ancestry_walk_is_fast_forward(&update.old_sha, &update.new_sha, |sha| {
+            pack_parents
+                .get(sha)
+                .cloned()
+                .unwrap_or_else(|| fetch_commit_parents(ctx, api_base, repository_id, sha))
+        });
+        if !fast_forward {
+            update.action = "ForceUpdate";
+            update.params = json!({ "NewCommitSha": update.new_sha });
+            let _ = ctx.log_structured(
+                "info",
+                "scm_ingest_pack_force_update",
+                &json!({
+                    "repository_id": repository_id,
+                    "ref": update.name,
+                    "old_sha": update.old_sha,
+                    "new_sha": update.new_sha,
+                }),
+            );
+        }
+    }
+    ref_updates
+}
+
+/// Bounded BFS from `new_sha` through commit parents looking for
+/// `old_sha`. Reachable → fast-forward. Exhausted or over budget →
+/// not fast-forward (conservative: requires `force`).
+fn ancestry_walk_is_fast_forward(
+    old_sha: &str,
+    new_sha: &str,
+    mut parents_of: impl FnMut(&str) -> Vec<String>,
+) -> bool {
+    if old_sha == new_sha {
+        return true;
+    }
+    let mut visited = std::collections::BTreeSet::new();
+    let mut frontier = alloc::vec![new_sha.to_string()];
+    while let Some(sha) = frontier.pop() {
+        if sha == old_sha {
+            return true;
+        }
+        if !visited.insert(sha.clone()) {
+            continue;
+        }
+        if visited.len() >= ANCESTRY_WALK_MAX_COMMITS {
+            return false;
+        }
+        frontier.extend(parents_of(&sha));
+    }
+    false
+}
+
+/// Parents of an already-stored commit, read from entity state.
+/// Unknown commits (shallow history, missing rows) contribute no
+/// parents — the walk simply cannot pass through them.
+fn fetch_commit_parents(
+    ctx: &Context,
+    api_base: &str,
+    repository_id: &str,
+    sha: &str,
+) -> Vec<String> {
+    let entity_id = object_entity_id(repository_id, sha);
+    let url = format!("{api_base}/tdata/Commits('{entity_id}')");
+    let Ok(resp) = ctx.http_call("GET", &url, &internal_read_headers(), "") else {
+        return Vec::new();
+    };
+    if !(200..400).contains(&resp.status) {
+        return Vec::new();
+    }
+    let Ok(parsed) = serde_json::from_str::<Value>(&resp.body) else {
+        return Vec::new();
+    };
+    parsed
+        .get("fields")
+        .and_then(|f| f.get("ParentShas"))
+        .and_then(Value::as_str)
+        .map(|s| {
+            s.split(',')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn pr_head_updates_for_refs(
     ctx: &Context,
     api_base: &str,
@@ -333,7 +461,7 @@ fn fetch_open_pull_requests_for_source_ref(
         urlencode(&filter)
     );
     let resp = ctx
-        .http_call("GET", &url, &[], "")
+        .http_call("GET", &url, &internal_read_headers(), "")
         .map_err(|e| format!("fetch PullRequests: {e}"))?;
     if !(200..400).contains(&resp.status) {
         return Err(format!("PullRequests status {}", resp.status));
@@ -427,7 +555,7 @@ fn fetch_existing_object_body(
     );
     let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
     let resp = ctx
-        .http_call("GET", &url, &[], "")
+        .http_call("GET", &url, &internal_read_headers(), "")
         .map_err(|e| format!("fetch {set}({sha}): {e}"))?;
     if !(200..400).contains(&resp.status) {
         return Err(format!("{set}({sha}) status {}", resp.status));
@@ -465,6 +593,28 @@ fn temper_api_base(ctx: &Context) -> String {
         .map(|value| value.trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| TEMPER_API.to_string())
+}
+
+/// Headers for this integration's internal OData reads (PR-head lookup,
+/// delta-base, ancestry). The parent Repository.IngestPack action was
+/// already Cedar-gated on the push path; these reads run under the
+/// module's trusted server-side identity rather than anonymous, which
+/// would be denied and fail the whole composite (the module is not an
+/// InboundHttp handler, so it has no caller headers to forward).
+fn internal_read_headers() -> Vec<(String, String)> {
+    alloc::vec![
+        ("X-Tenant-Id".to_string(), SYSTEM_TENANT.to_string()),
+        ("X-Temper-Principal-Kind".to_string(), "admin".to_string()),
+        (
+            "X-Temper-Principal-Id".to_string(),
+            SYSTEM_PRINCIPAL.to_string()
+        ),
+        (
+            "X-Temper-Principal-Scopes".to_string(),
+            "admin:repos,repo:read,repo:write,pr:write".to_string(),
+        ),
+        ("X-Temper-Agent-Type".to_string(), "system".to_string()),
+    ]
 }
 
 fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
@@ -554,15 +704,15 @@ fn build_object_row(
             "Id": sha,
             "RepositoryId": repository_id,
             "Size": raw.len(),
-            "Content": maybe_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
-            "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "Content": always_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
+            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
         pack::ObjectKind::Tree => json!({
             "Id": sha,
             "RepositoryId": repository_id,
-            "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
@@ -587,7 +737,7 @@ fn build_object_row(
                 "Author": author,
                 "Committer": committer,
                 "Message": message,
-                "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -617,7 +767,7 @@ fn build_object_row(
                 "TagName": name,
                 "Tagger": tagger,
                 "Message": message,
-                "CanonicalBytes": maybe_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -694,6 +844,23 @@ fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
         ));
     }
     Ok(Some(blob_key.to_string()))
+}
+
+/// Stage a value to the object store unconditionally (ADR-0027): git
+/// object content never sits inline on entity rows; the row keeps a
+/// content-addressed reference. Readers already resolve these refs and
+/// legacy inline rows stay readable.
+fn always_stage_field_value(
+    ctx: &Context,
+    blob_endpoint: &str,
+    value: String,
+) -> Result<Value, String> {
+    let json_value = Value::String(value);
+    let serialized =
+        serde_json::to_vec(&json_value).map_err(|e| format!("object-content serialize: {e}"))?;
+    let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
+    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
+    Ok(blob_ref)
 }
 
 fn overflow_blob_ref_for_serialized(serialized: &[u8]) -> (String, Value) {
@@ -890,5 +1057,64 @@ mod tests {
             Some(serialized.len() as u64)
         );
         assert_eq!(value[FIELD_OVERFLOW_ENCODING_KEY].as_str(), Some("json"));
+    }
+
+    fn chain_parents(chain: &[(&str, &[&str])]) -> std::collections::BTreeMap<String, Vec<String>> {
+        chain
+            .iter()
+            .map(|(sha, parents)| {
+                (
+                    sha.to_string(),
+                    parents.iter().map(|p| p.to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fast_forward_when_old_tip_is_ancestor() {
+        let graph = chain_parents(&[("c3", &["c2"]), ("c2", &["c1"]), ("c1", &[])]);
+        assert!(ancestry_walk_is_fast_forward("c1", "c3", |sha| {
+            graph.get(sha).cloned().unwrap_or_default()
+        }));
+    }
+
+    #[test]
+    fn force_when_history_diverged() {
+        // c3 rewrites history: its line never reaches c9.
+        let graph = chain_parents(&[("c3", &["c2"]), ("c2", &["c1"]), ("c1", &[])]);
+        assert!(!ancestry_walk_is_fast_forward("c9", "c3", |sha| {
+            graph.get(sha).cloned().unwrap_or_default()
+        }));
+    }
+
+    #[test]
+    fn fast_forward_through_merge_parent() {
+        let graph = chain_parents(&[
+            ("m1", &["c2", "f1"]),
+            ("f1", &["c1"]),
+            ("c2", &["c1"]),
+            ("c1", &[]),
+        ]);
+        assert!(ancestry_walk_is_fast_forward("f1", "m1", |sha| {
+            graph.get(sha).cloned().unwrap_or_default()
+        }));
+    }
+
+    #[test]
+    fn same_tip_is_fast_forward() {
+        assert!(ancestry_walk_is_fast_forward("c1", "c1", |_| Vec::new()));
+    }
+
+    #[test]
+    fn budget_exhaustion_classifies_as_force() {
+        // A synthetic endless chain: every sha has one fabricated parent.
+        let mut calls = 0usize;
+        let result = ancestry_walk_is_fast_forward("never-found", "c0", |sha| {
+            calls += 1;
+            alloc::vec![format!("{sha}x")]
+        });
+        assert!(!result);
+        assert!(calls <= ANCESTRY_WALK_MAX_COMMITS);
     }
 }
