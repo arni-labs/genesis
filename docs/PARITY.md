@@ -15,7 +15,7 @@ marked *(this PR)* land with the vision-completion effort (genesis#25).
 | Push authentication (GitToken Basic/Bearer, 401 challenge) | Works *(this PR)* | `crates/git_auth` tests; receive-pack + refs-advertise challenge; CI round-trip gate |
 | Force-push classification (`force` scope enforced) | Works *(this PR)* | `scm_ingest_pack` ancestry-walk tests; CI denial case |
 | Compare-and-swap ref updates | Works | kernel composite applier; exercised by every push round-trip |
-| Pack **delta emission** on clone | Not built (~5x wire size) | Conditional on the benchmark in `docs/PERFORMANCE.md` — comes into scope if clone misses the at-least-match bar |
+| Pack **delta emission** on clone | Not built (measured 1.32× wire size on the benchmark corpus) | Cold clone missed the bar at ~3.5×, but pack-emission speed — not wire size — dominates; measured analysis and ordered follow-up in `docs/PERFORMANCE.md` |
 | multi_ack / shallow negotiation | Not built | NAK-only v0 (`git_upload_pack`); recorded follow-up |
 
 ## GitHub REST v3 (`/api/v3`)
