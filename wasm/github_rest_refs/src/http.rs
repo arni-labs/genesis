@@ -67,14 +67,13 @@ pub(crate) fn read_body_json(http: &InboundHttp) -> Result<Value, String> {
     serde_json::from_slice(&buf).map_err(|e| format!("request body JSON parse: {e}"))
 }
 
-pub(crate) fn respond_json(
-    http: &InboundHttp,
-    status: u16,
-    body: &Value,
-) -> Result<Value, String> {
+pub(crate) fn respond_json(http: &InboundHttp, status: u16, body: &Value) -> Result<Value, String> {
     let bytes = serde_json::to_vec(body).map_err(|e| format!("response serialize: {e}"))?;
-    http.submit_response_head(status, &[("content-type", "application/json; charset=utf-8")])
-        .map_err(|e| format!("submit_response_head: {e}"))?;
+    http.submit_response_head(
+        status,
+        &[("content-type", "application/json; charset=utf-8")],
+    )
+    .map_err(|e| format!("submit_response_head: {e}"))?;
     let mut writer = http.response_body();
     writer
         .write_all_chunk(&bytes)

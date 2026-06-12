@@ -36,10 +36,8 @@ struct GitRepo {
 
 impl GitRepo {
     fn new(label: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "scm-merge-parity-{label}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("scm-merge-parity-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create tmp repo dir");
         let repo = GitRepo { dir };
@@ -190,7 +188,10 @@ fn merge_commit_matches_git_on_disjoint_paths() {
     repo.write("a.txt", "alpha two\n");
     let base_tip = repo.commit("main: tweak a", "1234567860 +0000");
 
-    repo.run_dated(&["merge", "--no-ff", "-m", "Merge feat", "feat"], MERGE_DATE);
+    repo.run_dated(
+        &["merge", "--no-ff", "-m", "Merge feat", "feat"],
+        MERGE_DATE,
+    );
     let git_merge_sha = repo.rev_parse("HEAD");
 
     // Engine: merge base, merged tree, then the commit object.
@@ -206,8 +207,16 @@ fn merge_commit_matches_git_on_disjoint_paths() {
     .expect("disjoint paths must merge cleanly");
     assert_eq!(outcome.root_sha, repo.commit_tree(&git_merge_sha));
 
-    let built = build_merge_commit(&outcome.root_sha, &base_tip, &head, &merge_inputs("Merge feat"));
-    assert_eq!(built.sha, git_merge_sha, "merge commit SHA diverged from git");
+    let built = build_merge_commit(
+        &outcome.root_sha,
+        &base_tip,
+        &head,
+        &merge_inputs("Merge feat"),
+    );
+    assert_eq!(
+        built.sha, git_merge_sha,
+        "merge commit SHA diverged from git"
+    );
     let git_body = repo.cat_file("commit", &git_merge_sha);
     let nul = built.canonical.iter().position(|&b| b == 0).unwrap();
     assert_eq!(
@@ -248,11 +257,18 @@ fn squash_commit_matches_git_with_unchanged_base() {
     )
     .unwrap()
     .expect("clean squash");
-    assert_eq!(outcome.root_sha, repo.commit_tree(&head), "squash tree = head tree");
+    assert_eq!(
+        outcome.root_sha,
+        repo.commit_tree(&head),
+        "squash tree = head tree"
+    );
     assert!(outcome.new_trees.is_empty());
 
     let built = build_squash_commit(&outcome.root_sha, &fork, &merge_inputs("Squash feat"));
-    assert_eq!(built.sha, git_squash_sha, "squash commit SHA diverged from git");
+    assert_eq!(
+        built.sha, git_squash_sha,
+        "squash commit SHA diverged from git"
+    );
 }
 
 /// Squash where the base advanced on a disjoint path: git's squash
@@ -288,7 +304,10 @@ fn squash_commit_matches_git_with_advanced_base() {
     assert_eq!(outcome.root_sha, repo.commit_tree(&git_squash_sha));
 
     let built = build_squash_commit(&outcome.root_sha, &base_tip, &merge_inputs("Squash feat"));
-    assert_eq!(built.sha, git_squash_sha, "squash commit SHA diverged from git");
+    assert_eq!(
+        built.sha, git_squash_sha,
+        "squash commit SHA diverged from git"
+    );
 }
 
 /// Both sides touch the same file: the engine refuses (conflict) and
@@ -340,7 +359,11 @@ fn fast_forward_detection_matches_git() {
     repo.run(&["checkout", "--quiet", "main"]);
 
     let base = find_merge_base(&base_tip, &head, repo.parents_of()).unwrap();
-    assert_eq!(base, MergeBase::Found(base_tip.clone()), "ff condition holds");
+    assert_eq!(
+        base,
+        MergeBase::Found(base_tip.clone()),
+        "ff condition holds"
+    );
 
     repo.run(&["merge", "--ff-only", "feat"]);
     assert_eq!(repo.rev_parse("HEAD"), head, "git ff lands on head");
@@ -350,5 +373,9 @@ fn fast_forward_detection_matches_git() {
     repo.write("c.txt", "charlie\n");
     let advanced = repo.commit("main: add c", "1234567860 +0000");
     let base = find_merge_base(&advanced, &head, repo.parents_of()).unwrap();
-    assert_ne!(base, MergeBase::Found(advanced.clone()), "ff no longer possible");
+    assert_ne!(
+        base,
+        MergeBase::Found(advanced.clone()),
+        "ff no longer possible"
+    );
 }

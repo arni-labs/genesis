@@ -138,7 +138,10 @@ pub(crate) fn pull_json(ctx: &PullContext<'_>, pr_id: &str, pr_status: &str, pr:
         ctx.public_base,
     );
     let full_name = format!("{}/{}", ctx.owner, ctx.repo);
-    let api_url = format!("{}/api/v3/repos/{full_name}/pulls/{number}", ctx.public_base);
+    let api_url = format!(
+        "{}/api/v3/repos/{full_name}/pulls/{number}",
+        ctx.public_base
+    );
     let html_url = format!("{}/{full_name}/pull/{number}", ctx.public_base);
     let merged_by = match pr.get("MergedBy").and_then(Value::as_str) {
         Some(login) if !login.is_empty() => user_json(login, ctx.public_base),

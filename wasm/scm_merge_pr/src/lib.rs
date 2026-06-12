@@ -97,11 +97,28 @@ fn run_merge(ctx: &Context) -> Result<Value, String> {
     let computed = match request.strategy {
         Strategy::FastForward => fast_forward(&base_sha, &base_tip, &head, &pr, &request)?,
         Strategy::Merge | Strategy::Squash => build_new_commit(
-            ctx, &api_base, &blob_endpoint, &repo, &request, &pr, &base_sha, &base_tip, &head,
+            ctx,
+            &api_base,
+            &blob_endpoint,
+            &repo,
+            &request,
+            &pr,
+            &base_sha,
+            &base_tip,
+            &head,
         )?,
     };
-    let sub_writes =
-        assemble_sub_writes(ctx, &api_base, &blob_endpoint, &repo, &request, &pr, &target, &base_tip, &computed)?;
+    let sub_writes = assemble_sub_writes(
+        ctx,
+        &api_base,
+        &blob_endpoint,
+        &repo,
+        &request,
+        &pr,
+        &target,
+        &base_tip,
+        &computed,
+    )?;
 
     let _ = ctx.log_structured(
         "info",
@@ -160,7 +177,10 @@ fn resolve_pull_request(
         }
     };
     assert!(!pr.entity_id.is_empty(), "resolved PR must carry an id");
-    assert!(!pr.repository_id.is_empty(), "resolved PR must carry a repo");
+    assert!(
+        !pr.repository_id.is_empty(),
+        "resolved PR must carry a repo"
+    );
     Ok(pr)
 }
 

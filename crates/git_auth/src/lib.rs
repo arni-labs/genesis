@@ -315,11 +315,9 @@ mod tests {
         };
         let headers = p.outbound_headers();
         assert!(headers.contains(&("X-Temper-Principal-Id".to_string(), "user-1".to_string())));
-        assert!(
-            headers.contains(&(
-                "X-Temper-Principal-Scopes".to_string(),
-                "repo:read".to_string()
-            ))
-        );
+        assert!(headers.contains(&(
+            "X-Temper-Principal-Scopes".to_string(),
+            "repo:read".to_string()
+        )));
     }
 }

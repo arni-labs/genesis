@@ -36,8 +36,13 @@ fn open_read_access(
     } else {
         resolved.outbound_headers()
     };
-    let Some(repo_row) =
-        odata::get_entity(ctx, &headers, api_base, "Repositories", &route.repository_id())?
+    let Some(repo_row) = odata::get_entity(
+        ctx,
+        &headers,
+        api_base,
+        "Repositories",
+        &route.repository_id(),
+    )?
     else {
         return Ok(Err(http::respond_error(http, 404, "Not Found")?));
     };
@@ -200,8 +205,13 @@ pub(crate) fn create_ref(
     let api_base = http::api_base_from_headers(&http.headers);
     let repository_id = route.repository_id();
     let ref_id = gh::ref_entity_id(&repository_id, &full_name);
-    let existing =
-        odata::get_entity(ctx, &principal.outbound_headers(), &api_base, "Refs", &ref_id)?;
+    let existing = odata::get_entity(
+        ctx,
+        &principal.outbound_headers(),
+        &api_base,
+        "Refs",
+        &ref_id,
+    )?;
     if existing.is_some_and(|row| row.status == "Active") {
         return http::respond_error(http, 422, "Reference already exists");
     }
@@ -273,7 +283,13 @@ pub(crate) fn update_ref(
     let api_base = http::api_base_from_headers(&http.headers);
     let full_name = format!("refs/{short_name}");
     let ref_id = gh::ref_entity_id(&route.repository_id(), &full_name);
-    let row = odata::get_entity(ctx, &principal.outbound_headers(), &api_base, "Refs", &ref_id)?;
+    let row = odata::get_entity(
+        ctx,
+        &principal.outbound_headers(),
+        &api_base,
+        "Refs",
+        &ref_id,
+    )?;
     let Some(row) = row.filter(|r| r.status == "Active") else {
         return http::respond_error(http, 422, "Reference does not exist");
     };
@@ -315,7 +331,13 @@ pub(crate) fn update_ref(
             &format!("Update is not a fast forward: {}", outcome.error_message()),
         );
     }
-    let body = gh::git_ref_json(&route.owner, &route.repo, &full_name, &request.sha, &api_base);
+    let body = gh::git_ref_json(
+        &route.owner,
+        &route.repo,
+        &full_name,
+        &request.sha,
+        &api_base,
+    );
     http::respond_json(http, 200, &body)
 }
 
@@ -332,7 +354,13 @@ pub(crate) fn delete_ref(
     let api_base = http::api_base_from_headers(&http.headers);
     let full_name = format!("refs/{short_name}");
     let ref_id = gh::ref_entity_id(&route.repository_id(), &full_name);
-    let row = odata::get_entity(ctx, &principal.outbound_headers(), &api_base, "Refs", &ref_id)?;
+    let row = odata::get_entity(
+        ctx,
+        &principal.outbound_headers(),
+        &api_base,
+        "Refs",
+        &ref_id,
+    )?;
     if row.filter(|r| r.status == "Active").is_none() {
         return http::respond_error(http, 422, "Reference does not exist");
     }

@@ -131,10 +131,18 @@ fn dispatch_create_and_open(
         false,
     )?;
     if create.status == 403 {
-        return Ok(Some(http::respond_error(http, 403, &create.error_message())?));
+        return Ok(Some(http::respond_error(
+            http,
+            403,
+            &create.error_message(),
+        )?));
     }
     if !create.ok() {
-        return Ok(Some(http::respond_error(http, 422, &create.error_message())?));
+        return Ok(Some(http::respond_error(
+            http,
+            422,
+            &create.error_message(),
+        )?));
     }
 
     let open = odata::post_action(
@@ -192,8 +200,13 @@ pub(crate) fn patch_pull(
 
     let api_base = http::api_base_from_headers(&http.headers);
     let caller_headers = principal.outbound_headers();
-    let row =
-        find_pull_by_number(ctx, &caller_headers, &api_base, &route.repository_id(), number)?;
+    let row = find_pull_by_number(
+        ctx,
+        &caller_headers,
+        &api_base,
+        &route.repository_id(),
+        number,
+    )?;
     let Some(row) = row else {
         return http::respond_error(http, 404, "Not Found");
     };
@@ -236,7 +249,11 @@ fn respond_merge_failure(
         };
         return http::respond_error(http, 409, &message);
     }
-    http::respond_error(http, 405, &format!("Pull Request is not mergeable: {error}"))
+    http::respond_error(
+        http,
+        405,
+        &format!("Pull Request is not mergeable: {error}"),
+    )
 }
 
 pub(crate) fn merge_pull(
@@ -271,7 +288,11 @@ pub(crate) fn merge_pull(
     };
     // GitHub's optimistic-concurrency guard: a caller-supplied sha
     // must still be the head.
-    if let Some(expected) = body.get("sha").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+    if let Some(expected) = body
+        .get("sha")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
         let (head_sha, _) =
             pull_shas(ctx, &caller_headers, &api_base, &repository_id, &row.fields)?;
         if expected != head_sha {
@@ -326,8 +347,8 @@ fn merged_result_sha(
     repository_id: &str,
     row: &odata::EntityRow,
 ) -> Result<String, String> {
-    let merged_sha = odata::get_entity(ctx, headers, api_base, "PullRequests", &row.id)?
-        .and_then(|r| {
+    let merged_sha =
+        odata::get_entity(ctx, headers, api_base, "PullRequests", &row.id)?.and_then(|r| {
             r.fields
                 .get("MergedCommitSha")
                 .and_then(Value::as_str)
@@ -337,7 +358,11 @@ fn merged_result_sha(
     match merged_sha {
         Some(sha) => Ok(sha),
         None => {
-            let target = row.fields.get("TargetRef").and_then(Value::as_str).unwrap_or("");
+            let target = row
+                .fields
+                .get("TargetRef")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             Ok(ref_tip(ctx, headers, api_base, repository_id, target)?.unwrap_or_default())
         }
     }

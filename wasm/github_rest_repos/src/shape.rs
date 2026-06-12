@@ -98,10 +98,7 @@ fn repository_matches_github_fixture_shape() {
 fn repository_shape_check_catches_missing_field() {
     let fixture = fixture(include_str!("../fixtures/repository.json"));
     let mut actual = sample_repository();
-    actual
-        .as_object_mut()
-        .expect("object")
-        .remove("clone_url");
+    actual.as_object_mut().expect("object").remove("clone_url");
     let result = std::panic::catch_unwind(|| {
         assert_shape(&fixture, &actual, "", REPOSITORY_OMITTED);
     });
@@ -126,6 +123,9 @@ fn repository_shape_check_catches_type_drift() {
 /// allowlist is the desired steady state for this endpoint.
 #[test]
 fn repository_allowlist_is_intentionally_empty() {
-    let omitted: Vec<String> = REPOSITORY_OMITTED.iter().map(|s| String::from(*s)).collect();
+    let omitted: Vec<String> = REPOSITORY_OMITTED
+        .iter()
+        .map(|s| String::from(*s))
+        .collect();
     assert!(omitted.is_empty());
 }

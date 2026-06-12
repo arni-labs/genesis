@@ -67,12 +67,21 @@ pub(crate) fn create_review(
 
     let api_base = http::api_base_from_headers(&http.headers);
     let caller_headers = principal.outbound_headers();
-    let row =
-        find_pull_by_number(ctx, &caller_headers, &api_base, &route.repository_id(), number)?;
+    let row = find_pull_by_number(
+        ctx,
+        &caller_headers,
+        &api_base,
+        &route.repository_id(),
+        number,
+    )?;
     let Some(row) = row else {
         return http::respond_error(http, 404, "Not Found");
     };
-    let opened_by = row.fields.get("OpenedBy").and_then(Value::as_str).unwrap_or("");
+    let opened_by = row
+        .fields
+        .get("OpenedBy")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if request.event != "COMMENT" && opened_by == principal.id {
         // Cedar forbids it too; answering in GitHub's words first.
         return http::respond_error(http, 422, "Can not approve your own pull request");
@@ -83,9 +92,9 @@ pub(crate) fn create_review(
         &format!("{}|{}", row.id, principal.id),
         Context::get_time_millis(),
     );
-    if let Some(response) =
-        submit_review_row(ctx, http, &principal, &api_base, &review_id, &row.id, &request)?
-    {
+    if let Some(response) = submit_review_row(
+        ctx, http, &principal, &api_base, &review_id, &row.id, &request,
+    )? {
         return Ok(response);
     }
     if let Some(response) =
@@ -93,7 +102,9 @@ pub(crate) fn create_review(
     {
         return Ok(response);
     }
-    respond_with_review(ctx, http, route, number, &row, &principal, &review_id, &request)
+    respond_with_review(
+        ctx, http, route, number, &row, &principal, &review_id, &request,
+    )
 }
 
 /// `Review.Create` as the real caller. Returns `Some(response)` when
@@ -123,10 +134,18 @@ fn submit_review_row(
         false,
     )?;
     if create.status == 403 {
-        return Ok(Some(http::respond_error(http, 403, &create.error_message())?));
+        return Ok(Some(http::respond_error(
+            http,
+            403,
+            &create.error_message(),
+        )?));
     }
     if !create.ok() {
-        return Ok(Some(http::respond_error(http, 422, &create.error_message())?));
+        return Ok(Some(http::respond_error(
+            http,
+            422,
+            &create.error_message(),
+        )?));
     }
     Ok(None)
 }
@@ -222,7 +241,11 @@ fn apply_review_transition(
         false,
     )?;
     if verdict.status == 403 {
-        return Ok(Some(http::respond_error(http, 403, &verdict.error_message())?));
+        return Ok(Some(http::respond_error(
+            http,
+            403,
+            &verdict.error_message(),
+        )?));
     }
     if !verdict.ok() {
         return Ok(Some(http::respond_error(

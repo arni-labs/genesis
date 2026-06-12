@@ -195,8 +195,14 @@ const BLOB_D: &str = "dddddddddddddddddddddddddddddddddddddddd";
 fn disjoint_adds_merge_cleanly_into_new_tree() {
     let mut store = TreeStore::default();
     let base = store.put(&[("100644", "keep.txt", BLOB_A)]);
-    let ours = store.put(&[("100644", "keep.txt", BLOB_A), ("100644", "ours.txt", BLOB_B)]);
-    let theirs = store.put(&[("100644", "keep.txt", BLOB_A), ("100644", "theirs.txt", BLOB_C)]);
+    let ours = store.put(&[
+        ("100644", "keep.txt", BLOB_A),
+        ("100644", "ours.txt", BLOB_B),
+    ]);
+    let theirs = store.put(&[
+        ("100644", "keep.txt", BLOB_A),
+        ("100644", "theirs.txt", BLOB_C),
+    ]);
     let expected = store.put(&[
         ("100644", "keep.txt", BLOB_A),
         ("100644", "ours.txt", BLOB_B),

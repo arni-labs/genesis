@@ -94,8 +94,7 @@ fn assign_number(ctx: &Context) -> Result<Value, String> {
 
     let api_base = api_base(ctx);
     let headers = system_headers(ctx);
-    let (max_number, scanned) =
-        max_pr_number_for_repo(ctx, &api_base, &headers, &repository_id)?;
+    let (max_number, scanned) = max_pr_number_for_repo(ctx, &api_base, &headers, &repository_id)?;
     let next = max_number + 1;
 
     patch_number(ctx, &api_base, &headers, &pull_request_id, next)?;
@@ -125,10 +124,7 @@ fn max_pr_number_for_repo(
     headers: &[(String, String)],
     repository_id: &str,
 ) -> Result<(i64, usize), String> {
-    let filter = format!(
-        "RepositoryId eq '{}'",
-        repository_id.replace('\'', "''")
-    );
+    let filter = format!("RepositoryId eq '{}'", repository_id.replace('\'', "''"));
     let mut max_number: i64 = 0;
     let mut scanned: usize = 0;
     for page in 0..MAX_PAGES {
@@ -269,6 +265,10 @@ mod tests {
 
     #[test]
     fn entity_fields_defaults_to_empty_object() {
-        assert!(entity_fields(&json!("not-an-object")).as_object().is_some_and(|o| o.is_empty()));
+        assert!(
+            entity_fields(&json!("not-an-object"))
+                .as_object()
+                .is_some_and(|o| o.is_empty())
+        );
     }
 }

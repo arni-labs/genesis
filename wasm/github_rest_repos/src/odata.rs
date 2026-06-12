@@ -25,7 +25,10 @@ pub(crate) fn row_from_value(value: &Value) -> EntityRow {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let fields = value.get("fields").cloned().unwrap_or_else(|| value.clone());
+    let fields = value
+        .get("fields")
+        .cloned()
+        .unwrap_or_else(|| value.clone());
     EntityRow { status, fields }
 }
 

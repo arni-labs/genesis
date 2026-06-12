@@ -120,8 +120,8 @@ pub fn fetch_pull_request(
     if !(200..300).contains(&resp.status) {
         return Err(format!("PullRequest({pr_id}) status {}", resp.status));
     }
-    let row: Value = serde_json::from_str(&resp.body)
-        .map_err(|e| format!("PullRequest({pr_id}) json: {e}"))?;
+    let row: Value =
+        serde_json::from_str(&resp.body).map_err(|e| format!("PullRequest({pr_id}) json: {e}"))?;
     pull_request_from_row(&row, pr_id)
 }
 
@@ -232,7 +232,10 @@ pub fn fetch_ref(
         odata_string_literal(repository_id),
         odata_string_literal(name)
     );
-    let url = format!("{api_base}/tdata/Refs?$filter={}&$top=10", urlencode(&filter));
+    let url = format!(
+        "{api_base}/tdata/Refs?$filter={}&$top=10",
+        urlencode(&filter)
+    );
     let resp = ctx
         .http_call("GET", &url, &[], "")
         .map_err(|e| format!("fetch Ref({name}): {e}"))?;
@@ -252,7 +255,10 @@ pub fn fetch_ref(
             .get("RepositoryId")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let row_name = fields.get("Name").and_then(Value::as_str).unwrap_or_default();
+        let row_name = fields
+            .get("Name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if row_repo != repository_id || row_name != name {
             continue;
         }
@@ -377,7 +383,9 @@ pub fn fetch_tree_entries(
         .position(|&b| b == 0)
         .ok_or_else(|| format!("Tree({sha}): no NUL in canonical bytes"))?;
     if !canonical.starts_with(b"tree ") {
-        return Err(format!("Tree({sha}): canonical bytes are not a tree object"));
+        return Err(format!(
+            "Tree({sha}): canonical bytes are not a tree object"
+        ));
     }
     genesis_git_object::parse_tree(&canonical[nul + 1..])
         .map_err(|e| format!("Tree({sha}) parse: {e}"))

@@ -100,7 +100,13 @@ mod tests {
 
     #[test]
     fn git_ref_json_keeps_full_ref_name() {
-        let r = git_ref_json("octo", "hello", "refs/tags/v1.0.0", "abc123", "https://g.test");
+        let r = git_ref_json(
+            "octo",
+            "hello",
+            "refs/tags/v1.0.0",
+            "abc123",
+            "https://g.test",
+        );
         assert_eq!(r["ref"], "refs/tags/v1.0.0");
         assert_eq!(r["object"]["type"], "commit");
         assert_eq!(
