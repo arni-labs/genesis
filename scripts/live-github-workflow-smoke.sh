@@ -175,9 +175,12 @@ expect_git_fail() {
 ensure_endpoint() {
   local endpoint_id="$1" body="$2"
   local out="${TMP_DIR}/${endpoint_id}.json" status
-  status="$(curl -sS -o "$out" -w "%{http_code}" -H "X-Tenant-Id: ${TENANT}" "${BASE_URL}/tdata/HttpEndpoints('${endpoint_id}')")"
+  status="$(curl -sS -o "$out" -w "%{http_code}" "${admin_headers[@]}" "${BASE_URL}/tdata/HttpEndpoints('${endpoint_id}')")"
   if [[ "$status" == "200" ]]; then
-    status="$(curl -sS -o "$out" -w "%{http_code}" -X PATCH -H "X-Tenant-Id: ${TENANT}" -H 'Content-Type: application/json' -d "$body" "${BASE_URL}/tdata/HttpEndpoints('${endpoint_id}')")"
+    # The row persists across runs on a long-lived server (production),
+    # so the update path needs the same admin identity as the create
+    # path — an anonymous PATCH is rightly denied by Cedar.
+    status="$(curl -sS -o "$out" -w "%{http_code}" -X PATCH "${admin_headers[@]}" -d "$body" "${BASE_URL}/tdata/HttpEndpoints('${endpoint_id}')")"
     if [[ "$status" != 2* ]]; then
       printf 'PATCH HttpEndpoint %s failed with HTTP %s\n' "$endpoint_id" "$status" >&2
       sed -n '1,120p' "$out" >&2
