@@ -610,30 +610,98 @@ fn violated_threshold_rule(
             continue;
         };
         for (metric_name, limit_value) in object {
-            let Some(actual) = metric_numeric_value(metrics, &metric_name) else {
+            let Some(violation) = threshold_violation(metrics, &metric_name, &limit_value) else {
                 continue;
             };
-            let Some(limit) = limit_value.as_f64().or_else(|| {
-                limit_value
-                    .as_str()
-                    .and_then(|raw| raw.parse::<f64>().ok())
-            }) else {
-                continue;
-            };
-            if actual > limit {
-                let provenance_kind = metric_provenance_kind(metrics, &metric_name)
-                    .unwrap_or_else(|| "wasm-computed".to_string());
-                return Ok(Some((
-                    rule_id,
-                    format!(
-                        "StageResult {stage_result_id} violated elimination rule: metric {metric_name}={actual} exceeded threshold {limit}."
-                    ),
-                    provenance_kind,
-                )));
-            }
+            let provenance_kind = metric_provenance_kind(metrics, &metric_name)
+                .unwrap_or_else(|| "wasm-computed".to_string());
+            return Ok(Some((
+                rule_id,
+                format!("StageResult {stage_result_id} violated elimination rule: {violation}."),
+                provenance_kind,
+            )));
         }
     }
     Ok(None)
+}
+
+/// Evaluate one threshold entry against the evaluator's metrics.
+/// Shapes: scalar = upper bound ("at most"); {"min": X} / {"max": Y}
+/// for lower/upper bounds ("at least" rules were previously silently
+/// unenforceable); boolean = required exact value.
+fn threshold_violation(metrics: &Value, metric_name: &str, limit: &Value) -> Option<String> {
+    if let Some(bounds) = limit.as_object() {
+        let actual = metric_numeric_value(metrics, metric_name)?;
+        if let Some(min) = numeric_bound(bounds.get("min")) {
+            if actual < min {
+                return Some(format!(
+                    "metric {metric_name}={actual} fell below minimum {min}"
+                ));
+            }
+        }
+        if let Some(max) = numeric_bound(bounds.get("max")) {
+            if actual > max {
+                return Some(format!(
+                    "metric {metric_name}={actual} exceeded threshold {max}"
+                ));
+            }
+        }
+        return None;
+    }
+    if let Some(expected) = limit.as_bool() {
+        let actual = metric_bool_value(metrics, metric_name)?;
+        if actual != expected {
+            return Some(format!(
+                "metric {metric_name}={actual} violated required value {expected}"
+            ));
+        }
+        return None;
+    }
+    let actual = metric_numeric_value(metrics, metric_name)?;
+    let max = numeric_bound(Some(limit))?;
+    if actual > max {
+        return Some(format!(
+            "metric {metric_name}={actual} exceeded threshold {max}"
+        ));
+    }
+    None
+}
+
+fn numeric_bound(value: Option<&Value>) -> Option<f64> {
+    let value = value?;
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<f64>().ok()))
+}
+
+fn metric_bool_value(metrics: &Value, metric_name: &str) -> Option<bool> {
+    if let Some(object) = metrics.as_object() {
+        let value = object.get(metric_name)?;
+        return value.as_bool().or_else(|| {
+            value
+                .as_str()
+                .and_then(|raw| raw.trim().parse::<bool>().ok())
+                .or_else(|| {
+                    value
+                        .get("value")
+                        .or_else(|| value.get("Value"))
+                        .and_then(|inner| {
+                            inner
+                                .as_bool()
+                                .or_else(|| inner.as_str().and_then(|raw| raw.parse::<bool>().ok()))
+                        })
+                })
+        });
+    }
+    if let Some(items) = metrics.as_array() {
+        for item in items {
+            let name = lookup_string_deep(item, &["metric_definition_id", "MetricDefinitionId", "metric", "name"]);
+            if name == metric_name {
+                return lookup_string_deep(item, &["value", "Value"]).trim().parse::<bool>().ok();
+            }
+        }
+    }
+    None
 }
 
 fn metric_provenance_kind(metrics: &Value, metric_name: &str) -> Option<String> {

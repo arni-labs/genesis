@@ -16,6 +16,7 @@ permit(
 permit(
   principal,
   action in [
+    Action::"create",
     Action::"Create",
     Action::"Pause",
     Action::"Resume",

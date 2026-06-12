@@ -1,26 +1,20 @@
+import type { EvolutionOrganism } from './directedEvolutionTypes';
 import type { RegistryApp } from './types';
 
 export type DirectedEvolutionAppContext = {
   appId: string;
   appLabel: string;
   controlTenantId: string;
+  organismId: string;
   runtimeTenantId: string;
   runtimeBaseUrl: string;
   runtimeLabel: string;
   runtimeDatadogService: string;
   runtimeAuthEnvVars: string[];
-  runtimeTraceResourceNames: string[];
+  evaluatorRef: string;
   seedAppRef: string;
-  seedHash: string;
   configured: boolean;
 };
-
-const agentAnswersSeedHash = '4001f5fce94de5557af3b31c17d160cc0e69fbed';
-const agentAnswersRuntimeBaseUrl = (
-  import.meta.env.VITE_AGENT_ANSWERS_RUNTIME_BASE_URL ??
-  import.meta.env.VITE_TEMPERPAW_RUNTIME_BASE_URL ??
-  'https://openpaw-production.up.railway.app'
-).replace(/\/$/, '');
 
 function slug(value: string): string {
   return (
@@ -32,47 +26,43 @@ function slug(value: string): string {
   );
 }
 
-export function directedEvolutionContextForApp(
-  app: RegistryApp
-): DirectedEvolutionAppContext {
-  if (app.id === 'app-nerdsane-agent-answers') {
-    return {
-      appId: app.id,
-      appLabel: 'Agent Answers',
-      controlTenantId: 'de-agent-answers',
-      runtimeTenantId: 'agent-answers-seed',
-      runtimeBaseUrl: agentAnswersRuntimeBaseUrl,
-      runtimeLabel: 'TemperPaw production',
-      runtimeDatadogService: 'temperpaw',
-      runtimeAuthEnvVars: ['TEMPERPAW_RUNTIME_API_KEY', 'TEMPER_API_KEY'],
-      runtimeTraceResourceNames: [
-        'Question.Configure',
-        'Answer.Submit',
-        'Question.RecordAnswer',
-        'Question.Accept'
-      ],
-      seedAppRef: `nerdsane/agent-answers@${agentAnswersSeedHash}`,
-      seedHash: agentAnswersSeedHash,
-      configured: true
-    };
-  }
+export function organismRuntimeConfigured(organism: EvolutionOrganism | null): boolean {
+  return Boolean(organism?.runtimeBaseUrl && organism?.runtimeTenantId);
+}
 
+export function organismForApp(
+  organisms: EvolutionOrganism[],
+  app: RegistryApp
+): EvolutionOrganism | null {
+  const refPrefix = `${app.ownerId}/${app.name}@`;
+  return organisms.find((organism) => organism.appRef.startsWith(refPrefix)) ?? organisms[0] ?? null;
+}
+
+// ADR-0026: the runtime target lives on the Organism entity. The app
+// only determines labels and the deterministic control tenant; runtime
+// base URL, tenant, Datadog service, auth env var names, and the
+// evaluator ref come from the loaded organism row.
+export function directedEvolutionContextForApp(
+  app: RegistryApp,
+  organism: EvolutionOrganism | null = null
+): DirectedEvolutionAppContext {
   const owner = slug(app.ownerId);
   const name = slug(app.name || app.id);
   const seedHash = app.latestVersionHash || app.id;
+  const configured = organismRuntimeConfigured(organism);
   return {
     appId: app.id,
     appLabel: app.name || app.id,
     controlTenantId: `de-${owner}-${name}`,
-    runtimeTenantId: `${owner}-${name}-seed`,
-    runtimeBaseUrl: '',
-    runtimeLabel: 'Unconfigured runtime',
-    runtimeDatadogService: '',
-    runtimeAuthEnvVars: [],
-    runtimeTraceResourceNames: [],
-    seedAppRef: `${app.ownerId}/${app.name}@${seedHash}`,
-    seedHash,
-    configured: false
+    organismId: organism?.id ?? '',
+    runtimeTenantId: organism?.runtimeTenantId ?? '',
+    runtimeBaseUrl: organism?.runtimeBaseUrl ?? '',
+    runtimeLabel: configured ? 'Runtime configured' : 'Unconfigured runtime',
+    runtimeDatadogService: organism?.datadogService ?? '',
+    runtimeAuthEnvVars: organism?.runtimeAuthEnvVars ?? [],
+    evaluatorRef: organism?.evaluatorRef ?? '',
+    seedAppRef: organism?.appRef || `${app.ownerId}/${app.name}@${seedHash}`,
+    configured
   };
 }
 

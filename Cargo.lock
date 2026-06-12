@@ -102,6 +102,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "genesis-git-auth"
+version = "0.0.1"
+dependencies = [
+ "base64",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "genesis-git-object"
 version = "0.0.1"
 
@@ -120,6 +130,7 @@ name = "git_receive_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-auth",
  "genesis-git-object",
  "serde",
  "serde_json",
@@ -132,9 +143,8 @@ dependencies = [
 name = "git_refs_advertise"
 version = "0.0.1"
 dependencies = [
- "base64",
+ "genesis-git-auth",
  "serde_json",
- "sha2",
  "temper-wasm-sdk",
  "tg-wire",
 ]
@@ -144,12 +154,42 @@ name = "git_upload_pack"
 version = "0.0.1"
 dependencies = [
  "base64",
+ "genesis-git-auth",
  "genesis-git-object",
  "serde",
  "serde_json",
- "sha2",
  "temper-wasm-sdk",
  "tg-wire",
+]
+
+[[package]]
+name = "github_rest_pulls"
+version = "0.0.1"
+dependencies = [
+ "genesis-git-auth",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
+name = "github_rest_refs"
+version = "0.0.1"
+dependencies = [
+ "genesis-git-auth",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
+]
+
+[[package]]
+name = "github_rest_repos"
+version = "0.0.1"
+dependencies = [
+ "genesis-git-auth",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
 ]
 
 [[package]]
@@ -215,6 +255,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "scm_assign_pr_number"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "temper-wasm-sdk",
+]
+
+[[package]]
 name = "scm_ingest_pack"
 version = "0.0.1"
 dependencies = [
@@ -225,6 +273,18 @@ dependencies = [
  "sha2",
  "temper-wasm-sdk",
  "tg-wire",
+]
+
+[[package]]
+name = "scm_merge_pr"
+version = "0.0.1"
+dependencies = [
+ "base64",
+ "genesis-git-object",
+ "serde",
+ "serde_json",
+ "sha2",
+ "temper-wasm-sdk",
 ]
 
 [[package]]

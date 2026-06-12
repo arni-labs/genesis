@@ -1054,44 +1054,18 @@ test('renders live Directed Evolution mission control and dispatches real contro
       exact: true
     })
   ).toBeVisible();
-  const liveProofGate = page.getByLabel('Agent Answers live proof gate');
-  await expect(liveProofGate.getByText('Agent Answers Proof Gate')).toBeVisible();
-  await expect(liveProofGate.getByText('directed-evolution-agent-answers-live-proof.sh')).toBeVisible();
+  // Organism-generic proof gate (B3): the Agent-Answers-branded card was
+  // replaced by counter gates derived from episode WorkItems/WorkerRuns/
+  // evidence rows — see proofGatesForEpisode in routes/evolution/+page.svelte.
+  const liveProofGate = page.getByLabel('Episode live proof gate');
+  await expect(liveProofGate.getByText('Live Proof Gate')).toBeVisible();
+  await expect(liveProofGate.getByText('WorkItems', { exact: true })).toBeVisible();
+  await expect(liveProofGate.getByText('WorkerRuns', { exact: true })).toBeVisible();
+  await expect(liveProofGate.getByText('EvidenceArtifacts', { exact: true })).toBeVisible();
   await expect(liveProofGate.getByText('Datadog measured evidence')).toBeVisible();
   await expect(liveProofGate.getByText('Datadog observer evidence')).toBeVisible();
   await expect(liveProofGate.getByText('Datadog telemetry evaluator evidence')).toBeVisible();
-  await expect(liveProofGate.getByText('Datadog observer', { exact: true })).toBeVisible();
-  await expect(liveProofGate.getByText('Datadog telemetry evaluator', { exact: true })).toBeVisible();
-  await expect(
-    liveProofGate.getByText('Observer runtime request logs were present for the Agent Answers Directed Evolution episode.')
-  ).toBeVisible();
-  await expect(
-    liveProofGate.getByText(
-      'Telemetry evaluator observed proof-run events for the Agent Answers Directed Evolution episode.'
-    )
-  ).toBeVisible();
-  await expect(
-    liveProofGate.getByText(
-      'service:temper-platform "directed evolution runtime request" directed_evolution.episode_id:episode-citation-memory'
-    )
-  ).toBeVisible();
-  await expect(
-    liveProofGate.getByText(
-      'service:temper-platform directed_evolution.episode_id:episode-citation-memory role:telemetry_evaluator'
-    )
-  ).toBeVisible();
   await expect(liveProofGate.getByText('No-mutation precheck', { exact: true }).first()).toBeVisible();
-  await expect(
-    liveProofGate.getByText('No-mutation precheck passed in TemperPaw CI for the Agent Answers live proof driver.')
-  ).toBeVisible();
-  await expect(
-    liveProofGate.getByText('Legacy aggregate-only precheck should not satisfy the Agent Answers proof gate.')
-  ).toHaveCount(0);
-  await expect(liveProofGate.getByText('Observer evidence required')).toBeVisible();
-  await expect(liveProofGate.getByText('Telemetry evaluator required')).toBeVisible();
-  await expect(liveProofGate.getByText('Datadog evidence required')).toBeVisible();
-  await expect(liveProofGate.getByText('Datadog query secrets confirmed')).toBeVisible();
-  await expect(liveProofGate.getByText('now-15m to now · zero means failure')).toHaveCount(2);
   const terminalSuccessGate = liveProofGate.locator('div').filter({ hasText: 'Terminal success' }).first();
   await expect(terminalSuccessGate.getByText('Terminal success')).toBeVisible();
   await expect(terminalSuccessGate.getByText('pending', { exact: true })).toBeVisible();

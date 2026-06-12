@@ -5,9 +5,11 @@
 # `crates/git_object/src/blob.rs` for the emitter that produces
 # those bytes byte-exactly against `git hash-object`).
 #
-# Content lives inline on the entity row. No spill tier. Very large
-# blobs (e.g. ML models, >1 GiB) would need chunking; out of scope
-# for v1 (RFC-0001 §Open questions).
+# Content lives in the object store (ADR-0027): the row persists the
+# hash, size, and a content-addressed blob reference; readers resolve
+# the reference and fall back to legacy inline values for rows written
+# before the migration. Very large blobs (e.g. ML models, >1 GiB)
+# would need chunking; out of scope for v1 (RFC-0001 §Open questions).
 #
 # Append-only semantics (Cedar denies PATCH/DELETE). A repository
 # garbage-collect action (future, Phase 2) will be the only legitimate

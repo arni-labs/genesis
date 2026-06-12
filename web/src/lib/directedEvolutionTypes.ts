@@ -14,6 +14,11 @@ export type EvolutionOrganism = EntityBase & {
   promotionId: string;
   summary: string;
   baselineEvaluation: string;
+  runtimeBaseUrl: string;
+  runtimeTenantId: string;
+  datadogService: string;
+  runtimeAuthEnvVars: string[];
+  evaluatorRef: string;
 };
 
 export type EvolutionOrganismVersion = EntityBase & {
@@ -32,6 +37,7 @@ export type EvolutionLineageEdge = EntityBase & {
   episodeId: string;
   promotionId: string;
   summary: string;
+  diffPatch: string;
 };
 
 export type EvolutionSignal = EntityBase & {
