@@ -86,3 +86,36 @@ GENESIS_TOKEN_A=<author token> GENESIS_TOKEN_B=<reviewer token> \
 GITHUB_API=https://api.github.com GITHUB_REST_REPO=<owner>/<repo> \
 RUNS=5 scripts/bench-genesis-vs-github.sh
 ```
+
+## Addendum: re-measurement on the ADR-0142 kernel (2026-06-12, pass 3)
+
+ADR-0142 (temper) made every dispatch apply its query-plane projection
+inline before acknowledging — closing the read-your-writes race that
+intermittently rendered fresh PR numbers as 0. Re-measured after that
+deploy (genesis `009eab31`, kernel `079dadc6`), same corpus and method:
+
+| Operation | Genesis (pass 3) | GitHub (pass 3) | vs pre-ADR-0142 Genesis |
+|---|---|---|---|
+| `git ls-remote` | 339 ms | 418 ms | unchanged |
+| Cold clone | 3754 ms | 634 ms | **+67% — see note** |
+| Warm fetch | 323 ms | 410 ms | unchanged |
+| Push | 869 ms | 853 ms | unchanged |
+| REST PR open | 669 ms | 1032 ms | +~90 ms (inline projection cost) |
+| REST PR merge | 761 ms | 1732 ms | unchanged |
+| Pack wire size | 1.72 MiB | 1.31 MiB | unchanged (+0.3%) |
+
+The dispatch-heavy operations absorbed the correctness fix with little
+to no measurable cost — PR open gained ~90 ms (a PR create involves
+several dispatches, each now paying a projection upsert) and remains
+~0.65× of GitHub's latency; push and PR merge are unchanged.
+
+**Cold-clone note:** pass 3 measured 3754 ms vs 2249/2252 ms in passes
+1–2, with wire size unchanged — so the slowdown is server-side emission
+time, not size. Confounders prevent attributing it to ADR-0142: pass 3
+ran minutes after a fresh deploy (cold instance, cold ADR-0011 object
+cache), and the corpus had grown ~10 merge branches from earlier bench
+passes. Clone does not dispatch actions (one `GitToken.MarkUsed`
+aside), so a kernel-dispatch cause is unlikely on its face. The
+emission-path profiling already recorded as this report's follow-up is
+the right instrument to settle it; treat 2.2–3.8 s as the honest
+current range for this corpus.
