@@ -90,15 +90,21 @@ impl MergeRequest {
             }
         };
         let strategy = Strategy::parse(
-            &param_str(params, &["Strategy", "strategy", "MergeMethod", "merge_method"])
-                .unwrap_or_default(),
+            &param_str(
+                params,
+                &["Strategy", "strategy", "MergeMethod", "merge_method"],
+            )
+            .unwrap_or_default(),
         )?;
         let timestamp_override = parse_timestamp_override(params)?;
         Ok(MergeRequest {
             trigger,
             strategy,
-            message: param_str(params, &["Message", "message", "CommitMessage", "commit_message"])
-                .filter(|m| !m.is_empty()),
+            message: param_str(
+                params,
+                &["Message", "message", "CommitMessage", "commit_message"],
+            )
+            .filter(|m| !m.is_empty()),
             client_request_id: param_str(params, &["ClientRequestId", "client_request_id"])
                 .unwrap_or_default(),
             committer_identity: param_str(params, &["Committer", "CommitterIdentity"])
@@ -135,7 +141,9 @@ fn param_u64(params: &Value, keys: &[&str]) -> Option<u64> {
 /// default +0000). When absent the head commit's committer timestamp
 /// is used instead — never a wall clock (see `commits` module docs).
 fn parse_timestamp_override(params: &Value) -> Result<Option<(String, String)>, String> {
-    let Some(raw) = params.get("CommitTimestamp").or_else(|| params.get("commit_timestamp"))
+    let Some(raw) = params
+        .get("CommitTimestamp")
+        .or_else(|| params.get("commit_timestamp"))
     else {
         return Ok(None);
     };

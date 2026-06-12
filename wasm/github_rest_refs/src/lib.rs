@@ -121,20 +121,12 @@ impl Route {
 fn dispatch(ctx: &Context, http: &InboundHttp, route: &Route) -> Result<Value, String> {
     match (http.method.as_str(), &route.kind) {
         ("GET", RouteKind::Branches) => handlers::list_branches(ctx, http, route),
-        ("GET", RouteKind::GitRefs(tail)) => {
-            handlers::list_refs(ctx, http, route, tail.as_deref())
-        }
-        ("GET", RouteKind::MatchingRefs(tail)) => {
-            handlers::list_refs(ctx, http, route, Some(tail))
-        }
+        ("GET", RouteKind::GitRefs(tail)) => handlers::list_refs(ctx, http, route, tail.as_deref()),
+        ("GET", RouteKind::MatchingRefs(tail)) => handlers::list_refs(ctx, http, route, Some(tail)),
         ("GET", RouteKind::GitRef(tail)) => handlers::get_single_ref(ctx, http, route, tail),
         ("POST", RouteKind::GitRefs(None)) => handlers::create_ref(ctx, http, route),
-        ("PATCH", RouteKind::GitRefs(Some(tail))) => {
-            handlers::update_ref(ctx, http, route, tail)
-        }
-        ("DELETE", RouteKind::GitRefs(Some(tail))) => {
-            handlers::delete_ref(ctx, http, route, tail)
-        }
+        ("PATCH", RouteKind::GitRefs(Some(tail))) => handlers::update_ref(ctx, http, route, tail),
+        ("DELETE", RouteKind::GitRefs(Some(tail))) => handlers::delete_ref(ctx, http, route, tail),
         _ => http::respond_error(http, 404, "Not Found"),
     }
 }
@@ -212,8 +204,11 @@ mod tests {
 
     #[test]
     fn parses_matching_refs() {
-        let route =
-            parse("GET", "/api/v3/repos/octo/hello/git/matching-refs/heads/feat").expect("route");
+        let route = parse(
+            "GET",
+            "/api/v3/repos/octo/hello/git/matching-refs/heads/feat",
+        )
+        .expect("route");
         assert!(matches!(route.kind, RouteKind::MatchingRefs(t) if t == "heads/feat"));
     }
 }

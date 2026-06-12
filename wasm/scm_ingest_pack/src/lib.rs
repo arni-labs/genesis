@@ -326,12 +326,12 @@ fn classify_force_updates(
         if update.action != "Update" {
             continue;
         }
-        let fast_forward =
-            ancestry_walk_is_fast_forward(&update.old_sha, &update.new_sha, |sha| {
-                pack_parents.get(sha).cloned().unwrap_or_else(|| {
-                    fetch_commit_parents(ctx, api_base, repository_id, sha)
-                })
-            });
+        let fast_forward = ancestry_walk_is_fast_forward(&update.old_sha, &update.new_sha, |sha| {
+            pack_parents
+                .get(sha)
+                .cloned()
+                .unwrap_or_else(|| fetch_commit_parents(ctx, api_base, repository_id, sha))
+        });
         if !fast_forward {
             update.action = "ForceUpdate";
             update.params = json!({ "NewCommitSha": update.new_sha });
@@ -605,7 +605,10 @@ fn internal_read_headers() -> Vec<(String, String)> {
     alloc::vec![
         ("X-Tenant-Id".to_string(), SYSTEM_TENANT.to_string()),
         ("X-Temper-Principal-Kind".to_string(), "admin".to_string()),
-        ("X-Temper-Principal-Id".to_string(), SYSTEM_PRINCIPAL.to_string()),
+        (
+            "X-Temper-Principal-Id".to_string(),
+            SYSTEM_PRINCIPAL.to_string()
+        ),
         (
             "X-Temper-Principal-Scopes".to_string(),
             "admin:repos,repo:read,repo:write,pr:write".to_string(),

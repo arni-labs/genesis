@@ -83,10 +83,7 @@ pub(crate) enum RouteKind {
 impl Route {
     fn parse(path: &str, http: &InboundHttp) -> Option<Route> {
         let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
-        if segments.len() < 6
-            || segments[..3] != ["api", "v3", "repos"]
-            || segments[5] != "pulls"
-        {
+        if segments.len() < 6 || segments[..3] != ["api", "v3", "repos"] || segments[5] != "pulls" {
             return None;
         }
         let owner = http
@@ -242,10 +239,18 @@ mod tests {
 
     #[test]
     fn fresh_row_ids_have_prefix_and_length() {
-        let id = fresh_row_id("pr", "rp-octo-hello|refs/heads/a|refs/heads/b", 1_700_000_000);
+        let id = fresh_row_id(
+            "pr",
+            "rp-octo-hello|refs/heads/a|refs/heads/b",
+            1_700_000_000,
+        );
         assert!(id.starts_with("pr-"));
         assert_eq!(id.len(), 3 + 24);
-        let other = fresh_row_id("pr", "rp-octo-hello|refs/heads/a|refs/heads/b", 1_700_000_001);
+        let other = fresh_row_id(
+            "pr",
+            "rp-octo-hello|refs/heads/a|refs/heads/b",
+            1_700_000_001,
+        );
         assert_ne!(id, other, "clock advance must change the row id");
     }
 }

@@ -263,7 +263,10 @@ impl MergeWalk<'_> {
         let sha = sha1_hex_of(&canonical);
         debug_assert_eq!(sha.len(), 40, "tree sha must be 40 hex chars");
         if !self.new_trees.iter().any(|t| t.sha == sha) {
-            self.new_trees.push(NewTree { sha: sha.clone(), canonical });
+            self.new_trees.push(NewTree {
+                sha: sha.clone(),
+                canonical,
+            });
         }
         Ok(Some(sha))
     }

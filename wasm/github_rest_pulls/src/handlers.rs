@@ -39,8 +39,13 @@ pub(crate) fn open_repo_access(
     } else {
         resolved.outbound_headers()
     };
-    let Some(row) =
-        odata::get_entity(ctx, &headers, api_base, "Repositories", &route.repository_id())?
+    let Some(row) = odata::get_entity(
+        ctx,
+        &headers,
+        api_base,
+        "Repositories",
+        &route.repository_id(),
+    )?
     else {
         return Ok(Err(http::respond_error(http, 404, "Not Found")?));
     };
@@ -119,8 +124,14 @@ pub(crate) fn pull_shas(
         .get("BaseCommitSha")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let source = pr_fields.get("SourceRef").and_then(Value::as_str).unwrap_or("");
-    let target = pr_fields.get("TargetRef").and_then(Value::as_str).unwrap_or("");
+    let source = pr_fields
+        .get("SourceRef")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let target = pr_fields
+        .get("TargetRef")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let head = if stored_head.is_empty() {
         ref_tip(ctx, headers, api_base, repository_id, source)?.unwrap_or_default()
     } else {
@@ -208,9 +219,9 @@ pub(crate) fn find_pull_by_number(
     number: i64,
 ) -> Result<Option<odata::EntityRow>, String> {
     let rows = repo_pulls(ctx, headers, api_base, repository_id)?;
-    Ok(rows.into_iter().find(|row| {
-        row.fields.get("Number").and_then(Value::as_i64) == Some(number)
-    }))
+    Ok(rows
+        .into_iter()
+        .find(|row| row.fields.get("Number").and_then(Value::as_i64) == Some(number)))
 }
 
 pub(crate) fn list_pulls(
@@ -232,7 +243,12 @@ pub(crate) fn list_pulls(
     });
     // GitHub default sort is newest first; Number is our creation order.
     rows.sort_by_key(|row| {
-        core::cmp::Reverse(row.fields.get("Number").and_then(Value::as_i64).unwrap_or(0))
+        core::cmp::Reverse(
+            row.fields
+                .get("Number")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+        )
     });
     let mut items = Vec::with_capacity(rows.len());
     for row in &rows {
@@ -252,8 +268,13 @@ pub(crate) fn get_pull(
         Ok(a) => a,
         Err(resp) => return Ok(resp),
     };
-    let row =
-        find_pull_by_number(ctx, &access.headers, &api_base, &route.repository_id(), number)?;
+    let row = find_pull_by_number(
+        ctx,
+        &access.headers,
+        &api_base,
+        &route.repository_id(),
+        number,
+    )?;
     let Some(row) = row else {
         return http::respond_error(http, 404, "Not Found");
     };

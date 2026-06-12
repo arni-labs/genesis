@@ -94,9 +94,7 @@ pub fn find_merge_base(
 mod tests {
     use super::*;
 
-    fn graph(
-        edges: &[(&str, &[&str])],
-    ) -> impl FnMut(&str) -> Result<Vec<String>, String> + use<> {
+    fn graph(edges: &[(&str, &[&str])]) -> impl FnMut(&str) -> Result<Vec<String>, String> + use<> {
         let map: BTreeMap<String, Vec<String>> = edges
             .iter()
             .map(|(sha, parents)| {

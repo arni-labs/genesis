@@ -110,12 +110,20 @@ struct CreateRequest {
 }
 
 fn parse_create_request(body: &Value) -> Result<CreateRequest, &'static str> {
-    let Some(name) = body.get("name").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+    let Some(name) = body
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    else {
         return Err("Repository creation failed: name is required");
     };
     let visibility = match body.get("visibility").and_then(Value::as_str) {
         Some(v) if !v.is_empty() => v.to_string(),
-        _ if body.get("private").and_then(Value::as_bool).unwrap_or(false) => {
+        _ if body
+            .get("private")
+            .and_then(Value::as_bool)
+            .unwrap_or(false) =>
+        {
             "private".to_string()
         }
         _ => "public".to_string(),
@@ -157,8 +165,14 @@ fn create_repository(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     // GitHub answers 422 when the name is taken on the account; check
     // before dispatching so a duplicate doesn't surface as a confusing
     // state-machine error.
-    if odata::get_entity(ctx, &system_headers(&api_base), &api_base, "Repositories", &repository_id)?
-        .is_some()
+    if odata::get_entity(
+        ctx,
+        &system_headers(&api_base),
+        &api_base,
+        "Repositories",
+        &repository_id,
+    )?
+    .is_some()
     {
         return http::respond_error(http, 422, "name already exists on this account");
     }
@@ -169,8 +183,13 @@ fn create_repository(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
         return Ok(error_response);
     }
 
-    let Some(row) =
-        odata::get_entity(ctx, &system_headers(&api_base), &api_base, "Repositories", &repository_id)?
+    let Some(row) = odata::get_entity(
+        ctx,
+        &system_headers(&api_base),
+        &api_base,
+        "Repositories",
+        &repository_id,
+    )?
     else {
         return http::respond_error(http, 500, "Repository row vanished after creation");
     };
@@ -208,7 +227,11 @@ fn dispatch_create_and_provision(
         false,
     )?;
     if create.status == 403 {
-        return Ok(Some(http::respond_error(http, 403, &create.error_message())?));
+        return Ok(Some(http::respond_error(
+            http,
+            403,
+            &create.error_message(),
+        )?));
     }
     if !create.ok() {
         return Ok(Some(http::respond_error(
@@ -232,7 +255,10 @@ fn dispatch_create_and_provision(
         return Ok(Some(http::respond_error(
             http,
             500,
-            &format!("Repository provisioning failed: {}", provision.error_message()),
+            &format!(
+                "Repository provisioning failed: {}",
+                provision.error_message()
+            ),
         )?));
     }
     Ok(None)
@@ -258,8 +284,13 @@ fn get_repository(
 
     let repository_id = format!("rp-{owner}-{repo}");
     let api_base = http::api_base_from_headers(&http.headers);
-    let row = match odata::get_entity(ctx, &read_headers, &api_base, "Repositories", &repository_id)
-    {
+    let row = match odata::get_entity(
+        ctx,
+        &read_headers,
+        &api_base,
+        "Repositories",
+        &repository_id,
+    ) {
         Ok(Some(row)) => row,
         // GitHub hides private repos and denials behind 404, never 403.
         Ok(None) => return http::respond_error(http, 404, "Not Found"),
