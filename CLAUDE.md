@@ -27,7 +27,7 @@ discipline section. Then the RFCs.
 
 - The primary checkout lives at `~/Development/temper-git` and is for
   reading, pulling, and branching only. Work in a **worktree branched
-  from up-to-date `main`** (`codex/<short-task-name>`), state which
+  from up-to-date `main`** (`<agent>/<short-task-name>` — prefix with the agent's short name, e.g. `claude`/`codex`, not a hardcoded `codex`), state which
   repo/worktree/branch you're on before mutating anything, open a
   **draft PR as soon as changes begin**, one PR per repo per effort.
 - **DO NOT PUNT.** No phase-0 that defers the hard part, no band-aid
