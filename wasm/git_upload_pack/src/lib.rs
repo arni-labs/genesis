@@ -627,7 +627,7 @@ fn prefetch_repository_object_bodies(
         (ObjectKind::Blob, "Blobs"),
         (ObjectKind::Tag, "Tags"),
     ] {
-        let filter = format!("RepositoryId eq '{}'", repo_id.replace('\'', "''"));
+        let filter = format!("RepositoryId eq {}", odata_string_literal(repo_id));
         let mut skip = 0usize;
         loop {
             let url = format!(
@@ -659,15 +659,12 @@ fn prefetch_repository_object_bodies(
                 else {
                     continue;
                 };
-                let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
-                let canonical = B64
-                    .decode(&canonical_b64)
-                    .map_err(|e| format!("prefetch {set}({sha}) base64 decode: {e}"))?;
-                let nul = canonical
-                    .iter()
-                    .position(|&b| b == 0)
-                    .ok_or_else(|| format!("prefetch {set}({sha}): no NUL in canonical"))?;
-                bodies.insert(kind, sha, canonical[nul + 1..].to_vec());
+                let body =
+                    canonical_body_from_field_value(set, &sha, canonical_value, |blob_key| {
+                        get_overflow_blob(api_base, principal, blob_key)
+                    })
+                    .map_err(|e| format!("prefetch {set}({sha}): {e}"))?;
+                bodies.insert(kind, sha, body);
             }
             if row_count < PREFETCH_PAGE_SIZE {
                 break;
@@ -702,22 +699,15 @@ fn fetch_object_body(
         ObjectKind::Blob => "Blobs",
         ObjectKind::Tag => "Tags",
     };
-    // Stored entity ids are repository-scoped so shared Git objects can appear
-    // in multiple repos. The Git SHA stays in the Id field.
-    let filter = format!(
-        "Id eq '{}' and RepositoryId eq '{}'",
-        sha.replace('\'', "''"),
-        repo_id.replace('\'', "''")
-    );
-    let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
-    let response = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("fetch {set}({sha}): {e}"))?;
-    if !(200..400).contains(&response.status) {
-        return Err(format!("{set}({sha}) status {}", response.status));
+    let url = existing_object_lookup_url(api_base, set, repo_id, sha);
+    let outbound_headers = principal.outbound_headers();
+    let header_refs = header_refs(&outbound_headers);
+    let (status, body) = streaming_get(&url, &header_refs, &format!("fetch {set}({sha})"))?;
+    if !(200..300).contains(&status) {
+        return Err(format!("{set}({sha}) status {status}"));
     }
     let parsed: serde_json::Value =
-        serde_json::from_str(&response.body).map_err(|e| format!("object json: {e}"))?;
+        serde_json::from_slice(&body).map_err(|e| format!("object json: {e}"))?;
     let items = parsed
         .get("value")
         .and_then(|v| v.as_array())
@@ -727,22 +717,14 @@ fn fetch_object_body(
         .into_iter()
         .next()
         .ok_or_else(|| format!("{set}({sha}): no row matched"))?;
-    let fields = row
-        .get("fields")
-        .ok_or_else(|| format!("{set}({sha}): row has no fields"))?;
+    let fields = row.get("fields").unwrap_or(&row);
     let canonical_value = fields
         .get("CanonicalBytes")
         .or_else(|| fields.get("canonical_bytes"))
         .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
-    let canonical_b64 = resolve_field_value(ctx, principal, api_base, canonical_value)?;
-    let canonical = B64
-        .decode(&canonical_b64)
-        .map_err(|e| format!("base64 decode: {e}"))?;
-    let nul = canonical
-        .iter()
-        .position(|&b| b == 0)
-        .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
-    let body = canonical[nul + 1..].to_vec();
+    let body = canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
+        get_overflow_blob(api_base, principal, blob_key)
+    })?;
     if let Err(error) = store_cached_object_body(ctx, blob_endpoint, repo_id, sha, &body) {
         let _ = ctx.log_structured(
             "warn",
@@ -755,6 +737,68 @@ fn fetch_object_body(
         );
     }
     Ok(body)
+}
+
+fn existing_object_lookup_url(api_base: &str, set: &str, repo_id: &str, sha: &str) -> String {
+    let filter = format!(
+        "Id eq {} and RepositoryId eq {}",
+        odata_string_literal(sha),
+        odata_string_literal(repo_id)
+    );
+    format!(
+        "{}/tdata/{set}?$filter={}&$select=CanonicalBytes&$top=1",
+        api_base.trim_end_matches('/'),
+        urlencode(&filter)
+    )
+}
+
+fn canonical_body_from_field_value<F>(
+    set: &str,
+    sha: &str,
+    value: &serde_json::Value,
+    mut resolve_blob: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut(&str) -> Result<String, String>,
+{
+    let canonical_b64 = string_from_field_value(set, sha, "CanonicalBytes", value, |blob_key| {
+        resolve_blob(blob_key)
+    })?;
+    let canonical = B64
+        .decode(canonical_b64)
+        .map_err(|e| format!("base64 decode: {e}"))?;
+    let nul = canonical
+        .iter()
+        .position(|&b| b == 0)
+        .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
+    Ok(canonical[nul + 1..].to_vec())
+}
+
+fn string_from_field_value<F>(
+    set: &str,
+    sha: &str,
+    field: &str,
+    value: &serde_json::Value,
+    mut resolve_blob: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str) -> Result<String, String>,
+{
+    if let Some(text) = value.as_str() {
+        return Ok(text.to_string());
+    }
+    if let Some(blob_key) = field_overflow_blob_key(value)? {
+        let serialized = resolve_blob(&blob_key)?;
+        let resolved: serde_json::Value = serde_json::from_str(&serialized)
+            .map_err(|e| format!("{set}({sha}) {field} blob-ref JSON parse: {e}"))?;
+        return resolved
+            .as_str()
+            .map(ToString::to_string)
+            .ok_or_else(|| format!("{set}({sha}) {field} blob-ref did not contain a string"));
+    }
+    Err(format!(
+        "{set}({sha}) {field} must be a string or field-overflow ref"
+    ))
 }
 
 fn fetch_cached_object_body(
@@ -816,28 +860,17 @@ fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
         .unwrap_or_else(|| format!("{api_base}/_internal/blobs"))
 }
 
-fn resolve_field_value(
-    _ctx: &Context,
-    principal: &Principal,
+fn get_overflow_blob(
     api_base: &str,
-    value: &serde_json::Value,
+    principal: &Principal,
+    blob_key: &str,
 ) -> Result<String, String> {
-    if let Some(value) = value.as_str() {
-        return Ok(value.to_string());
-    }
-
-    let Some(blob_key) = field_overflow_blob_key(value)? else {
-        return Err("field value is neither string nor supported blob ref".to_string());
-    };
     let url = format!(
         "{}/_internal/blobs/{blob_key}",
         api_base.trim_end_matches('/')
     );
     let outbound_headers = principal.outbound_headers();
-    let header_refs: Vec<(&str, &str)> = outbound_headers
-        .iter()
-        .map(|(key, value)| (key.as_str(), value.as_str()))
-        .collect();
+    let header_refs = header_refs(&outbound_headers);
     let (status, body) = streaming_get(
         &url,
         &header_refs,
@@ -851,6 +884,13 @@ fn resolve_field_value(
     let body =
         String::from_utf8(body).map_err(|e| format!("field-overflow GET {blob_key} utf8: {e}"))?;
     serde_json::from_str(&body).map_err(|e| format!("field-overflow {blob_key} json: {e}"))
+}
+
+fn header_refs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
+    headers
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect()
 }
 
 fn streaming_get(
@@ -916,6 +956,10 @@ fn urlencode(s: &str) -> String {
     out
 }
 
+fn odata_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 fn string_field(fields: &serde_json::Value, name: &str) -> Option<String> {
     fields.get(name).and_then(|value| match value {
         serde_json::Value::String(value) => Some(value.clone()),
@@ -951,5 +995,33 @@ mod tests {
 
         let err = field_overflow_blob_key(&value).unwrap_err();
         assert!(err.contains("not supported"));
+    }
+
+    #[test]
+    fn existing_object_lookup_selects_only_canonical_bytes() {
+        let url =
+            existing_object_lookup_url("https://temper.example/", "Blobs", "repo ' one", "abc123");
+
+        assert_eq!(
+            url,
+            "https://temper.example/tdata/Blobs?$filter=Id%20eq%20%27abc123%27%20and%20RepositoryId%20eq%20%27repo%20%27%27%20one%27&$select=CanonicalBytes&$top=1"
+        );
+    }
+
+    #[test]
+    fn canonical_body_resolves_field_overflow_ref() {
+        let canonical_b64 = B64.encode(b"blob 5\0hello");
+        let value = json!({
+            FIELD_OVERFLOW_REF_KEY: "field-overflow/sha256/canonical.json",
+            FIELD_OVERFLOW_ENCODING_KEY: "json",
+        });
+
+        let body = canonical_body_from_field_value("Blobs", "abc123", &value, |blob_key| {
+            assert_eq!(blob_key, "field-overflow/sha256/canonical.json");
+            Ok(serde_json::to_string(&canonical_b64).unwrap())
+        })
+        .unwrap();
+
+        assert_eq!(body, b"hello");
     }
 }
