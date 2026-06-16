@@ -136,40 +136,9 @@ fn fetch_refs_for_repo(
         .unwrap_or_default();
     let mut rows = Vec::with_capacity(items.len());
     for row in items {
-        let fields = row
-            .get("fields")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let repo = fields
-            .get("RepositoryId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if repo != repository_id {
-            continue;
+        if let Some(row) = ref_row_from_odata_item(&row, repository_id) {
+            rows.push(row);
         }
-        let name = fields
-            .get("Name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let target_sha = fields
-            .get("TargetCommitSha")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let status = fields
-            .get("Status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        if name.is_empty() || target_sha.is_empty() {
-            continue;
-        }
-        rows.push(RefRow {
-            name,
-            target_sha,
-            status,
-        });
     }
     rows.sort_by(|a, b| {
         let a_is_head = a.name == "HEAD";
@@ -181,6 +150,35 @@ fn fetch_refs_for_repo(
         }
     });
     Ok(rows)
+}
+
+fn ref_row_from_odata_item(row: &serde_json::Value, repository_id: &str) -> Option<RefRow> {
+    let repo = odata_string_field(row, "RepositoryId")?;
+    if repo != repository_id {
+        return None;
+    }
+    let name = odata_string_field(row, "Name")?.to_string();
+    let target_sha = odata_string_field(row, "TargetCommitSha")?.to_string();
+    if name.is_empty() || target_sha.is_empty() {
+        return None;
+    }
+    let status = odata_string_field(row, "Status")
+        .or_else(|| row.get("status").and_then(|v| v.as_str()))
+        .unwrap_or("")
+        .to_string();
+    Some(RefRow {
+        name,
+        target_sha,
+        status,
+    })
+}
+
+fn odata_string_field<'a>(row: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    row.get(key).and_then(|v| v.as_str()).or_else(|| {
+        row.get("fields")
+            .and_then(|fields| fields.get(key))
+            .and_then(|v| v.as_str())
+    })
 }
 
 fn fetch_repository_default_branch(
@@ -324,5 +322,41 @@ mod tests {
             repo_parts_from_http(&http),
             ("octo".to_string(), "hello".to_string())
         );
+    }
+
+    #[test]
+    fn ref_row_from_odata_item_reads_flat_collection_fields() {
+        let item = serde_json::json!({
+            "Id": "rf-rp-temperpaw-paw-agent-refs-heads-main",
+            "RepositoryId": "rp-temperpaw-paw-agent",
+            "Name": "refs/heads/main",
+            "TargetCommitSha": "242923a6d01af3b24f3ec0b52352e0cddb60d709",
+            "Status": "Active"
+        });
+
+        let row = ref_row_from_odata_item(&item, "rp-temperpaw-paw-agent")
+            .expect("flat OData collection row should parse");
+
+        assert_eq!(row.name, "refs/heads/main");
+        assert_eq!(row.target_sha, "242923a6d01af3b24f3ec0b52352e0cddb60d709");
+        assert_eq!(row.status, "Active");
+    }
+
+    #[test]
+    fn ref_row_from_odata_item_keeps_nested_field_support() {
+        let item = serde_json::json!({
+            "fields": {
+                "RepositoryId": "rp-temperpaw-paw-agent",
+                "Name": "refs/heads/main",
+                "TargetCommitSha": "242923a6d01af3b24f3ec0b52352e0cddb60d709",
+                "Status": "Active"
+            }
+        });
+
+        let row = ref_row_from_odata_item(&item, "rp-temperpaw-paw-agent")
+            .expect("nested OData entity row should parse");
+
+        assert_eq!(row.name, "refs/heads/main");
+        assert_eq!(row.status, "Active");
     }
 }
