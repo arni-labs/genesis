@@ -120,7 +120,7 @@ fn fetch_refs_for_repo(
     repository_id: &str,
     api_base: &str,
 ) -> Result<Vec<RefRow>, String> {
-    let url = format!("{api_base}/tdata/Refs");
+    let url = refs_url_for_repo(api_base, repository_id);
     let resp = ctx
         .http_call("GET", &url, &principal.outbound_headers(), "")
         .map_err(|e| format!("fetch refs: {e}"))?;
@@ -152,6 +152,18 @@ fn fetch_refs_for_repo(
     Ok(rows)
 }
 
+fn refs_url_for_repo(api_base: &str, repository_id: &str) -> String {
+    let filter = format!("RepositoryId eq {}", odata_string_literal(repository_id));
+    format!(
+        "{api_base}/tdata/Refs?$filter={}&$select=RepositoryId,Name,TargetCommitSha,Status",
+        urlencode(&filter)
+    )
+}
+
+fn odata_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 fn ref_row_from_odata_item(row: &serde_json::Value, repository_id: &str) -> Option<RefRow> {
     let repo = odata_string_field(row, "RepositoryId")?;
     if repo != repository_id {
@@ -179,6 +191,19 @@ fn odata_string_field<'a>(row: &'a serde_json::Value, key: &str) -> Option<&'a s
             .and_then(|fields| fields.get(key))
             .and_then(|v| v.as_str())
     })
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 fn fetch_repository_default_branch(
@@ -358,5 +383,13 @@ mod tests {
 
         assert_eq!(row.name, "refs/heads/main");
         assert_eq!(row.status, "Active");
+    }
+
+    #[test]
+    fn refs_url_for_repo_filters_by_repository_id() {
+        assert_eq!(
+            refs_url_for_repo("https://example.test", "rp-temperpaw-paw-agent"),
+            "https://example.test/tdata/Refs?$filter=RepositoryId%20eq%20%27rp-temperpaw-paw-agent%27&$select=RepositoryId,Name,TargetCommitSha,Status"
+        );
     }
 }
