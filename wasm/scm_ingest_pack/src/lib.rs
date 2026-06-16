@@ -39,7 +39,9 @@ temper_module! {
         let pack_bytes = decode_pack_bytes(&blob_endpoint, &ctx.trigger_params)?;
         let pack_byte_count = pack_bytes.as_ref().map(Vec::len).unwrap_or_default();
         let objects = match pack_bytes {
-            Some(pack_bytes) => parse_pack_objects(&ctx, &api_base, &repository_id, &pack_bytes)?,
+            Some(pack_bytes) => {
+                parse_pack_objects(&api_base, &blob_endpoint, &repository_id, &pack_bytes)?
+            }
             None => Vec::new(),
         };
 
@@ -131,8 +133,8 @@ fn decode_pack_bytes_value(raw: &Value) -> Result<Option<Vec<u8>>, String> {
 }
 
 fn parse_pack_objects(
-    ctx: &Context,
     api_base: &str,
+    blob_endpoint: &str,
     repository_id: &str,
     pack_bytes: &[u8],
 ) -> Result<Vec<pack::PackObject>, String> {
@@ -142,7 +144,7 @@ fn parse_pack_objects(
     let mut objects = Vec::with_capacity(parser.object_count() as usize);
     while let Some(obj) = parser
         .next_object_with_ref_delta_base(|sha| {
-            fetch_existing_delta_base(ctx, api_base, repository_id, sha)
+            fetch_existing_delta_base(api_base, blob_endpoint, repository_id, sha)
                 .map_err(|e| pack::PackError::DeltaBaseMissing(format!("{sha}: {e}")))
         })
         .map_err(|e| format!("pack next: {e}"))?
@@ -395,8 +397,8 @@ fn is_open_pull_request_status(status: &str) -> bool {
 }
 
 fn fetch_existing_delta_base(
-    ctx: &Context,
     api_base: &str,
+    blob_endpoint: &str,
     repository_id: &str,
     sha: &str,
 ) -> Result<Option<pack::PackObject>, String> {
@@ -406,7 +408,9 @@ fn fetch_existing_delta_base(
         (pack::ObjectKind::Blob, "Blobs"),
         (pack::ObjectKind::Tag, "Tags"),
     ] {
-        if let Some(data) = fetch_existing_object_body(ctx, api_base, repository_id, set, sha)? {
+        if let Some(data) =
+            fetch_existing_object_body(api_base, blob_endpoint, repository_id, set, sha)?
+        {
             return Ok(Some(pack::PackObject { kind, data }));
         }
     }
@@ -414,26 +418,15 @@ fn fetch_existing_delta_base(
 }
 
 fn fetch_existing_object_body(
-    ctx: &Context,
     api_base: &str,
+    blob_endpoint: &str,
     repository_id: &str,
     set: &str,
     sha: &str,
 ) -> Result<Option<Vec<u8>>, String> {
-    let filter = format!(
-        "Id eq {} and RepositoryId eq {}",
-        odata_string_literal(sha),
-        odata_string_literal(repository_id)
-    );
-    let url = format!("{api_base}/tdata/{set}?$filter={}", urlencode(&filter));
-    let resp = ctx
-        .http_call("GET", &url, &[], "")
-        .map_err(|e| format!("fetch {set}({sha}): {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("{set}({sha}) status {}", resp.status));
-    }
-    let parsed: Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("object json: {e}"))?;
+    let url = existing_object_lookup_url(api_base, set, repository_id, sha);
+    let body = get_streamed_text(&url, &format!("fetch {set}({sha})"))?;
+    let parsed: Value = serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
     let row = parsed
         .get("value")
         .and_then(|v| v.as_array())
@@ -442,13 +435,42 @@ fn fetch_existing_object_body(
     let Some(row) = row else {
         return Ok(None);
     };
-    let fields = row
-        .get("fields")
-        .ok_or_else(|| format!("{set}({sha}): row has no fields"))?;
-    let canonical_b64 = fields
+    let fields = row.get("fields").unwrap_or(&row);
+    let canonical_value = fields
         .get("CanonicalBytes")
-        .and_then(|v| v.as_str())
+        .or_else(|| fields.get("canonical_bytes"))
         .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
+    canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
+        get_overflow_blob(blob_endpoint, blob_key)
+    })
+    .map(Some)
+}
+
+fn existing_object_lookup_url(api_base: &str, set: &str, repository_id: &str, sha: &str) -> String {
+    let filter = format!(
+        "Id eq {} and RepositoryId eq {}",
+        odata_string_literal(sha),
+        odata_string_literal(repository_id)
+    );
+    format!(
+        "{}/tdata/{set}?$filter={}&$select=CanonicalBytes&$top=1",
+        api_base.trim_end_matches('/'),
+        urlencode(&filter)
+    )
+}
+
+fn canonical_body_from_field_value<F>(
+    set: &str,
+    sha: &str,
+    value: &Value,
+    mut resolve_blob: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut(&str) -> Result<String, String>,
+{
+    let canonical_b64 = string_from_field_value(set, sha, "CanonicalBytes", value, |blob_key| {
+        resolve_blob(blob_key)
+    })?;
     let canonical = B64
         .decode(canonical_b64)
         .map_err(|e| format!("base64 decode: {e}"))?;
@@ -456,7 +478,34 @@ fn fetch_existing_object_body(
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
-    Ok(Some(canonical[nul + 1..].to_vec()))
+    Ok(canonical[nul + 1..].to_vec())
+}
+
+fn string_from_field_value<F>(
+    set: &str,
+    sha: &str,
+    field: &str,
+    value: &Value,
+    mut resolve_blob: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str) -> Result<String, String>,
+{
+    if let Some(text) = value.as_str() {
+        return Ok(text.to_string());
+    }
+    if let Some(blob_key) = field_overflow_blob_key(value)? {
+        let serialized = resolve_blob(&blob_key)?;
+        let resolved: Value = serde_json::from_str(&serialized)
+            .map_err(|e| format!("{set}({sha}) {field} blob-ref JSON parse: {e}"))?;
+        return resolved
+            .as_str()
+            .map(ToString::to_string)
+            .ok_or_else(|| format!("{set}({sha}) {field} blob-ref did not contain a string"));
+    }
+    Err(format!(
+        "{set}({sha}) {field} must be a string or field-overflow ref"
+    ))
 }
 
 fn temper_api_base(ctx: &Context) -> String {
@@ -647,7 +696,7 @@ fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
         .unwrap_or("json");
     if encoding != "json" {
         return Err(format!(
-            "PackBytes blob-ref encoding {encoding:?} is not supported"
+            "field-overflow blob-ref encoding {encoding:?} is not supported"
         ));
     }
     Ok(Some(blob_key.to_string()))
@@ -668,19 +717,19 @@ fn overflow_blob_ref_for_serialized(serialized: &[u8]) -> (String, Value) {
 
 fn get_overflow_blob(blob_endpoint: &str, blob_key: &str) -> Result<String, String> {
     let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
-    let (request_body, mut response_body, response_head) = streaming_call("GET", &url, &[])
-        .map_err(|e| format!("field-overflow GET {blob_key} stream begin: {e}"))?;
+    get_streamed_text(&url, &format!("field-overflow GET {blob_key}"))
+}
+
+fn get_streamed_text(url: &str, label: &str) -> Result<String, String> {
+    let (request_body, mut response_body, response_head) =
+        streaming_call("GET", &url, &[]).map_err(|e| format!("{label} stream begin: {e}"))?;
     request_body
         .finish()
-        .map_err(|e| format!("field-overflow GET {blob_key} request close: {e}"))?;
-    let head =
-        response_head().map_err(|e| format!("field-overflow GET {blob_key} response head: {e}"))?;
+        .map_err(|e| format!("{label} request close: {e}"))?;
+    let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
     if !(200..300).contains(&head.status) {
         let _ = response_body.close();
-        return Err(format!(
-            "field-overflow GET {blob_key} returned HTTP {}",
-            head.status
-        ));
+        return Err(format!("{label} returned HTTP {}", head.status));
     }
 
     let mut out = Vec::new();
@@ -688,14 +737,14 @@ fn get_overflow_blob(blob_endpoint: &str, blob_key: &str) -> Result<String, Stri
     loop {
         let Some(n) = response_body
             .read_next_chunk(&mut buf)
-            .map_err(|e| format!("field-overflow GET {blob_key} response body: {e}"))?
+            .map_err(|e| format!("{label} response body: {e}"))?
         else {
             break;
         };
         out.extend_from_slice(&buf[..n]);
     }
     let _ = response_body.close();
-    String::from_utf8(out).map_err(|e| format!("field-overflow GET {blob_key} utf8: {e}"))
+    String::from_utf8(out).map_err(|e| format!("{label} utf8: {e}"))
 }
 
 fn put_overflow_blob(
@@ -847,5 +896,41 @@ mod tests {
             Some(serialized.len() as u64)
         );
         assert_eq!(value[FIELD_OVERFLOW_ENCODING_KEY].as_str(), Some("json"));
+    }
+
+    #[test]
+    fn existing_object_lookup_selects_only_canonical_bytes() {
+        let url = existing_object_lookup_url(
+            "http://temper.local",
+            "Blobs",
+            "rp-acme-demo",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+
+        assert!(url.contains("/tdata/Blobs?"));
+        assert!(url.contains("$select=CanonicalBytes"));
+        assert!(url.contains("$top=1"));
+        assert!(!url.contains("Content"));
+    }
+
+    #[test]
+    fn canonical_body_resolves_field_overflow_ref() {
+        let canonical = B64.encode(b"blob 5\0hello");
+        let serialized = serde_json::to_string(&Value::String(canonical)).expect("serialize");
+        let blob_ref = json!({
+            FIELD_OVERFLOW_REF_KEY: "field-overflow/sha256/base.json",
+            FIELD_OVERFLOW_SIZE_KEY: serialized.len(),
+            FIELD_OVERFLOW_ENCODING_KEY: "json",
+        });
+
+        let body = canonical_body_from_field_value(
+            "Blobs",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            &blob_ref,
+            |_| Ok(serialized.clone()),
+        )
+        .expect("body");
+
+        assert_eq!(body, b"hello");
     }
 }
