@@ -23,6 +23,12 @@ temper-git uses MADR (Markdown Architectural Decision Records).
 - [0010-agent-app-repair-and-version-evolution.md](0010-agent-app-repair-and-version-evolution.md)
   — agents repair apps by publishing Genesis versions; lineage remains for
   forks/imports.
+- [0028-upload-pack-fuel-budget-for-agent-apps.md](0028-upload-pack-fuel-budget-for-agent-apps.md)
+  — large agent app clones need a higher upload-pack WASM fuel budget while
+  keeping receive-pack at the existing budget.
+- [0029-receive-pack-legacy-delta-base-cache.md](0029-receive-pack-legacy-delta-base-cache.md)
+  — receive-pack resolves thin-pack delta bases from the raw object cache when
+  legacy rows lack `CanonicalBytes`.
 
 ## Proposed
 

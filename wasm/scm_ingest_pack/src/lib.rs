@@ -568,15 +568,7 @@ fn fetch_existing_object_body(
     let Some(row) = row else {
         return Ok(None);
     };
-    let fields = row.get("fields").unwrap_or(&row);
-    let canonical_value = fields
-        .get("CanonicalBytes")
-        .or_else(|| fields.get("canonical_bytes"))
-        .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
-    canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
-        get_overflow_blob(blob_endpoint, blob_key)
-    })
-    .map(Some)
+    existing_object_body_from_row(set, sha, repository_id, blob_endpoint, &row).map(Some)
 }
 
 fn existing_object_lookup_url(api_base: &str, set: &str, repository_id: &str, sha: &str) -> String {
@@ -612,6 +604,71 @@ where
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
     Ok(canonical[nul + 1..].to_vec())
+}
+
+fn existing_object_body_from_row(
+    set: &str,
+    sha: &str,
+    repository_id: &str,
+    blob_endpoint: &str,
+    row: &Value,
+) -> Result<Vec<u8>, String> {
+    existing_object_body_from_row_with_resolvers(
+        set,
+        sha,
+        row,
+        |blob_key| get_overflow_blob(blob_endpoint, blob_key),
+        || fetch_raw_object_cache_body(blob_endpoint, repository_id, sha),
+    )
+}
+
+fn existing_object_body_from_row_with_resolvers<F, G>(
+    set: &str,
+    sha: &str,
+    row: &Value,
+    mut resolve_canonical_blob: F,
+    mut resolve_raw_cache: G,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut(&str) -> Result<String, String>,
+    G: FnMut() -> Result<Vec<u8>, String>,
+{
+    let fields = row.get("fields").unwrap_or(row);
+    if let Some(canonical_value) = fields
+        .get("CanonicalBytes")
+        .or_else(|| fields.get("canonical_bytes"))
+    {
+        return canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
+            resolve_canonical_blob(blob_key)
+        });
+    }
+
+    resolve_raw_cache().map_err(|e| {
+        format!("{set}({sha}): no CanonicalBytes and raw object cache unavailable: {e}")
+    })
+}
+
+fn fetch_raw_object_cache_body(
+    blob_endpoint: &str,
+    repository_id: &str,
+    sha: &str,
+) -> Result<Vec<u8>, String> {
+    let blob_key = raw_object_cache_key(repository_id, sha);
+    let encoded = get_overflow_blob(blob_endpoint, &blob_key)?;
+    decode_raw_object_cache_body(repository_id, sha, &encoded)
+}
+
+fn raw_object_cache_key(repository_id: &str, sha: &str) -> String {
+    format!("git-objects/{repository_id}/{sha}.b64")
+}
+
+fn decode_raw_object_cache_body(
+    repository_id: &str,
+    sha: &str,
+    encoded: &str,
+) -> Result<Vec<u8>, String> {
+    B64.decode(encoded.trim())
+        .map_err(|e| format!("git object cache {repository_id}/{sha} base64 decode failed: {e}"))
 }
 
 fn string_from_field_value<F>(
@@ -1146,6 +1203,85 @@ mod tests {
         .unwrap();
 
         assert_eq!(body, b"hello");
+    }
+
+    #[test]
+    fn raw_object_cache_key_matches_receive_pack_writer() {
+        assert_eq!(
+            raw_object_cache_key("rp-acme-demo", "abc123"),
+            "git-objects/rp-acme-demo/abc123.b64"
+        );
+    }
+
+    #[test]
+    fn raw_object_cache_body_decodes_base64_payload() {
+        let encoded = B64.encode(b"legacy delta base bytes");
+        let body = decode_raw_object_cache_body("rp-acme-demo", "abc123", &encoded).unwrap();
+
+        assert_eq!(body, b"legacy delta base bytes");
+    }
+
+    #[test]
+    fn object_body_prefers_canonical_bytes_when_present() {
+        let canonical_b64 = B64.encode(b"blob 5\0hello");
+        let row = json!({
+            "fields": {
+                "CanonicalBytes": canonical_b64,
+            }
+        });
+
+        let body = existing_object_body_from_row(
+            "Blobs",
+            "abc123",
+            "rp-acme-demo",
+            "https://temper.example/_internal/blobs",
+            &row,
+        )
+        .unwrap();
+
+        assert_eq!(body, b"hello");
+    }
+
+    #[test]
+    fn missing_canonical_bytes_reports_raw_cache_fallback() {
+        let row = json!({
+            "Id": "abc123",
+            "RepositoryId": "rp-acme-demo",
+            "Status": "Durable",
+        });
+
+        let err = existing_object_body_from_row_with_resolvers(
+            "Blobs",
+            "abc123",
+            &row,
+            |_| Err("canonical resolver should not run".to_string()),
+            || Err("GET git-objects/rp-acme-demo/abc123.b64 returned HTTP 404".to_string()),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("no CanonicalBytes"), "{err}");
+        assert!(err.contains("raw object cache"), "{err}");
+        assert!(err.contains("git-objects/rp-acme-demo/abc123.b64"), "{err}");
+    }
+
+    #[test]
+    fn object_body_uses_raw_cache_when_canonical_bytes_are_absent() {
+        let row = json!({
+            "Id": "abc123",
+            "RepositoryId": "rp-acme-demo",
+            "Status": "Durable",
+        });
+
+        let body = existing_object_body_from_row_with_resolvers(
+            "Blobs",
+            "abc123",
+            &row,
+            |_| Err("canonical resolver should not run".to_string()),
+            || Ok(b"legacy delta base bytes".to_vec()),
+        )
+        .unwrap();
+
+        assert_eq!(body, b"legacy delta base bytes");
     }
 
     fn chain_parents(chain: &[(&str, &[&str])]) -> std::collections::BTreeMap<String, Vec<String>> {
