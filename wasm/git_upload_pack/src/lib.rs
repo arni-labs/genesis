@@ -197,6 +197,11 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     let owner = http.params.get("owner").cloned().unwrap_or_default();
     let repo = http.params.get("repo").cloned().unwrap_or_default();
     let repository_id = format!("rp-{owner}-{repo}");
+
+    if upload_request_needs_more_haves(&parsed) {
+        return respond_upload_pack_nak_only(http, parsed.haves.len());
+    }
+
     let prefetch_started = Instant::now();
     let prefetched_objects =
         match prefetch_repository_object_bodies(ctx, &principal, &api_base, &repository_id) {
@@ -390,6 +395,39 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     }))
 }
 
+fn respond_upload_pack_nak_only(http: &InboundHttp, haves: usize) -> Result<Value, String> {
+    http.submit_response_head(
+        200,
+        &[
+            ("content-type", "application/x-git-upload-pack-result"),
+            ("cache-control", "no-cache"),
+        ],
+    )
+    .map_err(|e| format!("nak-only head: {e}"))?;
+
+    let mut nak = Vec::new();
+    encode_into(&mut nak, b"NAK\n").map_err(|e| format!("nak-only pkt-line: {e}"))?;
+    let mut writer = http.response_body();
+    writer
+        .write_all_chunk(&nak)
+        .map_err(|e| format!("nak-only body: {e}"))?;
+    writer
+        .finish()
+        .map_err(|e| format!("nak-only close: {e}"))?;
+
+    Ok(json!({
+        "wants": 0,
+        "haves": haves,
+        "objects": 0,
+        "pack_bytes": 0,
+        "negotiation": "continue",
+    }))
+}
+
+fn upload_request_needs_more_haves(parsed: &UploadRequest) -> bool {
+    !parsed.done && !parsed.haves.is_empty()
+}
+
 fn log_upload_pack_phase(
     ctx: &Context,
     phase: &str,
@@ -526,12 +564,14 @@ struct UploadRequest {
     wants: Vec<String>,
     haves: Vec<String>,
     capabilities: Vec<String>,
+    done: bool,
 }
 
 fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
     let mut wants = Vec::new();
     let mut haves = Vec::new();
     let mut capabilities: Vec<String> = Vec::new();
+    let mut done = false;
     let mut i = 0usize;
     while i + 4 <= buf.len() {
         let len_str = core::str::from_utf8(&buf[i..i + 4]).map_err(|_| "pkt-line len non-utf8")?;
@@ -562,16 +602,18 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
         } else if let Some(sha) = line.strip_prefix("have ") {
             haves.push(sha.to_string());
         } else if line == "done" {
+            done = true;
             break;
         }
     }
-    if wants.is_empty() {
+    if wants.is_empty() && (done || haves.is_empty()) {
         return Err("no wants in upload-pack request".into());
     }
     Ok(UploadRequest {
         wants,
         haves,
         capabilities,
+        done,
     })
 }
 
@@ -972,6 +1014,66 @@ fn string_field(fields: &serde_json::Value, name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pkt(buf: &mut Vec<u8>, payload: &[u8]) {
+        encode_into(buf, payload).unwrap();
+    }
+
+    fn oid(ch: char) -> String {
+        ch.to_string().repeat(40)
+    }
+
+    #[test]
+    fn parse_upload_request_marks_done_as_final() {
+        let mut body = Vec::new();
+        pkt(
+            &mut body,
+            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
+        );
+        flush(&mut body);
+        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
+        pkt(&mut body, b"done\n");
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert_eq!(parsed.wants, vec![oid('1')]);
+        assert_eq!(parsed.haves, vec![oid('2')]);
+        assert!(parsed.done);
+        assert!(!upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn parse_upload_request_defers_intermediate_have_round() {
+        let mut body = Vec::new();
+        pkt(
+            &mut body,
+            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
+        );
+        flush(&mut body);
+        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
+        flush(&mut body);
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert_eq!(parsed.wants, vec![oid('1')]);
+        assert_eq!(parsed.haves, vec![oid('2')]);
+        assert!(!parsed.done);
+        assert!(upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn parse_upload_request_accepts_haves_only_continuation() {
+        let mut body = Vec::new();
+        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
+        flush(&mut body);
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert!(parsed.wants.is_empty());
+        assert_eq!(parsed.haves, vec![oid('2')]);
+        assert!(!parsed.done);
+        assert!(upload_request_needs_more_haves(&parsed));
+    }
 
     #[test]
     fn field_overflow_blob_key_accepts_json_refs() {
