@@ -634,6 +634,9 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
             break;
         }
     }
+    if !done && upload_request_body_contains_done(buf) {
+        done = true;
+    }
     if wants.is_empty() && (done || haves.is_empty()) {
         return Err("no wants in upload-pack request".into());
     }
@@ -647,6 +650,14 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
 
 fn has_parsed_upload_negotiation(wants: &[String], haves: &[String], done: bool) -> bool {
     !wants.is_empty() || !haves.is_empty() || done
+}
+
+fn upload_request_body_contains_done(buf: &[u8]) -> bool {
+    buf.windows(b"0009done\n".len())
+        .any(|window| window == b"0009done\n")
+        || buf
+            .windows(b"0008done".len())
+            .any(|window| window == b"0008done")
 }
 
 #[derive(Default)]
@@ -1125,6 +1136,35 @@ mod tests {
         assert_eq!(parsed.haves, vec![oid('2')]);
         assert!(!parsed.done);
         assert!(upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn parse_upload_request_recovers_done_after_trailing_non_pkt_bytes() {
+        let mut body = Vec::new();
+        pkt(
+            &mut body,
+            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
+        );
+        flush(&mut body);
+        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
+        body.extend_from_slice(&[0xff, b'x', b'x', b'x']);
+        pkt(&mut body, b"done\n");
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert_eq!(parsed.wants, vec![oid('1')]);
+        assert_eq!(parsed.haves, vec![oid('2')]);
+        assert!(parsed.done);
+        assert!(!upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn upload_request_body_contains_done_detects_pkt_done() {
+        let mut body = Vec::new();
+        pkt(&mut body, b"done\n");
+
+        assert!(upload_request_body_contains_done(&body));
+        assert!(!upload_request_body_contains_done(b"feature=done"));
     }
 
     #[test]
