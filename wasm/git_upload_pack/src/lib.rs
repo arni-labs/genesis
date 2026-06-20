@@ -233,7 +233,8 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     //    here; they're streamed in pass 2 and dropped between
     //    objects, so peak memory stays at O(largest blob).
     let have_set: BTreeSet<String> = parsed.haves.iter().cloned().collect();
-    let mut visited: BTreeSet<String> = have_set.clone();
+    let mut common_haves: BTreeSet<String> = BTreeSet::new();
+    let mut visited: BTreeSet<String> = BTreeSet::new();
     let mut queue: VecDeque<(String, ObjectKind)> = VecDeque::new();
     for want in &parsed.wants {
         queue.push_back((want.clone(), ObjectKind::Commit));
@@ -243,6 +244,10 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     let mut graph_cache: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let walk_started = Instant::now();
     while let Some((sha, kind)) = queue.pop_front() {
+        if have_set.contains(&sha) {
+            common_haves.insert(sha);
+            continue;
+        }
         if !visited.insert(sha.clone()) {
             continue;
         }
@@ -294,9 +299,18 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
         graph_cache.values().map(|bytes| bytes.len()).sum(),
         &http.params,
     );
+    let common_have = parsed
+        .haves
+        .iter()
+        .find(|sha| common_haves.contains(*sha))
+        .map(String::as_str);
+
+    if !parsed.done {
+        return respond_upload_pack_negotiation(&http, common_have);
+    }
 
     // 4. Pass 2 — stream the response. Order:
-    //      pkt-line "NAK\n"   (no negotiation in v0)
+    //      pkt-line "ACK <sha>\n" or "NAK\n" to close negotiation
     //      pack header + objects + SHA-1 trailer (sidebanded if
     //      negotiated)
     //      pkt-line flush
@@ -315,13 +329,13 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
 
     let mut writer = WasmBodyWriter::new(http.response_body());
 
-    // NAK pkt-line. Tiny — no need to stream.
-    let mut nak = Vec::new();
-    encode_into(&mut nak, b"NAK\n").map_err(|e| format!("nak: {e}"))?;
     use std::io::Write;
+    let status = upload_pack_status_payload(common_have, true);
+    let mut status_pkt = Vec::new();
+    encode_into(&mut status_pkt, status.as_bytes()).map_err(|e| format!("status: {e}"))?;
     writer
-        .write_all(&nak)
-        .map_err(|e| format!("nak write: {e}"))?;
+        .write_all(&status_pkt)
+        .map_err(|e| format!("status write: {e}"))?;
 
     let sideband = parsed.capabilities.iter().any(|c| c == "side-band-64k");
     let object_count = walk_order.len() as u32;
@@ -526,12 +540,14 @@ struct UploadRequest {
     wants: Vec<String>,
     haves: Vec<String>,
     capabilities: Vec<String>,
+    done: bool,
 }
 
 fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
     let mut wants = Vec::new();
     let mut haves = Vec::new();
     let mut capabilities: Vec<String> = Vec::new();
+    let mut done = false;
     let mut i = 0usize;
     while i + 4 <= buf.len() {
         let len_str = core::str::from_utf8(&buf[i..i + 4]).map_err(|_| "pkt-line len non-utf8")?;
@@ -562,6 +578,7 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
         } else if let Some(sha) = line.strip_prefix("have ") {
             haves.push(sha.to_string());
         } else if line == "done" {
+            done = true;
             break;
         }
     }
@@ -572,7 +589,46 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
         wants,
         haves,
         capabilities,
+        done,
     })
+}
+
+fn respond_upload_pack_negotiation(
+    http: &InboundHttp,
+    common_have: Option<&str>,
+) -> Result<Value, String> {
+    http.submit_response_head(
+        200,
+        &[
+            ("content-type", "application/x-git-upload-pack-result"),
+            ("cache-control", "no-cache"),
+        ],
+    )
+    .map_err(|e| format!("negotiation head: {e}"))?;
+
+    let status = upload_pack_status_payload(common_have, false);
+    let mut payload = Vec::new();
+    encode_into(&mut payload, status.as_bytes()).map_err(|e| format!("negotiation status: {e}"))?;
+    let mut writer = http.response_body();
+    writer
+        .write_all_chunk(&payload)
+        .map_err(|e| format!("negotiation status write: {e}"))?;
+    writer
+        .finish()
+        .map_err(|e| format!("negotiation close: {e}"))?;
+
+    Ok(json!({
+        "status": "negotiating",
+        "common": common_have,
+    }))
+}
+
+fn upload_pack_status_payload(common_have: Option<&str>, done: bool) -> String {
+    match (common_have, done) {
+        (Some(sha), true) => format!("ACK {sha}\n"),
+        (Some(sha), false) => format!("ACK {sha} common\n"),
+        (None, _) => "NAK\n".to_string(),
+    }
 }
 
 #[derive(Default)]
@@ -973,6 +1029,12 @@ fn string_field(fields: &serde_json::Value, name: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn pkt(payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        encode_into(&mut out, payload).unwrap();
+        out
+    }
+
     #[test]
     fn field_overflow_blob_key_accepts_json_refs() {
         let value = json!({
@@ -1023,5 +1085,61 @@ mod tests {
         .unwrap();
 
         assert_eq!(body, b"hello");
+    }
+
+    #[test]
+    fn parse_upload_request_tracks_done() {
+        let mut body = pkt(
+            b"want 210d1e7b2e29f9535d21d91db7257a9eaa5ee431 multi_ack_detailed side-band-64k\n",
+        );
+        body.extend_from_slice(b"0000");
+        body.extend_from_slice(&pkt(b"have 9aff46d1b4a48bd36d5adb5bf1c05315c5ff286d\n"));
+        body.extend_from_slice(&pkt(b"done\n"));
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert_eq!(
+            parsed.wants,
+            vec!["210d1e7b2e29f9535d21d91db7257a9eaa5ee431"]
+        );
+        assert_eq!(
+            parsed.haves,
+            vec!["9aff46d1b4a48bd36d5adb5bf1c05315c5ff286d"]
+        );
+        assert!(parsed.done);
+        assert!(parsed.capabilities.contains(&"side-band-64k".to_string()));
+    }
+
+    #[test]
+    fn parse_upload_request_keeps_negotiation_open_without_done() {
+        let mut body = pkt(
+            b"want 210d1e7b2e29f9535d21d91db7257a9eaa5ee431 multi_ack_detailed side-band-64k\n",
+        );
+        body.extend_from_slice(b"0000");
+        body.extend_from_slice(&pkt(b"have 9aff46d1b4a48bd36d5adb5bf1c05315c5ff286d\n"));
+        body.extend_from_slice(b"0000");
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert!(!parsed.done);
+        assert_eq!(
+            parsed.haves,
+            vec!["9aff46d1b4a48bd36d5adb5bf1c05315c5ff286d"]
+        );
+    }
+
+    #[test]
+    fn upload_pack_status_payload_matches_negotiation_phase() {
+        let sha = "9aff46d1b4a48bd36d5adb5bf1c05315c5ff286d";
+
+        assert_eq!(upload_pack_status_payload(None, false), "NAK\n");
+        assert_eq!(
+            upload_pack_status_payload(Some(sha), false),
+            format!("ACK {sha} common\n")
+        );
+        assert_eq!(
+            upload_pack_status_payload(Some(sha), true),
+            format!("ACK {sha}\n")
+        );
     }
 }
