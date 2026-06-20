@@ -185,7 +185,23 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
 
     // 2. Parse want/have/done.
     let parse_started = Instant::now();
-    let parsed = parse_upload_request(&body)?;
+    let parsed = match parse_upload_request(&body) {
+        Ok(parsed) => parsed,
+        Err(error) if upload_request_parse_error_is_negotiable(&error) => {
+            let _ = ctx.log_structured(
+                "warn",
+                "Genesis git upload-pack negotiation parse deferred",
+                &json!({
+                    "error": error,
+                    "body_bytes": body.len(),
+                    "owner": http.params.get("owner").cloned().unwrap_or_default(),
+                    "repo": http.params.get("repo").cloned().unwrap_or_default(),
+                }),
+            );
+            return respond_upload_pack_nak_only(http, 0);
+        }
+        Err(error) => return Err(error),
+    };
     log_upload_pack_phase(
         ctx,
         "parse_request",
@@ -426,6 +442,10 @@ fn respond_upload_pack_nak_only(http: &InboundHttp, haves: usize) -> Result<Valu
 
 fn upload_request_needs_more_haves(parsed: &UploadRequest) -> bool {
     !parsed.done && !parsed.haves.is_empty()
+}
+
+fn upload_request_parse_error_is_negotiable(error: &str) -> bool {
+    matches!(error, "pkt-line len non-utf8" | "pkt-line len non-hex")
 }
 
 fn log_upload_pack_phase(
@@ -1115,6 +1135,19 @@ mod tests {
         };
 
         assert_eq!(err, "pkt-line len non-utf8");
+    }
+
+    #[test]
+    fn upload_request_parse_error_len_failures_are_negotiable() {
+        assert!(upload_request_parse_error_is_negotiable(
+            "pkt-line len non-utf8"
+        ));
+        assert!(upload_request_parse_error_is_negotiable(
+            "pkt-line len non-hex"
+        ));
+        assert!(!upload_request_parse_error_is_negotiable(
+            "no wants in upload-pack request"
+        ));
     }
 
     #[test]
