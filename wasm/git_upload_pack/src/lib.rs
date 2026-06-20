@@ -574,8 +574,16 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
     let mut done = false;
     let mut i = 0usize;
     while i + 4 <= buf.len() {
-        let len_str = core::str::from_utf8(&buf[i..i + 4]).map_err(|_| "pkt-line len non-utf8")?;
-        let declared = usize::from_str_radix(len_str, 16).map_err(|_| "pkt-line len non-hex")?;
+        let len_str = match core::str::from_utf8(&buf[i..i + 4]) {
+            Ok(value) => value,
+            Err(_) if has_parsed_upload_negotiation(&wants, &haves, done) => break,
+            Err(_) => return Err("pkt-line len non-utf8".into()),
+        };
+        let declared = match usize::from_str_radix(len_str, 16) {
+            Ok(value) => value,
+            Err(_) if has_parsed_upload_negotiation(&wants, &haves, done) => break,
+            Err(_) => return Err("pkt-line len non-hex".into()),
+        };
         if declared == 0 {
             i += 4;
             continue; // flush between wants and haves/done
@@ -615,6 +623,10 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
         capabilities,
         done,
     })
+}
+
+fn has_parsed_upload_negotiation(wants: &[String], haves: &[String], done: bool) -> bool {
+    !wants.is_empty() || !haves.is_empty() || done
 }
 
 #[derive(Default)]
@@ -1073,6 +1085,36 @@ mod tests {
         assert_eq!(parsed.haves, vec![oid('2')]);
         assert!(!parsed.done);
         assert!(upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn parse_upload_request_ignores_trailing_non_pkt_bytes_after_negotiation() {
+        let mut body = Vec::new();
+        pkt(
+            &mut body,
+            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
+        );
+        flush(&mut body);
+        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
+        flush(&mut body);
+        body.extend_from_slice(&[0xff, b'P', b'A', b'C', b'K']);
+
+        let parsed = parse_upload_request(&body).unwrap();
+
+        assert_eq!(parsed.wants, vec![oid('1')]);
+        assert_eq!(parsed.haves, vec![oid('2')]);
+        assert!(!parsed.done);
+        assert!(upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn parse_upload_request_rejects_leading_non_pkt_bytes() {
+        let err = match parse_upload_request(&[0xff, b'P', b'A', b'C', b'K']) {
+            Ok(_) => panic!("leading non-pkt bytes should be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(err, "pkt-line len non-utf8");
     }
 
     #[test]
