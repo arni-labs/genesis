@@ -188,17 +188,33 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     let parsed = match parse_upload_request(&body) {
         Ok(parsed) => parsed,
         Err(error) if upload_request_parse_error_is_negotiable(&error) => {
-            let _ = ctx.log_structured(
-                "warn",
-                "Genesis git upload-pack negotiation parse deferred",
-                &json!({
-                    "error": error,
-                    "body_bytes": body.len(),
-                    "owner": http.params.get("owner").cloned().unwrap_or_default(),
-                    "repo": http.params.get("repo").cloned().unwrap_or_default(),
-                }),
-            );
-            return respond_upload_pack_nak_only(http, 0);
+            if let Some(parsed) = recover_final_upload_request_from_body(&body) {
+                let _ = ctx.log_structured(
+                    "warn",
+                    "Genesis git upload-pack negotiation parse recovered",
+                    &json!({
+                        "error": error,
+                        "body_bytes": body.len(),
+                        "wants": parsed.wants.len(),
+                        "haves": parsed.haves.len(),
+                        "owner": http.params.get("owner").cloned().unwrap_or_default(),
+                        "repo": http.params.get("repo").cloned().unwrap_or_default(),
+                    }),
+                );
+                parsed
+            } else {
+                let _ = ctx.log_structured(
+                    "warn",
+                    "Genesis git upload-pack negotiation parse deferred",
+                    &json!({
+                        "error": error,
+                        "body_bytes": body.len(),
+                        "owner": http.params.get("owner").cloned().unwrap_or_default(),
+                        "repo": http.params.get("repo").cloned().unwrap_or_default(),
+                    }),
+                );
+                return respond_upload_pack_nak_only(http, 0);
+            }
         }
         Err(error) => return Err(error),
     };
@@ -653,11 +669,48 @@ fn has_parsed_upload_negotiation(wants: &[String], haves: &[String], done: bool)
 }
 
 fn upload_request_body_contains_done(buf: &[u8]) -> bool {
-    buf.windows(b"0009done\n".len())
-        .any(|window| window == b"0009done\n")
+    buf.windows(b"0009done".len())
+        .any(|window| window == b"0009done")
         || buf
             .windows(b"0008done".len())
             .any(|window| window == b"0008done")
+}
+
+fn recover_final_upload_request_from_body(buf: &[u8]) -> Option<UploadRequest> {
+    if !upload_request_body_contains_done(buf) {
+        return None;
+    }
+    let wants = upload_request_body_oids_after_marker(buf, b"want ");
+    if wants.is_empty() {
+        return None;
+    }
+    Some(UploadRequest {
+        wants,
+        haves: upload_request_body_oids_after_marker(buf, b"have "),
+        capabilities: Vec::new(),
+        done: true,
+    })
+}
+
+fn upload_request_body_oids_after_marker(buf: &[u8], marker: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i + marker.len() + 40 <= buf.len() {
+        if &buf[i..i + marker.len()] == marker {
+            let start = i + marker.len();
+            let oid = &buf[start..start + 40];
+            if oid.iter().all(u8::is_ascii_hexdigit) {
+                let value = core::str::from_utf8(oid).unwrap_or_default().to_string();
+                if !out.contains(&value) {
+                    out.push(value);
+                }
+                i = start + 40;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
 }
 
 #[derive(Default)]
@@ -1165,6 +1218,40 @@ mod tests {
 
         assert!(upload_request_body_contains_done(&body));
         assert!(!upload_request_body_contains_done(b"feature=done"));
+    }
+
+    #[test]
+    fn recover_final_upload_request_from_body_scans_embedded_pkt_lines() {
+        let mut body = vec![0xff, b'P', b'A', b'C', b'K'];
+        pkt(
+            &mut body,
+            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
+        );
+        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
+        body.extend_from_slice(b"0009done");
+
+        let parsed = recover_final_upload_request_from_body(&body).unwrap();
+
+        assert_eq!(parsed.wants, vec![oid('1')]);
+        assert_eq!(parsed.haves, vec![oid('2')]);
+        assert!(parsed.done);
+        assert!(!upload_request_needs_more_haves(&parsed));
+    }
+
+    #[test]
+    fn recover_final_upload_request_from_body_requires_want_and_done() {
+        let mut have_only = Vec::new();
+        pkt(&mut have_only, format!("have {}\n", oid('2')).as_bytes());
+        pkt(&mut have_only, b"done\n");
+
+        let mut want_without_done = Vec::new();
+        pkt(
+            &mut want_without_done,
+            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
+        );
+
+        assert!(recover_final_upload_request_from_body(&have_only).is_none());
+        assert!(recover_final_upload_request_from_body(&want_without_done).is_none());
     }
 
     #[test]
