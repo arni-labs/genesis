@@ -16,15 +16,11 @@ pub const AGENT: &str = "agent=temper-git/0.1.0";
 
 /// Capabilities we advertise on git-upload-pack (fetch/clone side).
 ///
-/// * `multi_ack_detailed` — negotiate shared history with detailed ACKs.
-/// * `no-done` — client can omit the final `done` when server has
-///   definitively sent back everything it's going to.
 /// * `side-band-64k` — multiplex progress / pack bytes on one socket.
-/// * `thin-pack` — client can send deltas against objects we already have.
-/// * `ofs-delta` — we emit OFS_DELTA pack entries (smaller than
-///   REF_DELTA for objects in the same pack).
+/// * `thin-pack` / `ofs-delta` — clients understand those pack forms.
+///   The v0 emitter may still send a conservative non-delta pack.
 pub fn upload_pack_capabilities() -> String {
-    format!("multi_ack_detailed no-done side-band-64k thin-pack ofs-delta {AGENT}")
+    format!("side-band-64k thin-pack ofs-delta {AGENT}")
 }
 
 /// Capabilities we advertise on git-receive-pack (push side).
@@ -49,15 +45,11 @@ mod tests {
     #[test]
     fn upload_pack_caps_contain_required() {
         let caps = upload_pack_capabilities();
-        for required in [
-            "multi_ack_detailed",
-            "side-band-64k",
-            "thin-pack",
-            "ofs-delta",
-            AGENT,
-        ] {
+        for required in ["side-band-64k", "thin-pack", "ofs-delta", AGENT] {
             assert!(caps.contains(required), "missing {required} in {caps}");
         }
+        assert!(!caps.contains("multi_ack"), "multi_ack is not built");
+        assert!(!caps.contains("no-done"), "done is required in v0");
     }
 
     #[test]
