@@ -457,7 +457,7 @@ fn respond_upload_pack_nak_only(http: &InboundHttp, haves: usize) -> Result<Valu
 }
 
 fn upload_request_needs_more_haves(parsed: &UploadRequest) -> bool {
-    !parsed.done && !parsed.haves.is_empty()
+    parsed.wants.is_empty() && !parsed.done && !parsed.haves.is_empty()
 }
 
 fn upload_request_parse_error_is_negotiable(error: &str) -> bool {
@@ -1139,7 +1139,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_upload_request_defers_intermediate_have_round() {
+    fn parse_upload_request_with_wants_and_haves_can_emit_pack() {
         let mut body = Vec::new();
         pkt(
             &mut body,
@@ -1154,7 +1154,7 @@ mod tests {
         assert_eq!(parsed.wants, vec![oid('1')]);
         assert_eq!(parsed.haves, vec![oid('2')]);
         assert!(!parsed.done);
-        assert!(upload_request_needs_more_haves(&parsed));
+        assert!(!upload_request_needs_more_haves(&parsed));
     }
 
     #[test]
@@ -1188,7 +1188,7 @@ mod tests {
         assert_eq!(parsed.wants, vec![oid('1')]);
         assert_eq!(parsed.haves, vec![oid('2')]);
         assert!(!parsed.done);
-        assert!(upload_request_needs_more_haves(&parsed));
+        assert!(!upload_request_needs_more_haves(&parsed));
     }
 
     #[test]
