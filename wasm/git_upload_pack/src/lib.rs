@@ -236,7 +236,7 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
 
     let prefetch_started = Instant::now();
     let prefetched_objects =
-        match prefetch_repository_object_bodies(ctx, &principal, &api_base, &repository_id) {
+        match prefetch_repository_object_bodies(&principal, &api_base, &repository_id) {
             Ok(objects) => {
                 let count = objects.len();
                 let bytes = objects.bytes();
@@ -753,33 +753,28 @@ impl RepositoryObjectBodies {
 }
 
 fn prefetch_repository_object_bodies(
-    ctx: &Context,
     principal: &Principal,
     api_base: &str,
     repo_id: &str,
 ) -> Result<RepositoryObjectBodies, String> {
     let mut bodies = RepositoryObjectBodies::default();
+    let outbound_headers = principal.outbound_headers();
+    let header_refs = header_refs(&outbound_headers);
     for (kind, set) in [
         (ObjectKind::Commit, "Commits"),
         (ObjectKind::Tree, "Trees"),
         (ObjectKind::Blob, "Blobs"),
         (ObjectKind::Tag, "Tags"),
     ] {
-        let filter = format!("RepositoryId eq {}", odata_string_literal(repo_id));
         let mut skip = 0usize;
         loop {
-            let url = format!(
-                "{api_base}/tdata/{set}?$filter={}&$select=Id,RepositoryId,CanonicalBytes&$top={PREFETCH_PAGE_SIZE}&$skip={skip}",
-                urlencode(&filter)
-            );
-            let response = ctx
-                .http_call("GET", &url, &principal.outbound_headers(), "")
-                .map_err(|e| format!("prefetch {set}: {e}"))?;
-            if !(200..400).contains(&response.status) {
-                return Err(format!("prefetch {set} status {}", response.status));
+            let url = prefetch_object_page_url(api_base, set, repo_id, skip);
+            let (status, body) = streaming_get(&url, &header_refs, &format!("prefetch {set}"))?;
+            if !(200..300).contains(&status) {
+                return Err(format!("prefetch {set} status {status}"));
             }
-            let parsed: serde_json::Value = serde_json::from_str(&response.body)
-                .map_err(|e| format!("prefetch {set} json: {e}"))?;
+            let parsed: serde_json::Value =
+                serde_json::from_slice(&body).map_err(|e| format!("prefetch {set} json: {e}"))?;
             let rows = parsed
                 .get("value")
                 .and_then(|value| value.as_array())
@@ -811,6 +806,15 @@ fn prefetch_repository_object_bodies(
         }
     }
     Ok(bodies)
+}
+
+fn prefetch_object_page_url(api_base: &str, set: &str, repo_id: &str, skip: usize) -> String {
+    let filter = format!("RepositoryId eq {}", odata_string_literal(repo_id));
+    format!(
+        "{}/tdata/{set}?$filter={}&$select=Id,RepositoryId,CanonicalBytes&$top={PREFETCH_PAGE_SIZE}&$skip={skip}",
+        api_base.trim_end_matches('/'),
+        urlencode(&filter)
+    )
 }
 
 fn fetch_object_body(
@@ -1310,6 +1314,17 @@ mod tests {
             url,
             "https://temper.example/tdata/Blobs?$filter=Id%20eq%20%27abc123%27%20and%20RepositoryId%20eq%20%27repo%20%27%27%20one%27&$select=CanonicalBytes&$top=1"
         );
+    }
+
+    #[test]
+    fn prefetch_object_page_url_selects_only_canonical_bytes() {
+        let url = prefetch_object_page_url("https://temper.example/", "Blobs", "repo ' one", 40);
+
+        assert_eq!(
+            url,
+            "https://temper.example/tdata/Blobs?$filter=RepositoryId%20eq%20%27repo%20%27%27%20one%27&$select=Id,RepositoryId,CanonicalBytes&$top=20&$skip=40"
+        );
+        assert!(!url.contains("Content"));
     }
 
     #[test]
