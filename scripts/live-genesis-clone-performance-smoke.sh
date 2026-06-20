@@ -65,6 +65,18 @@ assert_under() {
   fi
 }
 
+seed_local_history() {
+  local repo_dir="$1"
+  git -C "$repo_dir" init --quiet
+  git -C "$repo_dir" config user.email "genesis-smoke@example.invalid"
+  git -C "$repo_dir" config user.name "Genesis Smoke"
+  for i in $(seq 1 40); do
+    printf 'local history %s\n' "$i" > "$repo_dir/local.txt"
+    git -C "$repo_dir" add local.txt
+    git -C "$repo_dir" commit --quiet -m "local history ${i}"
+  done
+}
+
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/genesis-clone-smoke.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -105,5 +117,14 @@ measure "clone_large_warm" \
     clone --quiet "$BASE_URL/$OWNER/$REPO.git" "$tmp/large"
 assert_under "large warm clone" "$MEASURED_MS" "$LARGE_WARM_LIMIT_SECS"
 
+mkdir -p "$tmp/fetch-client"
+seed_local_history "$tmp/fetch-client"
+git -C "$tmp/fetch-client" remote add genesis "$BASE_URL/$OWNER/$REPO.git"
+measure "fetch_large_with_haves" \
+  with_timeout "$CLONE_MAX_SECS" git -C "$tmp/fetch-client" \
+    -c http.extraHeader="X-Tenant-Id: $TENANT" \
+    fetch --no-tags genesis refs/heads/main:refs/remotes/genesis/main
+
 git -C "$tmp/large" fsck --no-progress >/dev/null
+git -C "$tmp/fetch-client" fsck --no-progress >/dev/null
 printf 'PASS Genesis clone performance smoke\n'
