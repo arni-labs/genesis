@@ -188,33 +188,17 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
     let parsed = match parse_upload_request(&body) {
         Ok(parsed) => parsed,
         Err(error) if upload_request_parse_error_is_negotiable(&error) => {
-            if let Some(parsed) = recover_final_upload_request_from_body(&body) {
-                let _ = ctx.log_structured(
-                    "warn",
-                    "Genesis git upload-pack negotiation parse recovered",
-                    &json!({
-                        "error": error,
-                        "body_bytes": body.len(),
-                        "wants": parsed.wants.len(),
-                        "haves": parsed.haves.len(),
-                        "owner": http.params.get("owner").cloned().unwrap_or_default(),
-                        "repo": http.params.get("repo").cloned().unwrap_or_default(),
-                    }),
-                );
-                parsed
-            } else {
-                let _ = ctx.log_structured(
-                    "warn",
-                    "Genesis git upload-pack negotiation parse deferred",
-                    &json!({
-                        "error": error,
-                        "body_bytes": body.len(),
-                        "owner": http.params.get("owner").cloned().unwrap_or_default(),
-                        "repo": http.params.get("repo").cloned().unwrap_or_default(),
-                    }),
-                );
-                return respond_upload_pack_nak_only(http, 0);
-            }
+            let _ = ctx.log_structured(
+                "warn",
+                "Genesis git upload-pack negotiation parse deferred",
+                &json!({
+                    "error": error,
+                    "body_bytes": body.len(),
+                    "owner": http.params.get("owner").cloned().unwrap_or_default(),
+                    "repo": http.params.get("repo").cloned().unwrap_or_default(),
+                }),
+            );
+            return respond_upload_pack_nak_only(http, 0);
         }
         Err(error) => return Err(error),
     };
@@ -461,7 +445,13 @@ fn upload_request_needs_more_haves(parsed: &UploadRequest) -> bool {
 }
 
 fn upload_request_parse_error_is_negotiable(error: &str) -> bool {
-    matches!(error, "pkt-line len non-utf8" | "pkt-line len non-hex")
+    matches!(
+        error,
+        "pkt-line len non-utf8"
+            | "pkt-line len non-hex"
+            | "pkt-line truncated len"
+            | "pkt-line truncated payload"
+    )
 }
 
 fn log_upload_pack_phase(
@@ -609,23 +599,28 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
     let mut capabilities: Vec<String> = Vec::new();
     let mut done = false;
     let mut i = 0usize;
-    while i + 4 <= buf.len() {
+    while i < buf.len() {
+        if i + 4 > buf.len() {
+            return Err("pkt-line truncated len".into());
+        }
         let len_str = match core::str::from_utf8(&buf[i..i + 4]) {
             Ok(value) => value,
-            Err(_) if has_parsed_upload_negotiation(&wants, &haves, done) => break,
             Err(_) => return Err("pkt-line len non-utf8".into()),
         };
         let declared = match usize::from_str_radix(len_str, 16) {
             Ok(value) => value,
-            Err(_) if has_parsed_upload_negotiation(&wants, &haves, done) => break,
             Err(_) => return Err("pkt-line len non-hex".into()),
         };
         if declared == 0 {
             i += 4;
             continue; // flush between wants and haves/done
         }
+        if declared == 1 || declared == 2 {
+            i += 4;
+            continue; // delim / response-end packets; harmless for v0 request parsing
+        }
         if declared < 4 || i + declared > buf.len() {
-            break;
+            return Err("pkt-line truncated payload".into());
         }
         let payload = &buf[i + 4..i + declared];
         i += declared;
@@ -650,9 +645,6 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
             break;
         }
     }
-    if !done && upload_request_body_contains_done(buf) {
-        done = true;
-    }
     if wants.is_empty() && (done || haves.is_empty()) {
         return Err("no wants in upload-pack request".into());
     }
@@ -662,55 +654,6 @@ fn parse_upload_request(buf: &[u8]) -> Result<UploadRequest, String> {
         capabilities,
         done,
     })
-}
-
-fn has_parsed_upload_negotiation(wants: &[String], haves: &[String], done: bool) -> bool {
-    !wants.is_empty() || !haves.is_empty() || done
-}
-
-fn upload_request_body_contains_done(buf: &[u8]) -> bool {
-    buf.windows(b"0009done".len())
-        .any(|window| window == b"0009done")
-        || buf
-            .windows(b"0008done".len())
-            .any(|window| window == b"0008done")
-}
-
-fn recover_final_upload_request_from_body(buf: &[u8]) -> Option<UploadRequest> {
-    if !upload_request_body_contains_done(buf) {
-        return None;
-    }
-    let wants = upload_request_body_oids_after_marker(buf, b"want ");
-    if wants.is_empty() {
-        return None;
-    }
-    Some(UploadRequest {
-        wants,
-        haves: upload_request_body_oids_after_marker(buf, b"have "),
-        capabilities: Vec::new(),
-        done: true,
-    })
-}
-
-fn upload_request_body_oids_after_marker(buf: &[u8], marker: &[u8]) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut i = 0usize;
-    while i + marker.len() + 40 <= buf.len() {
-        if &buf[i..i + marker.len()] == marker {
-            let start = i + marker.len();
-            let oid = &buf[start..start + 40];
-            if oid.iter().all(u8::is_ascii_hexdigit) {
-                let value = core::str::from_utf8(oid).unwrap_or_default().to_string();
-                if !out.contains(&value) {
-                    out.push(value);
-                }
-                i = start + 40;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    out
 }
 
 #[derive(Default)]
@@ -1176,7 +1119,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_upload_request_ignores_trailing_non_pkt_bytes_after_negotiation() {
+    fn parse_upload_request_rejects_trailing_non_pkt_bytes_after_negotiation() {
         let mut body = Vec::new();
         pkt(
             &mut body,
@@ -1187,75 +1130,47 @@ mod tests {
         flush(&mut body);
         body.extend_from_slice(&[0xff, b'P', b'A', b'C', b'K']);
 
-        let parsed = parse_upload_request(&body).unwrap();
+        let err = match parse_upload_request(&body) {
+            Ok(_) => panic!("trailing non-pkt bytes should be rejected"),
+            Err(error) => error,
+        };
 
-        assert_eq!(parsed.wants, vec![oid('1')]);
-        assert_eq!(parsed.haves, vec![oid('2')]);
-        assert!(!parsed.done);
-        assert!(upload_request_needs_more_haves(&parsed));
+        assert_eq!(err, "pkt-line len non-utf8");
     }
 
     #[test]
-    fn parse_upload_request_recovers_done_after_trailing_non_pkt_bytes() {
+    fn parse_upload_request_rejects_truncated_pkt_payload() {
         let mut body = Vec::new();
         pkt(
             &mut body,
             format!("want {} side-band-64k\n", oid('1')).as_bytes(),
         );
         flush(&mut body);
-        pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
-        body.extend_from_slice(&[0xff, b'x', b'x', b'x']);
-        pkt(&mut body, b"done\n");
+        body.extend_from_slice(b"0009don");
 
-        let parsed = parse_upload_request(&body).unwrap();
+        let err = match parse_upload_request(&body) {
+            Ok(_) => panic!("truncated pkt-line payload should be rejected"),
+            Err(error) => error,
+        };
 
-        assert_eq!(parsed.wants, vec![oid('1')]);
-        assert_eq!(parsed.haves, vec![oid('2')]);
-        assert!(parsed.done);
-        assert!(!upload_request_needs_more_haves(&parsed));
+        assert_eq!(err, "pkt-line truncated payload");
     }
 
     #[test]
-    fn upload_request_body_contains_done_detects_pkt_done() {
+    fn parse_upload_request_ignores_done_substring_outside_pkt_line() {
         let mut body = Vec::new();
-        pkt(&mut body, b"done\n");
-
-        assert!(upload_request_body_contains_done(&body));
-        assert!(!upload_request_body_contains_done(b"feature=done"));
-    }
-
-    #[test]
-    fn recover_final_upload_request_from_body_scans_embedded_pkt_lines() {
-        let mut body = vec![0xff, b'P', b'A', b'C', b'K'];
         pkt(
             &mut body,
             format!("want {} side-band-64k\n", oid('1')).as_bytes(),
         );
         pkt(&mut body, format!("have {}\n", oid('2')).as_bytes());
-        body.extend_from_slice(b"0009done");
+        pkt(&mut body, b"feature=done\n");
+        flush(&mut body);
 
-        let parsed = recover_final_upload_request_from_body(&body).unwrap();
+        let parsed = parse_upload_request(&body).unwrap();
 
-        assert_eq!(parsed.wants, vec![oid('1')]);
-        assert_eq!(parsed.haves, vec![oid('2')]);
-        assert!(parsed.done);
-        assert!(!upload_request_needs_more_haves(&parsed));
-    }
-
-    #[test]
-    fn recover_final_upload_request_from_body_requires_want_and_done() {
-        let mut have_only = Vec::new();
-        pkt(&mut have_only, format!("have {}\n", oid('2')).as_bytes());
-        pkt(&mut have_only, b"done\n");
-
-        let mut want_without_done = Vec::new();
-        pkt(
-            &mut want_without_done,
-            format!("want {} side-band-64k\n", oid('1')).as_bytes(),
-        );
-
-        assert!(recover_final_upload_request_from_body(&have_only).is_none());
-        assert!(recover_final_upload_request_from_body(&want_without_done).is_none());
+        assert!(!parsed.done);
+        assert!(upload_request_needs_more_haves(&parsed));
     }
 
     #[test]
@@ -1275,6 +1190,9 @@ mod tests {
         ));
         assert!(upload_request_parse_error_is_negotiable(
             "pkt-line len non-hex"
+        ));
+        assert!(upload_request_parse_error_is_negotiable(
+            "pkt-line truncated payload"
         ));
         assert!(!upload_request_parse_error_is_negotiable(
             "no wants in upload-pack request"
