@@ -1,4 +1,4 @@
-# Spec: gates on temper
+# Spec: gates on this repo
 
 The five workflows from the stack (planning, decisions, verification, review,
 decision-intake), byte-identical to temperpaw's post-pilot state. Logic lives

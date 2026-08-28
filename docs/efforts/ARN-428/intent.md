@@ -1,4 +1,4 @@
-# ARN-428: roll the SDLC gates to temper
+# ARN-428: roll the SDLC gates to this repo
 
 ## Problem
 The enforced SDLC gates run only on temperpaw. Temper merges are gated by its

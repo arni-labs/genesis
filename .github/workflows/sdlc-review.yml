@@ -129,11 +129,14 @@ jobs:
           CHANGED=$(git diff --name-only "origin/${PR_BASE_REF}...HEAD") \
             || { echo "::error::cannot diff against base - failing closed"; exit 1; }
           if grep -q '^\.github/workflows/' <<<"$CHANGED"; then
+            gh pr merge "$PR_NUM" --disable-auto 2>/dev/null || true
             gh pr edit "$PR_NUM" --add-label human-review 2>/dev/null || true
             echo "workflow files changed - a human presses merge"; exit 0; fi
           if [ "$RISK" = "low" ]; then
             gh pr merge "$PR_NUM" --squash --auto && echo "auto-merge enabled: panel risk low"
           else
+            # an earlier low-risk run may have armed auto-merge; revoke it
+            gh pr merge "$PR_NUM" --disable-auto 2>/dev/null || true
             gh pr edit "$PR_NUM" --add-label human-review 2>/dev/null || true
             echo "panel risk $RISK - a human presses merge"
           fi
