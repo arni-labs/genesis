@@ -1,4 +1,6 @@
 # registry-install-read
-After a publish, the pinned-ref bundle URL for the NEW hash serves the new content.
-Drive: publish a version (see publish-new-version), then GET the bundle URL for
-the new hash ; pass = 200 + the pushed file content, proving installs pin to it.
+The pinned-ref bundle URL an install would fetch serves the advertised content.
+Drive (read-only): read the app's LatestVersionHash from /tdata/Apps over OData,
+then GET /api/genesis/apps/{owner}/{name}/versions/{hash}/bundle for that hash ;
+pass = 200 + non-empty files matching the advertised hash. (Verifying that a NEW
+publish moves this pointer belongs to publish-new-version, which mutates state.)
