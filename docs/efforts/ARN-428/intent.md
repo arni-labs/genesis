@@ -1,7 +1,7 @@
 # ARN-428: roll the SDLC gates to this repo
 
 ## Problem
-The enforced SDLC gates run only on temperpaw. Temper merges are gated by its
+The enforced SDLC gates run only on temperpaw. Genesis merges are gated by the repo's
 existing CI but not by the loop's planning/decisions/proof/review contract.
 
 ## Proposed outcome
