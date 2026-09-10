@@ -472,3 +472,77 @@ exist" part is gone.
 fixing something else, and both were caught only because each fix was verified by
 its effect rather than assumed. Deploying and re-reading the actual error is what
 kept the chain honest.
+
+## A guest's internal calls run as the guest, not as its caller
+
+**Decision.** For the HttpEndpoint path, bind the guest's internal HTTP
+capability to the module's own principal rather than to the inbound caller's
+security context. Rita chose this over two narrower options.
+
+**Came up because.** `git push` returned 401 with a valid GitToken, and the
+failure was symmetric in a way that made it hard to see:
+
+- **Anonymous caller:** resolving the presented token means reading a `GitToken`
+  row. Bound to the anonymous caller, that read is denied, the lookup returns
+  nothing, and the guest reports anonymous. Authentication cannot run as the
+  identity it is about to establish.
+- **Authenticated caller — worse:** the same secret turned out to be registered
+  *both* as `gt-paw-agent`'s `HashedSecret` and as the id of an Active
+  `AgentCredential`. So the edge authenticated the push, the request was not
+  anonymous, and the lookup ran as that principal — which has no GitToken read
+  permission either. Being authenticated at the edge was strictly worse than
+  arriving anonymous.
+
+My first attempt fixed only the anonymous branch and did nothing, because the
+caller was never anonymous. That is recorded here because the wrong fix looked
+right and shipped.
+
+**Options.**
+- *(A, chosen)* Guest always acts as its own module principal.
+- *(B)* Permit the AgentCredential's principal to read GitTokens — smaller, but
+  papers over the layering and needs repeating for every future caller.
+- *(C)* Un-register the AgentCredential so pushes arrive anonymous — trivial, but
+  fixes one token and leaves the next person to rediscover it.
+
+**Chose A because** an HttpEndpoint guest is the enforcement point for its own
+protocol. Genesis resolves the token itself and applies repository authorization
+inside the module; it cannot delegate that to the kernel, because the resolved
+git principal has no way to reach the kernel — the headers that carried it are
+stripped on purpose (ARN-208/255). Making the guest act as itself matches what it
+actually is, and leaves authorization to the tenant's policy, where each module's
+reach is narrow by construction.
+
+**Given up, deliberately:** a guest no longer inherits its caller's reach for
+internal calls. That is correct for a protocol guest, which was never enforcing
+on the caller's behalf, and would be wrong for a guest that expects the kernel to
+scope its reads — so it applies to the HttpEndpoint path only, not to
+action-triggered integrations.
+
+**Where.** `crates/temper-server/src/state/dispatch/wasm.rs` (temper `12c590de`),
+with `policies/git_token.cedar` granting the six wire modules read/list and
+MarkUsed.
+
+## Raise the bundle byte budget rather than shrink the app
+
+**Decision.** `MAX_GENESIS_BUNDLE_TOTAL_BYTES` 64 MiB → 256 MiB. Rita chose this
+over stripping symbol names from the WASM modules.
+
+**Came up because.** dsf-factory is ~52 MB of legitimate compiled WASM — 59
+modules, one per resource operation, averaging 638 KB. Against a 64 MiB total
+that leaves ~12 MB for every app in its dependency closure combined. Verified it
+is not junk: no `target/`, no debug sections; the size is real code carrying Rust
+symbol names.
+
+**Options.** Strip symbol names (30–50% smaller, loses function names in stack
+traces); raise the budget; reduce module count (a redesign).
+
+**Chose raising it because** the budget's job is to bound how much one install
+may materialize, not to cap an app below a size the platform's own apps already
+exceed. Stripping trades debuggability for headroom we can simply grant, and the
+module count is a design question that should not be forced by an install limit.
+
+**Kept unchanged:** per-file 16 MiB and file-count 4096. Those are what actually
+catch a runaway publish — the paw-fs case tripped the aggregate only incidentally,
+and weakening them while relieving the total would have removed the real guard.
+
+**Where.** `crates/temper-platform/src/genesis_install/bundles.rs`.
