@@ -1,5 +1,24 @@
 // WASM host-function policies.
 //
+// SELF-HOST DOMAIN LIST. Every permit below ends with the same list of hosts
+// that are *this deployment itself*:
+//
+//     127.0.0.1, localhost, genesis-production-164d.up.railway.app
+//
+// A git/REST guest reconstructs its callback base from the inbound Host
+// header (see `temper_api_from_headers` in wasm/git_upload_pack/src/lib.rs),
+// so behind Railway it calls the public domain rather than loopback. The
+// kernel already classifies that domain as self — `env_local_tdata_hosts`
+// folds RAILWAY_PUBLIC_DOMAIN into the local-TData host set, so a `/tdata`
+// call to it is served in-process — but the Cedar gate runs *outside* that
+// router (the stack is AuthorizedWasmHost(LocalTDataWasmHost(...))), so the
+// gate denies before the in-process shortcut is ever reached. Omitting the
+// public domain here kills every guest with "no matching permit policy".
+//
+// Cedar has no constants, so the list is repeated per permit. Keep the five
+// copies identical. ARN-467 tracks moving this to a kernel-supplied
+// `context.is_self_host` so the list has exactly one home.
+//
 // Repository.IngestPack's parser integration may read local TData so it can
 // resolve existing delta bases and find open PRs whose SourceRef matches an
 // incoming ref update. It still returns data only; the kernel applies writes
@@ -12,7 +31,10 @@ permit(
 ) when {
   context.module == "scm_ingest_pack" &&
   context.method == "GET" &&
-  ["127.0.0.1", "localhost"].contains(context.domain)
+  [
+    "127.0.0.1", "localhost",
+    "genesis-production-164d.up.railway.app"
+  ].contains(context.domain)
 };
 
 // App.Fork's registry integration may read the parent App row. It returns
@@ -26,7 +48,10 @@ permit(
 ) when {
   context.module == "app_registry" &&
   context.method == "GET" &&
-  ["127.0.0.1", "localhost"].contains(context.domain)
+  [
+    "127.0.0.1", "localhost",
+    "genesis-production-164d.up.railway.app"
+  ].contains(context.domain)
 };
 
 // PullRequest.Open's number-assignment integration scans the repo's
@@ -42,7 +67,10 @@ permit(
 ) when {
   context.module == "scm_assign_pr_number" &&
   ["GET", "POST"].contains(context.method) &&
-  ["127.0.0.1", "localhost"].contains(context.domain)
+  [
+    "127.0.0.1", "localhost",
+    "genesis-production-164d.up.railway.app"
+  ].contains(context.domain)
 };
 
 // PullRequest.Merge / Repository.MergePullRequest's merge engine
@@ -59,7 +87,10 @@ permit(
 ) when {
   context.module == "scm_merge_pr" &&
   context.method == "GET" &&
-  ["127.0.0.1", "localhost"].contains(context.domain)
+  [
+    "127.0.0.1", "localhost",
+    "genesis-production-164d.up.railway.app"
+  ].contains(context.domain)
 };
 
 // Git smart-HTTP and the GitHub-compatible REST surface authenticate every
@@ -89,5 +120,8 @@ permit(
     "github_rest_pulls"
   ].contains(context.module) &&
   ["GET", "POST"].contains(context.method) &&
-  ["127.0.0.1", "localhost"].contains(context.domain)
+  [
+    "127.0.0.1", "localhost",
+    "genesis-production-164d.up.railway.app"
+  ].contains(context.domain)
 };
