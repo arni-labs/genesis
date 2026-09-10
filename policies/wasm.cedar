@@ -125,3 +125,33 @@ permit(
     "genesis-production-164d.up.railway.app"
   ].contains(context.domain)
 };
+
+// The raw-object cache lives at the kernel's internal blob endpoint. The
+// kernel seeds that address itself as the platform secret `blob_endpoint`
+// (`http://127.0.0.1:{port}/_internal/blobs`, temper-cli/src/serve/mod.rs) and
+// gates a guest's read of it through Cedar as `access_secret` on `Secret`.
+//
+// Without this permit the secret is filtered out of the host's bootstrap set
+// (`get_authorized_wasm_host_bootstrap_secrets`), and three things follow at
+// once: the kernel builds no local-blob interceptor, `bind_local_blob_endpoint`
+// installs no gate exemption for that endpoint, and the guest falls back to
+// `{Host-header base}/_internal/blobs`. The object fetch then leaves the
+// process, re-enters through the public edge with no bearer, and dies on the
+// auth middleware — a clone fails with
+// `object-cache GET <sha> returned HTTP 401`.
+//
+// Scoped to the one key and the four modules that read it; this is an address,
+// not a credential, but the gate is per-key so it stays per-key.
+permit(
+  principal is Agent,
+  action == Action::"access_secret",
+  resource is Secret
+) when {
+  resource.id == "blob_endpoint" &&
+  [
+    "git_upload_pack",
+    "git_receive_pack",
+    "scm_ingest_pack",
+    "scm_merge_pr"
+  ].contains(context.module)
+};
