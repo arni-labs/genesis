@@ -546,3 +546,55 @@ catch a runaway publish — the paw-fs case tripped the aggregate only incidenta
 and weakening them while relieving the total would have removed the real guard.
 
 **Where.** `crates/temper-platform/src/genesis_install/bundles.rs`.
+
+## Let a protocol handler see the credential it is required to resolve
+
+**Decision.** Add `ForwardsCredential` to HttpEndpoint, off by default, and
+default it on for the six handlers that implement credential-carrying protocols.
+Rita chose this over having the kernel resolve GitTokens itself.
+
+**Came up because.** `git push` answered 401 with a valid token, and three
+successive fixes changed nothing. Instrumenting `resolve_principal` produced no
+log at all — which was the answer: it returns anonymous on its *first* line, the
+one exit I had not instrumented.
+
+`guest_visible_headers` strips `Authorization` before a guest sees it (ARN-208:
+a caller credential must never reach a WASM guest). Genesis authenticates git
+callers by reading the GitToken from that header. So `extract_token` found
+nothing, every request was anonymous, and the kernel was removing the only thing
+the app could authenticate with.
+
+My three earlier attempts were all downstream of this: I kept repairing what
+happens *after* the token is found while the token never arrived.
+
+**Options.** *(A)* Kernel resolves the GitToken and passes the identity —
+honours the invariant, but teaches the kernel a Genesis concept and is real
+design work. *(B, chosen)* Endpoints opt into seeing the header. *(C)* Move git
+auth out of the guest entirely — cleanest, largest.
+
+**Chose B, scoped so the invariant survives.** Off by default; the original test
+proving credentials never reach a guest is unchanged and still passes. The six
+opted-in handlers are keyed on integration module and overridable per endpoint —
+the same shape as the pack-size defaults already in that function.
+
+**Why this is not a hole in ARN-208.** The invariant protects against a guest
+inheriting a *caller's kernel authority*. The header these endpoints receive is a
+GitToken in HTTP Basic: opaque to the kernel, carrying no kernel authority, and
+the app's to resolve. Withholding it protects nothing and guarantees every
+authenticated git request arrives anonymous. What is forwarded is not a
+credential the kernel could act on.
+
+**Given up:** these six endpoints now see an inbound `Authorization` header, so a
+compromised git guest could read a token presented to it. That is the same token
+it is being asked to authenticate, so the exposure is bounded to the request's
+own credential — it gains nothing it was not already handed.
+
+**Covered by test in both directions:** stripped unless opted in, present when
+opted in, so a future widening has to defeat an assertion rather than slip past.
+
+**Where.** `crates/temper-server/src/http_endpoint.rs`,
+`crates/temper-server/src/router.rs`, `router_test.rs` (temper `958d1efa`).
+
+**Method note.** Every exit from `resolve_principal` returns `anonymous`, so a
+broken lookup and a bad token are indistinguishable from outside — three wrong
+fixes came from that. The function is now instrumented at all five exits.
