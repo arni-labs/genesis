@@ -367,3 +367,70 @@ ones already world-readable over git, and a non-public repository still answers
 
 **Where.** `crates/temper-platform/src/tenant_api/apps.rs`,
 `crates/temper-server/src/authz/edge.rs` (temper `795934a2`).
+
+## Permit the `field-overflow` blob namespace
+
+**Decision.** Widen the `BlobObject` permit from `git-objects/*` to also cover
+`field-overflow/*`.
+
+**Came up because.** With the public-bundle path working, the bundle failed with
+`Genesis field overflow blob field-overflow/sha256/4a962177… not found`. The blob
+was not missing: fetched directly it returned **403**, not 404. Genesis stores git
+object `CanonicalBytes` in the kernel's field-overflow namespace whenever they
+exceed the inline ceiling, and my earlier permit — scoped to `git-objects/` —
+did not cover it. My own defect, introduced two commits earlier.
+
+**Chose widening over per-repository scoping because** these keys are
+content-addressed by sha256 and carry no owner, so there is nothing to scope
+them by. Reaching `/_internal/blobs` still requires a real tenant credential or
+a kernel-minted capability, so the namespace is not reachable unauthenticated.
+
+**Worth noting separately:** the reader reports any non-200 as "not found", so an
+authorization denial was indistinguishable from missing data. That cost real time
+— I went looking for lost blobs and considered republishing the app.
+
+**Where.** `policies/objects.cedar`.
+
+## Give the streaming blob read the same legacy fallback as the buffered read
+
+**Decision.** Move the legacy DB blob-store fallback into `stream_blob_object`,
+adding `BlobObjectStream::from_bytes` so the legacy store's bytes are returned in
+the same shape as the object store's stream.
+
+**Came up because.** After the permit above, the blob returned **200** over HTTP
+and the bundle *still* reported it missing. The kernel has two blob reads and
+they disagreed:
+
+```rust
+get_blob_with_legacy_fallback(...)   // object store, then legacy DB store
+stream_blob_object(...)              // object store only
+```
+
+Objects written before the object-store migration live in the legacy DB store.
+The HTTP blob route finds them; the streaming read the bundle uses did not. The
+same blob was simultaneously readable and "not found".
+
+**Chose fixing the kernel over republishing the app because** the data was never
+missing — republishing would have rewritten blobs to work around a reader that
+cannot see half its own store, leaving every previously-written object still
+unreadable through the streaming path.
+
+**Chose the shared shape deliberately:** callers cannot tell which store
+answered. Two reads of the same store disagreeing about what exists is the bug;
+hiding the difference behind one type is the fix, not an abstraction for its own
+sake.
+
+**Where.** `crates/temper-server/src/blob_store/state.rs`,
+`crates/temper-server/src/blob_store/streaming.rs` (temper `3cc6461e`).
+
+**Pattern across this effort, worth stating once.** Three separate failures had
+one shape — two paths to the same data that do not agree:
+
+1. `Id` means the domain field over OData and the entity id through the actor.
+2. `http_call` is served in-process while the streaming host path is delegated out.
+3. Blob existence differs between the buffered and streaming reads.
+
+Each surfaced as a misleading error far from its cause ("commit not found",
+"401", "blob not found") on data that was present and correct. When a lookup
+insists something is missing that you can see with your own eyes, suspect a
+second read path before suspecting the data.
