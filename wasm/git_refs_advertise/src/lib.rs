@@ -57,7 +57,7 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let (owner, repo) = repo_parts_from_http(http);
     let repository_id = format!("rp-{owner}-{repo}");
 
-    let api_base = temper_api_from_headers(&http.headers);
+    let api_base = temper_api_base(ctx, &http.headers);
     let auth_env = AuthEnv {
         temper_api: &api_base,
         tenant: SYSTEM_TENANT,
@@ -262,6 +262,29 @@ fn add_symbolic_head_advertisement(refs: &mut Vec<(String, String)>, default_bra
     if let Some((sha, _)) = refs.iter().find(|(_, name)| name == &default_ref) {
         refs.insert(0, (sha.clone(), "HEAD".to_string()));
     }
+}
+
+/// The base URL for this kernel's own OData surface.
+///
+/// The inbound `Host` header names the *public* edge, which is not the kernel's
+/// configured internal origin, so `is_internal_url` refuses to mint an internal
+/// capability for it. The request then leaves the process and re-enters through
+/// the public edge with no bearer, where the global auth middleware answers 401.
+/// The kernel hands us its real loopback origin as the `blob_endpoint` secret
+/// (`http://127.0.0.1:{port}/_internal/blobs`), which carries the actual listen
+/// port, so derive the API base from that. When an operator points
+/// `BLOB_ENDPOINT` at external object storage the suffix will not match and the
+/// Host header remains the fallback.
+fn temper_api_base(ctx: &Context, headers: &[(String, String)]) -> String {
+    if let Ok(endpoint) = ctx.get_secret("blob_endpoint") {
+        let trimmed = endpoint.trim_end_matches('/');
+        if let Some(base) = trimmed.strip_suffix("/_internal/blobs")
+            && !base.is_empty()
+        {
+            return base.to_string();
+        }
+    }
+    temper_api_from_headers(headers)
 }
 
 fn temper_api_from_headers(headers: &[(String, String)]) -> String {

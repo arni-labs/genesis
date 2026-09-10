@@ -177,3 +177,61 @@ action-name grep because they are passed as a variable; only the resource type
 is greppable. Enumerate by resource type as well as action name.
 
 **Where.** `policies/objects.cedar`.
+
+## Derive the guests' OData base from the kernel's loopback origin, not the Host header
+
+**Decision.** Add `temper_api_base(ctx, headers)` to `git_upload_pack`,
+`git_receive_pack` and `git_refs_advertise`: prefer the kernel's own loopback
+origin, derived by stripping `/_internal/blobs` off the `blob_endpoint` secret,
+and keep the Host header only as a fallback.
+
+**Came up because.** With all four policy fixes live, ref advertisement and the
+blob cache worked but a clone still died:
+
+```
+fatal: remote error: Commits(4441bf07…) status 401
+```
+
+The split is in `LocalTDataWasmHost`: `http_call` tries `local_http_call` and
+serves `/tdata` in-process, while `http_stream_begin_outbound` delegates
+straight through with no interception. `fetch_refs_for_repo` uses `http_call`
+(intercepted → 200); the object-row lookup uses `streaming_get` →
+`streaming_call` (not intercepted). That request therefore left the process to
+whatever base the guest had — the Host-derived *public* domain — and
+`is_internal_url` matches only the kernel's configured internal origin, so no
+capability was minted, and the request re-entered through the public edge with
+no bearer and hit the global auth middleware: 401.
+
+The blob cache is the control that proves it: it uses the *same* `streaming_get`
+path and returns 200, because its URL comes from the `blob_endpoint` secret,
+which is loopback and therefore *is* the internal origin.
+
+**Options.**
+- Switch the object-row lookup from `streaming_get` to `ctx.http_call` so
+  `LocalTDataWasmHost` intercepts it.
+- Teach `LocalTDataWasmHost` to intercept the streaming path too (kernel).
+- Give the guests the kernel's loopback origin so every call — streaming or
+  not — is classified internal and gets a capability.
+
+**Chose the loopback base because** it fixes the whole class in one place rather
+than one call site. Switching that single lookup to `http_call` would have left
+every other streaming call in these guests with the same latent bug, and the
+`prefetch` path next to it fails identically. Teaching the streaming path to
+intercept is the deeper fix but it is a kernel change with real streaming
+semantics to get right, and it is not needed once the guests address the kernel
+by the origin it actually recognises.
+
+**Why `blob_endpoint` and not a hardcoded port:** the kernel seeds that secret
+as `http://127.0.0.1:{port}/_internal/blobs` from its real listen port
+(temper-cli/src/serve/mod.rs), so the derived base tracks the port automatically.
+This is what the previous decision's `PORT` caveat was worried about, and it
+removes the concern rather than living with it. If an operator points
+`BLOB_ENDPOINT` at external object storage, the suffix does not match and the
+Host header fallback still applies.
+
+**Also fixes, deliberately:** the guests no longer take their callback origin
+from an attacker-controllable request header. That smell was recorded as a
+residual in the first decision; it is closed here rather than left open.
+
+**Where.** `wasm/git_upload_pack/src/lib.rs`, `wasm/git_receive_pack/src/lib.rs`,
+`wasm/git_refs_advertise/src/lib.rs`, plus their rebuilt `.wasm` artifacts.
