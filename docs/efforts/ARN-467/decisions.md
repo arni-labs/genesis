@@ -283,3 +283,87 @@ no `owner/app@hash` pinned ref to verify against.
 **Where.** temper `70b76d27`; genesis submodule bump `9718282`. Diagnostic only,
 no behaviour change; to be reverted or promoted to a permanent log line once the
 cause is known.
+
+## Remove the `Id` workaround rather than keep it
+
+**Decision.** Delete the git-sha comparison in `load_genesis_object_by_key`
+instead of the earlier change that made it accept either form, and warn at
+registration when a CSDL declares a server-derived field name.
+
+**Came up because.** Rita challenged the pattern — every fix revealing another —
+as a symptom of local patches rather than real fixes, and she was right about
+this one. `Id`, `id`, `Status`, `status` are formally server-derived
+(`temper_spec::automaton::is_server_derived_field_name`), and
+`canonicalize_entity_field_map` overwrites them with the entity id and state on
+every hydrate. So `fields["Id"]` in that function is *always* the entity id and
+never the git sha it was being compared against. Accepting both forms papered
+over a comparison that never meant anything.
+
+**Chose deleting the comparison because** it is not needed at all: `entity_id`
+is derived from `(repository_id, git_sha)` by `genesis_object_entity_id`, so
+once the row is loaded at that key the only independent fact left is whether it
+belongs to the requested repository. One meaningful check replaces a meaningless
+one.
+
+**Chose warning at registration over rejecting** because Genesis and other
+existing apps already declare these names; failing registration would take them
+down. The defect being fixed is the *silence* — an app may declare `Id`, nothing
+objects, and the value is then destroyed on the actor path while OData still
+reports the declared property.
+
+**Where.** `crates/temper-platform/src/genesis_install.rs`,
+`crates/temper-server/src/registry/mod.rs` (temper `35fd32cd`).
+
+## Require a declared `Size` only where the model has one
+
+**Decision.** Treat a declared length as optional in git object materialization,
+rather than requiring `Size` on every kind.
+
+**Came up because.** With the `Id` fix in, the bundle endpoint moved 404 → 500
+`Genesis object is missing a non-negative Size`. Only `Blob` declares `Size`;
+`Tree`, `Commit` and `Tag` never have. The requirement arrived in temper
+`8840b4fd` (2026-07-11) — *after* Genesis pinned its kernel — so the two sides
+disagreed about the data model and nothing caught it until the bump.
+
+**Chose correcting the July change over adding `Size` to Genesis's Tree spec**
+because a git object's canonical bytes are self-describing and `git_object_body`
+already rejects any object whose `{kind} {len}\0` header disagrees with its own
+body. `Size` is a redundant second check that only blobs can offer. Adding it to
+trees would mean a data migration over every git object row to satisfy a check
+that adds nothing.
+
+**Given up:** where no length is declared, the exact-length assertion no longer
+runs; the budget is charged from an upper bound on the encoded length instead,
+so materialization stays bounded.
+
+**Where.** `crates/temper-platform/src/genesis_install/blob_materialization.rs`
+(temper `e18de36b`).
+
+## Serve a public app bundle without a credential
+
+**Decision.** Allow `GET /api/genesis/apps/{owner}/{name}/versions/{hash}/bundle`
+through the edge and refuse inside the handler unless the backing repository is
+public, rather than adding registry-credential plumbing to the install client.
+
+**Came up because.** The install client sends only `X-Tenant-Id` and no bearer,
+while the bundle endpoint required an authenticated context — verified on
+production, 401. There is no registry credential anywhere in the kernel for the
+client to send.
+
+**Options.** Add a credential to the installing kernel and send it as a bearer;
+add a `registry_token` to the install request; serve public bundles anonymously.
+
+**Chose the public-bundle path because** the same content is *already* served to
+anonymous callers over `git clone` — requiring a credential for one encoding and
+not the other was inconsistent rather than protective. It is also the only option
+that ships entirely on Genesis: the others change the kernel the installing side
+runs (openpaw), which would mean a coordinated deploy of the very service the
+factory work depends on, to unblock the factory work.
+
+**Given up / bounded:** the handler trusts `X-Tenant-Id` as a namespace selector
+on this path. That cannot escalate anything, because the only rows reachable are
+ones already world-readable over git, and a non-public repository still answers
+401. Recorded rather than hidden.
+
+**Where.** `crates/temper-platform/src/tenant_api/apps.rs`,
+`crates/temper-server/src/authz/edge.rs` (temper `795934a2`).
