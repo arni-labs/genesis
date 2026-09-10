@@ -598,3 +598,39 @@ opted in, so a future widening has to defeat an assertion rather than slip past.
 **Method note.** Every exit from `resolve_principal` returns `anonymous`, so a
 broken lookup and a bad token are indistinguishable from outside — three wrong
 fixes came from that. The function is now instrumented at all five exits.
+
+## Honour the credential opt-in where the header is actually removed
+
+**Decision.** Apply `ForwardsCredential` in `bearer_auth`, at both the
+authenticated and public-route branches, not only in the router's header filter.
+
+**Came up because.** The previous decision added the opt-in to
+`guest_visible_headers` and it changed nothing — the fifth failed attempt at this
+bug. `bearer_auth` middleware calls `req.headers_mut().remove("authorization")`
+on the request itself, *before* the router runs, so the router was filtering a
+header that had already been deleted.
+
+Genesis's git endpoints declare `RequiresAuth=false` — deliberately, so the guest
+can issue the smart-HTTP challenge itself — which routes them through the public
+branch: header removed, anonymous context inserted, every valid GitToken arriving
+as anonymous.
+
+**How it was finally found.** By observation, not reasoning. Four inferences were
+wrong. Logging the header names the guest actually received
+(`["host","user-agent","accept",…]` — no `authorization`) settled it in one
+request, and a curl with an explicit `Authorization: Basic` header proved the
+kernel was stripping it rather than git failing to send it.
+
+**What I got wrong and why it matters.** I searched for callers of the *filter
+helper*, found one, and treated that as complete. The thing to search for was
+every site that touches the header — `grep -rn 'remove("authorization")'` finds
+`bearer_auth` immediately. My test passed the whole time: it proved the router's
+filter worked, and never proved the header survived to the guest. A green test on
+a layer the failure does not traverse argues actively for a wrong conclusion.
+
+**Tests.** Both directions, at the layer that strips: an opted-in protocol route
+keeps the header; a route without the opt-in still loses it. All 18 existing
+`bearer_auth` tests pass unchanged, so ARN-208 holds everywhere it did before.
+
+**Where.** `crates/temper-platform/src/bearer_auth.rs` and its tests
+(temper `667caada`).
