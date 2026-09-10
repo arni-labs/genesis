@@ -235,3 +235,51 @@ residual in the first decision; it is closed here rather than left open.
 
 **Where.** `wasm/git_upload_pack/src/lib.rs`, `wasm/git_receive_pack/src/lib.rs`,
 `wasm/git_refs_advertise/src/lib.rs`, plus their rebuilt `.wasm` artifacts.
+
+## Instrument the Genesis object lookup instead of guessing at the 404
+
+**Decision.** Add a temporary `tracing::warn!` to both silent return paths in
+`load_genesis_object_by_key` (temper submodule, branch
+`claude/arn467-genesis-bundle-diagnostic`) and deploy Genesis on it, rather than
+attempting a fix against a hypothesis.
+
+**Came up because.** With git working end to end, the bundle endpoint still
+returned 404 instantly for every well-formed request, and it is the code
+`install-from-genesis` runs, so installing an app through Genesis is blocked on
+it. Everything observable from outside checks out: the row reads back 200 over
+OData by the exact composite key the kernel builds
+(`Commits('rp-paw-agent-dsf-factory-77150dbf…')`), with `fields.Id`,
+`fields.RepositoryId` and `fields.TreeSha` all matching what the comparison
+uses; tenant is the same value on both sides (`export_genesis_registry_bundle`
+does `let tenant = TenantId::new(registry_tenant)`); `validate_git_object_id` is
+pass-through; and the `read_app_bundle` Cedar gate is passed, since a denial
+there returns 403 rather than this 404.
+
+I also tested and *disproved* my own leading hypothesis: warming the entity with
+an OData read immediately before the bundle call changed nothing, so
+`ensure_entity_loaded` failing is not the explanation on its own.
+
+**Options.**
+- Guess at the most likely cause and ship a fix.
+- Add the diagnostic, deploy, read one line, then fix precisely.
+- Leave it and pursue a clone-based install instead.
+
+**Chose instrumenting because** the function has exactly two ways to return
+`Ok(None)` and *neither logs anything*, which is why the cause is invisible from
+outside — that absence is itself the defect that made this expensive. A fix
+chosen without knowing which branch fires would be a guess against production
+authorization-adjacent code.
+
+**Rejected the clone-based install** after checking it rather than assuming: the
+clone does carry the complete bundle at the pinned commit (app.toml, 16 specs,
+5 policies, 291 wasm files at `77150db`), but there is no supported surface to
+install it. `submit_specs` takes specs and not policies — that is exactly the
+half-install that leaves all 11 `Dsf.Factory` collections answering 403 — and
+local OS-app install was deliberately removed (`install_app` now returns "local
+OS-app install is removed from the normal agent path; install pinned Genesis
+refs through App.Install or /api/genesis/apps/install"). It would also produce
+no `owner/app@hash` pinned ref to verify against.
+
+**Where.** temper `70b76d27`; genesis submodule bump `9718282`. Diagnostic only,
+no behaviour change; to be reverted or promoted to a permanent log line once the
+cause is known.
