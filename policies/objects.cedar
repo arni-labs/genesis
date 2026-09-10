@@ -285,5 +285,21 @@ permit(
   action in [Action::"read_blob_object", Action::"write_blob_object"],
   resource is BlobObject
 ) when {
-  resource.id like "git-objects/*"
+  resource.id like "git-objects/*" ||
+  resource.id like "field-overflow/*"
 };
+
+// `field-overflow/` is the kernel's own storage for entity field values too
+// large to keep inline (ADR-0045). Genesis puts git object CanonicalBytes there,
+// so the install path reads it on every tree it materializes — scoping this
+// permit to `git-objects/` alone left the bundle endpoint failing with
+// "Genesis field overflow blob ... not found" on data that was present and
+// intact. The reader reports any non-200 as "not found", so an authorization
+// denial was indistinguishable from missing data, which is worth fixing
+// separately.
+//
+// Wider than the git-object namespace, deliberately and with the same
+// reasoning: reaching `/_internal/blobs` at all requires either a real tenant
+// credential or a capability the kernel minted for an in-process guest call, so
+// this is not reachable unauthenticated. It is not scoped per repository
+// because these keys are content-addressed by sha256 and carry no owner.
