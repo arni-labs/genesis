@@ -119,3 +119,61 @@ that intent. Rejected `BLOB_ENDPOINT` for the same reason plus it would leave th
 interceptor unable to match, keeping the network hop.
 
 **Where.** `policies/wasm.cedar`.
+
+## Permit `read_blob_object` / `write_blob_object` on the git-object namespace
+
+**Decision.** Add a `BlobObject` permit to `policies/objects.cedar` scoped to
+keys matching `git-objects/*`, keyed on the object namespace rather than on the
+calling principal.
+
+**Came up because.** With `http_call` and `access_secret` fixed, a clone got past
+ref advertisement and then failed with `object-cache GET <sha> returned HTTP
+403`. The kernel logged it exactly:
+
+```
+internal blob object access denied
+  action: read_blob_object   principal_id: anonymous
+  key: git-objects/rp-temperpaw-paw-compute/62e183d1….b64
+  reason: no matching permit policy
+```
+
+`/_internal/blobs` has its own gate (`require_blob_object_authorization`,
+temper-server/src/blobs.rs:33) and Genesis had no `BlobObject` policy at all.
+
+**Options.**
+- Permit by principal — e.g. only the repository's authorized reader.
+- Permit by object namespace (`git-objects/*`), any principal that reaches the
+  endpoint.
+- Widen `is_public_kernel_request` to exempt `/_internal/blobs`.
+
+**Chose the namespace over the principal because** this gate structurally cannot
+see a git identity. The kernel edge does not understand a GitToken, so an
+inbound git request is `anonymous` to it — confirmed empirically: an
+authenticated clone with `gt-paw-agent` produced the identical
+`principal_id: anonymous` deny. temper-git authenticates the caller *inside* the
+guest via `git_auth`, and every repository read it then performs goes through
+repository.cedar under the resolved principal. By the time an object is fetched
+the caller has already been authorized for that repository, so a principal
+condition here could only ever be a tautology or a lockout.
+
+**Rejected exempting the path from the auth middleware because** that would make
+the object cache reachable unauthenticated from the internet. Keeping the
+middleware means the endpoint is reachable only with a real tenant credential or
+a capability the kernel itself minted for an in-process guest call to loopback.
+
+**Residual, recorded deliberately:** an operator-credential holder can read any
+repository's objects through this path given the SHA. That is not a new grant —
+an operator can already read the object rows directly — but it is why the permit
+stays scoped to `git-objects/` and must not widen to other overflow-blob
+namespaces.
+
+**Note on scope discovery.** I twice claimed the gate class was closed and was
+twice wrong, because I enumerated by grepping one call form. The kernel's
+non-entity Cedar gates are `http_call`/HttpEndpoint, `access_secret`/Secret,
+`read_blob_object`+`write_blob_object`/BlobObject, `submit_specs`/SpecRegistry,
+`manage_policies`/PolicySet, `execute_repl`/Repl and
+`manage_decisions`/AuthorizationDenied. The blob actions are invisible to an
+action-name grep because they are passed as a variable; only the resource type
+is greppable. Enumerate by resource type as well as action name.
+
+**Where.** `policies/objects.cedar`.

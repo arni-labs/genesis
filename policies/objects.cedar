@@ -250,3 +250,40 @@ permit(
   (principal.action_context == "composite:Repository.IngestPack" ||
    principal.action_context == "composite:Repository.MergePullRequest")
 };
+
+// --- BlobObject: the raw-object cache behind the git wire.
+//
+// `BlobObject` is not a Genesis entity — it is the kernel's internal blob
+// store, gated at `/_internal/blobs` by `read_blob_object` /
+// `write_blob_object` (temper-server/src/blobs.rs). temper-git keeps every git
+// object there under `git-objects/{repository_id}/{sha}.b64`, and
+// upload-pack/receive-pack read and write that cache on the hot path. With no
+// permit a clone dies with `object-cache GET <sha> returned HTTP 403`.
+//
+// This gate cannot be the repository-level control, because it never sees a
+// git identity. The kernel edge does not understand a GitToken, so an inbound
+// git request is `anonymous` to it; temper-git authenticates the caller itself
+// inside the guest (`git_auth`) and every repository read it performs goes
+// through repository.cedar under the resolved principal. By the time an object
+// is fetched the caller has already been authorized for that repository — so
+// the check that belongs here is the namespace, not the principal.
+//
+// Reaching the endpoint at all requires passing the kernel's global auth
+// middleware, which `/_internal/blobs` is not exempt from: either a real tenant
+// credential (operator-level, already privileged) or a capability the kernel
+// itself minted for an in-process guest call to loopback. It is not reachable
+// unauthenticated from the internet.
+//
+// Residual, recorded deliberately: an operator-credential holder can read any
+// repository's objects through this path if they know the SHA. That is not a
+// new grant — an operator can already read the object rows directly — but it
+// does mean this permit must stay scoped to the `git-objects/` namespace so it
+// never widens to other tenants' overflow blobs.
+
+permit(
+  principal,
+  action in [Action::"read_blob_object", Action::"write_blob_object"],
+  resource is BlobObject
+) when {
+  resource.id like "git-objects/*"
+};
