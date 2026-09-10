@@ -61,3 +61,33 @@ permit(
   context.method == "GET" &&
   ["127.0.0.1", "localhost"].contains(context.domain)
 };
+
+// Git smart-HTTP and the GitHub-compatible REST surface authenticate every
+// inbound caller through `git_auth`, which SHA-256s the presented token and
+// reads the matching GitToken row over local OData (GET), then dispatches the
+// resolved entity action through the kernel's action bridge (POST). Without an
+// explicit permit the WASM host denies that lookup, `git_auth` can never
+// resolve a principal, and the guest never submits a response head — the caller
+// sees "guest integration timed out" and git is dead.
+//
+// These modules were exempt in practice until the kernel began enforcing the
+// WASM http_call gate for every spec-triggered module; the four permits above
+// were written when only those four reached the gate. Raw-object PUTs from
+// upload-pack/receive-pack go to the local `_internal/blobs` endpoint, which
+// the kernel's WASM gate already exempts, so they need nothing here.
+permit(
+  principal is Agent,
+  action == Action::"http_call",
+  resource is HttpEndpoint
+) when {
+  [
+    "git_refs_advertise",
+    "git_upload_pack",
+    "git_receive_pack",
+    "github_rest_repos",
+    "github_rest_refs",
+    "github_rest_pulls"
+  ].contains(context.module) &&
+  ["GET", "POST"].contains(context.method) &&
+  ["127.0.0.1", "localhost"].contains(context.domain)
+};
