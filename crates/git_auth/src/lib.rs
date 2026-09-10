@@ -119,6 +119,18 @@ pub fn resolve_principal(
     headers: &[(String, String)],
 ) -> Principal {
     let Some(token) = extract_token(headers) else {
+        // The last silent exit. If the kernel withheld the credential header
+        // this is where every request lands, and the caller only ever sees 401.
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth found no credential in the request headers",
+            &serde_json::json!({
+                "header_names": headers
+                    .iter()
+                    .map(|(k, _)| k.to_ascii_lowercase())
+                    .collect::<alloc::vec::Vec<_>>(),
+            }),
+        );
         return Principal::anonymous(env);
     };
     let hash = sha256_hex(token.as_bytes());
