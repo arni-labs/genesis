@@ -1,8 +1,8 @@
 # ARN-467 — decisions (genesis)
 
-## Permit the deployment's own public domain in the WASM `http_call` gate
+## D1: Permit the deployment's own public domain in the WASM `http_call` gate
 
-**Decision.** Add `genesis-production-164d.up.railway.app` to the self-host
+**Decision:** Add `genesis-production-164d.up.railway.app` to the self-host
 domain list in all five `policies/wasm.cedar` permits, rather than changing the
 guests to call loopback.
 
@@ -65,9 +65,9 @@ list has exactly one home — is recorded as follow-up, not done here.
 **Where.** `policies/wasm.cedar`; follows 2d6dbf8 (which added the six missing
 modules but kept the wrong domain list).
 
-## Permit the `blob_endpoint` bootstrap secret for the four modules that read it
+## D2: Permit the `blob_endpoint` bootstrap secret for the four modules that read it
 
-**Decision.** Add an `access_secret` permit for `resource.id == "blob_endpoint"`
+**Decision:** Add an `access_secret` permit for `resource.id == "blob_endpoint"`
 scoped to `git_upload_pack`, `git_receive_pack`, `scm_ingest_pack` and
 `scm_merge_pr`, rather than pointing the kernel's internal API base at the
 public domain.
@@ -120,9 +120,9 @@ interceptor unable to match, keeping the network hop.
 
 **Where.** `policies/wasm.cedar`.
 
-## Permit `read_blob_object` / `write_blob_object` on the git-object namespace
+## D3: Permit `read_blob_object` / `write_blob_object` on the git-object namespace
 
-**Decision.** Add a `BlobObject` permit to `policies/objects.cedar` scoped to
+**Decision:** Add a `BlobObject` permit to `policies/objects.cedar` scoped to
 keys matching `git-objects/*`, keyed on the object namespace rather than on the
 calling principal.
 
@@ -178,9 +178,9 @@ is greppable. Enumerate by resource type as well as action name.
 
 **Where.** `policies/objects.cedar`.
 
-## Derive the guests' OData base from the kernel's loopback origin, not the Host header
+## D4: Derive the guests' OData base from the kernel's loopback origin, not the Host header
 
-**Decision.** Add `temper_api_base(ctx, headers)` to `git_upload_pack`,
+**Decision:** Add `temper_api_base(ctx, headers)` to `git_upload_pack`,
 `git_receive_pack` and `git_refs_advertise`: prefer the kernel's own loopback
 origin, derived by stripping `/_internal/blobs` off the `blob_endpoint` secret,
 and keep the Host header only as a fallback.
@@ -236,9 +236,9 @@ residual in the first decision; it is closed here rather than left open.
 **Where.** `wasm/git_upload_pack/src/lib.rs`, `wasm/git_receive_pack/src/lib.rs`,
 `wasm/git_refs_advertise/src/lib.rs`, plus their rebuilt `.wasm` artifacts.
 
-## Instrument the Genesis object lookup instead of guessing at the 404
+## D5: Instrument the Genesis object lookup instead of guessing at the 404
 
-**Decision.** Add a temporary `tracing::warn!` to both silent return paths in
+**Decision:** Add a temporary `tracing::warn!` to both silent return paths in
 `load_genesis_object_by_key` (temper submodule, branch
 `claude/arn467-genesis-bundle-diagnostic`) and deploy Genesis on it, rather than
 attempting a fix against a hypothesis.
@@ -284,9 +284,9 @@ no `owner/app@hash` pinned ref to verify against.
 no behaviour change; to be reverted or promoted to a permanent log line once the
 cause is known.
 
-## Remove the `Id` workaround rather than keep it
+## D6: Remove the `Id` workaround rather than keep it
 
-**Decision.** Delete the git-sha comparison in `load_genesis_object_by_key`
+**Decision:** Delete the git-sha comparison in `load_genesis_object_by_key`
 instead of the earlier change that made it accept either form, and warn at
 registration when a CSDL declares a server-derived field name.
 
@@ -311,12 +311,24 @@ down. The defect being fixed is the *silence* — an app may declare `Id`, nothi
 objects, and the value is then destroyed on the actor path while OData still
 reports the declared property.
 
+**Options.** Keep the comparison and teach it to accept both the bare sha and
+the composite `{repo}-{sha}` entity-id form — the band-aid already written; stop
+`canonicalize_entity_field_map` from overwriting `Id` for this entity; remove the
+comparison, because a git sha and a server-derived field cannot be equal and the
+check never had meaning.
+
+**Chose removal because.** The other two options preserve a check that answers a
+question nobody asked: whether a git object's sha matches a field the server
+writes. Teaching it both forms would make it pass without making it correct, and
+changing canonicalization to suit one caller would move the damage into every
+entity. Deleting it loses nothing that was being verified.
+
 **Where.** `crates/temper-platform/src/genesis_install.rs`,
 `crates/temper-server/src/registry/mod.rs` (temper `35fd32cd`).
 
-## Require a declared `Size` only where the model has one
+## D7: Require a declared `Size` only where the model has one
 
-**Decision.** Treat a declared length as optional in git object materialization,
+**Decision:** Treat a declared length as optional in git object materialization,
 rather than requiring `Size` on every kind.
 
 **Came up because.** With the `Id` fix in, the bundle endpoint moved 404 → 500
@@ -336,12 +348,20 @@ that adds nothing.
 runs; the budget is charged from an upper bound on the encoded length instead,
 so materialization stays bounded.
 
+**Options.** Require `Size` everywhere and add the field to the models that
+lack it; default a missing `Size` to zero and carry on; require it only of models
+that declare it.
+
+**Chose the declaring models because.** Adding the field to models that have no
+size to report invents data. A zero default is worse — it reads as a real,
+verified length of nothing, which is exactly the class of bug D6 came from.
+
 **Where.** `crates/temper-platform/src/genesis_install/blob_materialization.rs`
 (temper `e18de36b`).
 
-## Serve a public app bundle without a credential
+## D8: Serve a public app bundle without a credential
 
-**Decision.** Allow `GET /api/genesis/apps/{owner}/{name}/versions/{hash}/bundle`
+**Decision:** Allow `GET /api/genesis/apps/{owner}/{name}/versions/{hash}/bundle`
 through the edge and refuse inside the handler unless the backing repository is
 public, rather than adding registry-credential plumbing to the install client.
 
@@ -368,9 +388,9 @@ ones already world-readable over git, and a non-public repository still answers
 **Where.** `crates/temper-platform/src/tenant_api/apps.rs`,
 `crates/temper-server/src/authz/edge.rs` (temper `795934a2`).
 
-## Permit the `field-overflow` blob namespace
+## D9: Permit the `field-overflow` blob namespace
 
-**Decision.** Widen the `BlobObject` permit from `git-objects/*` to also cover
+**Decision:** Widen the `BlobObject` permit from `git-objects/*` to also cover
 `field-overflow/*`.
 
 **Came up because.** With the public-bundle path working, the bundle failed with
@@ -389,11 +409,22 @@ a kernel-minted capability, so the namespace is not reachable unauthenticated.
 authorization denial was indistinguishable from missing data. That cost real time
 — I went looking for lost blobs and considered republishing the app.
 
+**Options.** Widen the existing `git-objects/*` permit to cover every blob
+namespace; move overflow blobs into the `git-objects/` namespace so the current
+permit already covers them; add a second permit naming `field-overflow/*`.
+
+**Chose the named second permit because.** Widening to all blob objects grants
+the git modules read and write over namespaces that have nothing to do with git,
+which is the opposite of what these permits are for. Renaming the namespace would
+make an unrelated kernel concern (a field too large for its row) look like a git
+object. Naming it costs one more line and keeps each grant readable as what it
+actually allows.
+
 **Where.** `policies/objects.cedar`.
 
-## Give the streaming blob read the same legacy fallback as the buffered read
+## D10: Give the streaming blob read the same legacy fallback as the buffered read
 
-**Decision.** Move the legacy DB blob-store fallback into `stream_blob_object`,
+**Decision:** Move the legacy DB blob-store fallback into `stream_blob_object`,
 adding `BlobObjectStream::from_bytes` so the legacy store's bytes are returned in
 the same shape as the object store's stream.
 
@@ -420,6 +451,18 @@ answered. Two reads of the same store disagreeing about what exists is the bug;
 hiding the difference behind one type is the fix, not an abstraction for its own
 sake.
 
+**Options.** Leave the streaming read without the fallback, as the comment
+deliberately intended, and let callers retry on the buffered path; duplicate the
+buffered read's logic in the streaming path; give the streaming read the same
+fallback, bounded before it materializes anything.
+
+**Chose the bounded fallback because.** The first option is what shipped, and it
+means the two read paths disagree about whether content exists — one of the
+recurring failures of this effort. The second duplicates logic that will drift.
+Bounding first preserves the reason the fallback was originally left out (a
+streaming read must not materialize an unbounded blob) while removing the
+disagreement.
+
 **Where.** `crates/temper-server/src/blob_store/state.rs`,
 `crates/temper-server/src/blob_store/streaming.rs` (temper `3cc6461e`).
 
@@ -435,9 +478,9 @@ Each surfaced as a misleading error far from its cause ("commit not found",
 insists something is missing that you can see with your own eyes, suspect a
 second read path before suspecting the data.
 
-## Do not assert a decoded length the model never declared
+## D11: Do not assert a decoded length the model never declared
 
-**Decision.** Route the undeclared-length overflow read through the bounded
+**Decision:** Route the undeclared-length overflow read through the bounded
 stream and decode it directly, instead of the JSON-base64 stream decoder.
 
 **Came up because.** This was my own regression from the earlier `Size` change.
@@ -458,12 +501,23 @@ which is the real integrity check and is independent of the declared size.
 `stream_blob_object` carried a comment stating that large field-overflow objects
 are deliberately *not* read from the legacy database fallback, because that
 interface is buffered. My previous commit added exactly that fallback and read
-the whole object before checking its size, silently overriding a recorded
-decision. Now the fallback asks the store to bound the read
+the whole object before checking its size, silently overriding a
+recorded decision. The fallback now asks the store to bound the read
 (`get_blob_if_size_at_most`) so it never materializes an object above the
 caller's ceiling, and the comment says what the code actually does. The intent —
 never buffer a large blob — is preserved; only the "therefore pretend it does not
 exist" part is gone.
+
+**Options.** Pass the 16 MiB cap as `expected_decoded_bytes` — what I had
+written, and wrong, because that field is an exact assertion, not a ceiling, so a
+328-byte blob failed as "expected 16777216"; drop the length assertion
+altogether; make the expected length optional and assert it only where the model
+declares one.
+
+**Chose the optional length because.** Dropping the assertion loses a real check
+on the blobs that do declare a size. Passing a cap into an equality is a category
+error. Returning `Option` makes the distinction explicit at the type, so the
+undeclared case cannot be silently compared against anything.
 
 **Where.** `crates/temper-platform/src/genesis_install/blob_materialization.rs`,
 `crates/temper-server/src/blob_store/state.rs` (temper `c3595b47`).
@@ -473,9 +527,9 @@ fixing something else, and both were caught only because each fix was verified b
 its effect rather than assumed. Deploying and re-reading the actual error is what
 kept the chain honest.
 
-## A guest's internal calls run as the guest, not as its caller
+## D12: A guest's internal calls run as the guest, not as its caller
 
-**Decision.** For the HttpEndpoint path, bind the guest's internal HTTP
+**Decision:** For the HttpEndpoint path, bind the guest's internal HTTP
 capability to the module's own principal rather than to the inbound caller's
 security context. Rita chose this over two narrower options.
 
@@ -522,9 +576,9 @@ action-triggered integrations.
 with `policies/git_token.cedar` granting the six wire modules read/list and
 MarkUsed.
 
-## Raise the bundle byte budget rather than shrink the app
+## D13: Raise the bundle byte budget rather than shrink the app
 
-**Decision.** `MAX_GENESIS_BUNDLE_TOTAL_BYTES` 64 MiB → 256 MiB. Rita chose this
+**Decision:** `MAX_GENESIS_BUNDLE_TOTAL_BYTES` 64 MiB → 256 MiB. Rita chose this
 over stripping symbol names from the WASM modules.
 
 **Came up because.** dsf-factory is ~52 MB of legitimate compiled WASM — 59
@@ -547,9 +601,9 @@ and weakening them while relieving the total would have removed the real guard.
 
 **Where.** `crates/temper-platform/src/genesis_install/bundles.rs`.
 
-## Let a protocol handler see the credential it is required to resolve
+## D14: Let a protocol handler see the credential it is required to resolve
 
-**Decision.** Add `ForwardsCredential` to HttpEndpoint, off by default, and
+**Decision:** Add `ForwardsCredential` to HttpEndpoint, off by default, and
 default it on for the six handlers that implement credential-carrying protocols.
 Rita chose this over having the kernel resolve GitTokens itself.
 
@@ -599,9 +653,9 @@ opted in, so a future widening has to defeat an assertion rather than slip past.
 broken lookup and a bad token are indistinguishable from outside — three wrong
 fixes came from that. The function is now instrumented at all five exits.
 
-## Honour the credential opt-in where the header is actually removed
+## D15: Honour the credential opt-in where the header is actually removed
 
-**Decision.** Apply `ForwardsCredential` in `bearer_auth`, at both the
+**Decision:** Apply `ForwardsCredential` in `bearer_auth`, at both the
 authenticated and public-route branches, not only in the router's header filter.
 
 **Came up because.** The previous decision added the opt-in to
@@ -632,5 +686,18 @@ a layer the failure does not traverse argues actively for a wrong conclusion.
 keeps the header; a route without the opt-in still loses it. All 18 existing
 `bearer_auth` tests pass unchanged, so ARN-208 holds everywhere it did before.
 
+**Options.** Keep filtering in the router's `guest_visible_headers` only — what
+was already there, and it changed nothing; re-attach the header in the router
+after `bearer_auth` had removed it; honour the opt-in at both sites in
+`bearer_auth` that actually remove it.
+
+**Chose the removal sites because.** The router cannot filter a header that no
+longer exists, which is why four inferences and a passing test all pointed the
+wrong way. Re-attaching would mean reconstructing a credential the kernel had
+just discarded, in a component with no business holding one. Guarding the removal
+itself means the header is never lost in the first place, and the guard sits
+where a reader looking for "who deletes this?" will find it.
+
 **Where.** `crates/temper-platform/src/bearer_auth.rs` and its tests
 (temper `667caada`).
+
