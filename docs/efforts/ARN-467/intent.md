@@ -12,6 +12,6 @@ it runs on.
 
 This effort is the Genesis half. Its kernel half is
 [ARN-499](https://linear.app/arni-build/issue/ARN-499) in `nerdsane/temper`,
-PR #462, pinned here as the `temper` submodule.
+PR #463, pinned here as the `temper` submodule.
 
 Tracked as [ARN-467](https://linear.app/arni-build/issue/ARN-467).
