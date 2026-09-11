@@ -6,7 +6,7 @@
    own kernel's loopback origin, read the `blob_endpoint` secret, read and write
    the git-object and field-overflow blob namespaces, and resolve a GitToken.
 3. Derive each guest's OData base from that secret instead of the `Host` header.
-4. Pin the kernel that carries the matching fixes (ARN-499, temper PR #462) and
+4. Pin the kernel that carries the matching fixes (ARN-499, temper PR #463) and
    raise the bundle byte budget to a size a real app reaches.
 5. Prove the whole surface live against Genesis production: clone, fetch,
    authenticated push, bundle serve, REST, and ref advance — each as the request
