@@ -701,3 +701,31 @@ where a reader looking for "who deletes this?" will find it.
 **Where.** `crates/temper-platform/src/bearer_auth.rs` and its tests
 (temper `667caada`).
 
+
+## D16: Judge Genesis readiness by /healthz, the probe production already uses
+
+**Decision:** Change the CI boot probe from `GET /tdata/Apps?$top=1` to
+`GET /healthz`.
+
+**Came up because:** The GitHub Workflow Gate passes on `main` and fails on this
+branch, and the difference is not the workflow — it is byte-identical — but the
+kernel. `main` pins temper `f200ba62`; this branch pins a kernel **233 commits**
+ahead, and current temper treats `/tdata/Apps` as a protected route. The
+unauthenticated probe therefore 401s forever and the boot step times out after
+300 seconds. The gate was previously masked: the submodule pinned a sha that was
+never pushed, so every job died at checkout before reaching this step.
+
+**Options:** Give CI a `TEMPER_API_KEY` and authenticate the probe; make
+`/tdata/Apps` public again in the kernel; probe `/healthz`.
+
+**Chose `/healthz` because** it is what `railway.toml` already uses as
+`healthcheckPath`, so CI now judges readiness by the same signal production
+does — the divergence was the bug. Issuing a CI credential is more moving parts
+for a liveness check, and making a data route public again to satisfy a probe
+would weaken the kernel to suit a test.
+
+**Production is not affected.** Its healthcheck is already `/healthz`, which is
+public by design and returns 200 on the new kernel — verified directly. Only the
+CI harness depended on unauthenticated access to a data route.
+
+**Where.** `.github/workflows/ci.yml`, the Boot Genesis step.
