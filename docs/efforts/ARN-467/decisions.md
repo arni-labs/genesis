@@ -729,3 +729,29 @@ public by design and returns 200 on the new kernel — verified directly. Only t
 CI harness depended on unauthenticated access to a data route.
 
 **Where.** `.github/workflows/ci.yml`, the Boot Genesis step.
+
+## D17: The CI harness authenticates like a real client, and says so
+
+**Decision:** Give the Genesis CI job a `TEMPER_API_KEY`, send it as a bearer on
+the smoke's admin calls, wait on `/healthz`, and append clearly-labelled harness
+permits to the shipped policy set before the round trip.
+
+**Came up because:** With the kernel pinned to merged `main`, "Boot Genesis"
+passed (D16) and the next step failed at once: the smoke waited on
+`/tdata/Apps` with no credential, then would have made every admin call with
+`X-Temper-Principal-*` headers, which the kernel strips before any handler sees
+them (ADR-0157). The harness was written for a kernel that trusted a caller's
+self-description; the 233-commit bump removed that trust on purpose.
+
+**Options:** Restore header-trust in the kernel for CI; mark the gate
+non-required; make the harness authenticate the way an agent does.
+
+**Chose real authentication because** the first weakens the kernel to suit a
+test and the second removes the only end-to-end check Genesis has. The key
+lives only inside the job. The permits are appended, never replacing the
+shipped set, and are labelled as harness setup — what a fresh install should
+grant by default is a product decision tracked as ARN-504, not something a
+test script decides.
+
+**Where.** `.github/workflows/ci.yml` (Boot Genesis env),
+`scripts/live-github-workflow-smoke.sh`.

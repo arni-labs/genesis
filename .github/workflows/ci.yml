@@ -85,6 +85,10 @@ jobs:
     needs: rust
     env:
       GENESIS_PORT: "3188"
+      # The kernel strips self-declared principal headers (ADR-0157) and
+      # requires a real credential for protected routes. This key exists only
+      # inside this job: it bootstraps the operator the smoke acts as.
+      TEMPER_API_KEY: genesis-ci-operator-key
     steps:
       - uses: actions/checkout@v6
         with:
@@ -137,6 +141,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/os-apps" && ln -sfn "$PWD" "${RUNNER_TEMP}/os-apps/temper-git"
           TEMPER_OS_APPS_DIR="${RUNNER_TEMP}/os-apps" \
           TURSO_URL="file:${RUNNER_TEMP}/genesis-workflow-gate.db" \
+          TEMPER_API_KEY="$TEMPER_API_KEY" \
           nohup temper/target/release/temper serve \
             --port "$GENESIS_PORT" --storage turso --no-observe --app temper-git \
             > "${RUNNER_TEMP}/genesis-server.log" 2>&1 &

@@ -111,6 +111,10 @@ admin_headers=(
   -H "Content-Type: application/json"
   -H "Accept: application/json"
   -H "X-Tenant-Id: ${TENANT}"
+  # The kernel resolves a real credential; the X-Temper-Principal-* headers
+  # below are stripped before any handler sees them (ADR-0157) and remain only
+  # for kernels that still honour them.
+  ${TEMPER_API_KEY:+-H "Authorization: Bearer ${TEMPER_API_KEY}"}
   -H "X-Temper-Principal-Kind: admin"
   -H "X-Temper-Principal-Id: operator"
   -H "X-Temper-Principal-Scopes: admin:platform admin:repos admin:owners admin:tokens repo:write pr:write"
@@ -303,13 +307,35 @@ merge_pull() {
 # ---------------------------------------------------------------------
 
 deadline=$((SECONDS + WAIT_SECS))
-until curl -fsS -H "X-Tenant-Id: ${TENANT}" "${BASE_URL}/tdata/Apps?\$top=1" >/dev/null 2>&1; do
+# /healthz is the readiness signal production is judged by (railway.toml);
+# /tdata/Apps is a protected route and 401s without a credential.
+until curl -fsS "${BASE_URL}/healthz" >/dev/null 2>&1; do
   if [[ "$SECONDS" -ge "$deadline" ]]; then
     printf 'Server at %s not reachable within %ss\n' "$BASE_URL" "$WAIT_SECS" >&2
     exit 1
   fi
   sleep 1
 done
+
+# ── Harness setup, not product behaviour ─────────────────────────────────
+# The operator bootstrapped from TEMPER_API_KEY holds manage_policies and
+# nothing else. This smoke creates endpoints, repositories, tokens and pull
+# requests directly through the data API, which the shipped Genesis policies
+# grant to Genesis's own modules, not to an operator. Grant the smoke what it
+# needs, appended to the shipped set so nothing shipped is weakened or lost.
+# (What a fresh install should grant by default is ARN-504.)
+if [[ -n "${TEMPER_API_KEY:-}" ]]; then
+  current_policy="$(curl -sS "${admin_headers[@]}" "${BASE_URL}/api/tenants/${TENANT}/policies" | python3 -c 'import sys,json;print(json.load(sys.stdin)["policy_text"])')"
+  harness_permits=""
+  for t in HttpEndpoint Owner Repository GitToken Ref PullRequest Commit Tree TreeEntry Blob Tag Lineage Closure Review ReviewComment Webhook App AppInstallation RateLimit; do
+    harness_permits+="permit(principal, action, resource is ${t});"$'\n'
+  done
+  python3 - "$current_policy" "$harness_permits" > "${TMP_DIR}/harness-policy.json" <<'PY2'
+import json,sys
+print(json.dumps({"policy_text": sys.argv[1].rstrip()+"\n"+sys.argv[2]}))
+PY2
+  curl -fsS -X PUT "${admin_headers[@]}" --data-binary @"${TMP_DIR}/harness-policy.json" "${BASE_URL}/api/tenants/${TENANT}/policies" >/dev/null
+fi
 
 register_endpoints
 
