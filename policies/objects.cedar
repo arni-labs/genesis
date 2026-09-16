@@ -281,15 +281,18 @@ permit(
 // never widens to other tenants' overflow blobs.
 
 permit(
-  principal is Agent,
+  principal,
   action in [Action::"read_blob_object", Action::"write_blob_object"],
   resource is BlobObject
 ) when {
   // Only the modules that implement the git wire and its integrations. An
-  // unconstrained principal here handed every authenticated principal in the
-  // tenant read AND write over the whole object cache (review, 2026-09-15).
-  // Guests carry their module identity as the principal; triggered
-  // integrations carry it in context.module. Accept either, nothing else.
+  // unconstrained `when` here handed every authenticated principal in the
+  // tenant read AND write over the whole object cache (review, 2026-09-15);
+  // the module list below is the scope. Guests carry their module identity
+  // as the principal; triggered integrations carry it in context.module and
+  // act for whoever caused the transition — for a public push that is the
+  // anonymous Customer, so the principal's type is not constrained here.
+  // Accept either arm, nothing else.
   (
     [
       Agent::"git_refs_advertise",

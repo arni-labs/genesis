@@ -829,3 +829,26 @@ comment called the mismatch a spec gap. One name, two lines.
 
 **Where.** `specs/pull_request.ioa.toml` Merge params;
 `wasm/scm_merge_pr/src/sub_writes.rs`.
+
+## D21: The object-cache permit's `context.module` arm does not constrain the principal's type
+
+**Decision:** The BlobObject permit in `policies/objects.cedar` binds
+`principal` without a type, and scopes by its `when` clause: the module
+list, matched either as the principal (endpoint guests) or as
+`context.module` (triggered integrations).
+
+**Came up because:** With temper ARN-519 the ingest integration's blob write
+arrives as the anonymous principal carrying `context.module =
+"scm_ingest_pack"`. The permit said `principal is Agent`; the anonymous
+principal is a Customer, so the `context.module` arm could never match and
+the push still returned 403.
+
+**Options:** Have the kernel delegate anonymous callers as an Agent; drop
+the type constraint on this permit.
+
+**Chose the permit because** anonymous is a Customer everywhere else in the
+kernel, and the `when` clause already carries the scope the review asked for
+(the five git modules, the two key namespaces). Nothing widens: a principal
+outside the list, of any type, is still refused.
+
+**Where.** `policies/objects.cedar`, the BlobObject permit.
