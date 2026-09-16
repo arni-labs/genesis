@@ -781,3 +781,26 @@ the exact symptom D3 fixed. The CI round-trip smoke drives both paths and is
 the check that this permit is neither too wide nor too narrow.
 
 **Where.** `policies/objects.cedar`.
+
+## D19: The modules that write objects may PUT to the object cache
+
+**Decision:** Let `scm_ingest_pack` and `scm_merge_pr` call the kernel's
+loopback origin with `PUT` as well as `GET`.
+
+**Came up because:** With the harness authenticating (D17) and the object-cache
+permit scoped (D18), the CI round-trip got past preconditions and REST and
+failed at the push: `field-overflow PUT field-overflow/sha256/… returned HTTP
+403`. The `http_call` permits for the two modules that *produce* objects
+allowed only `GET`. On the old kernel the write reached the cache without
+crossing this gate; now a guest's internal calls run as the guest (temper D7)
+and are governed like any other call — which is right, and means the permit
+has to say what the module actually does.
+
+**Options:** Widen every module to all methods; permit `PUT` for the two writing
+modules only; route writes through a kernel-side bridge that needs no permit.
+
+**Chose the two-module PUT because** it names exactly the capability the code
+exercises and nothing more. The wire modules still read only. A bridge would be
+new machinery to avoid writing down a fact.
+
+**Where.** `policies/wasm.cedar`.

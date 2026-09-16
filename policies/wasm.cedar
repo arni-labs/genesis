@@ -30,7 +30,10 @@ permit(
   resource is HttpEndpoint
 ) when {
   context.module == "scm_ingest_pack" &&
-  context.method == "GET" &&
+  // GET reads the object cache; PUT writes it -- ingest and merge both
+  // produce objects and field-overflow blobs. With no PUT here the push dies
+  // at `field-overflow PUT ... returned HTTP 403` (the CI round-trip, D19).
+  ["GET", "PUT"].contains(context.method) &&
   [
     "127.0.0.1", "localhost",
     "genesis-production-164d.up.railway.app"
@@ -86,7 +89,10 @@ permit(
   resource is HttpEndpoint
 ) when {
   context.module == "scm_merge_pr" &&
-  context.method == "GET" &&
+  // GET reads the object cache; PUT writes it -- ingest and merge both
+  // produce objects and field-overflow blobs. With no PUT here the push dies
+  // at `field-overflow PUT ... returned HTTP 403` (the CI round-trip, D19).
+  ["GET", "PUT"].contains(context.method) &&
   [
     "127.0.0.1", "localhost",
     "genesis-production-164d.up.railway.app"
