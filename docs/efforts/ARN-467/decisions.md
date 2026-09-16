@@ -804,3 +804,28 @@ exercises and nothing more. The wire modules still read only. A bridge would be
 new machinery to avoid writing down a fact.
 
 **Where.** `policies/wasm.cedar`.
+
+## D20: The merge sub-write names the row field the model declares
+
+**Decision:** `scm_merge_pr`'s PullRequest `Merge` sub-write (and the spec's
+`Merge` params) carry `MergedCommitSha`, the property `model.csdl.xml`
+declares, instead of `MergeCommitSha`.
+
+**Came up because:** With the push fixed (temper ARN-519), the CI round-trip
+smoke reached step 7 for the first time and failed: `PUT pulls/1/merge`
+answered `sha` = the pre-merge base tip. The merge itself was right (the
+re-clone shows the two-parent merge commit on main); the row's
+`MergedCommitSha` was empty because the writer sent a name the model does not
+declare, so the kernel dropped it and the REST layer fell back to the target
+tip it had read before merging.
+
+**Options:** Rename the reader (three sites in `github_rest_pulls`) to the
+writer's name and add the property to the model; rename the writer to the
+declared name.
+
+**Chose the writer because** the model and RFC-0001 already say
+`MergedCommitSha`, the REST reader already uses it, and the writer's own
+comment called the mismatch a spec gap. One name, two lines.
+
+**Where.** `specs/pull_request.ioa.toml` Merge params;
+`wasm/scm_merge_pr/src/sub_writes.rs`.

@@ -97,7 +97,7 @@ name = "Merge"
 kind = "input"
 from = ["Approved"]
 to = "Merged"
-params = ["Strategy", "Message", "ClientRequestId", "MergeCommitSha"]
+params = ["Strategy", "Message", "ClientRequestId", "MergedCommitSha"]
 hint = "Mark the PR merged. Repository.MergePullRequest produces the merge objects and advances TargetRef, then applies this transition as a sub-write."
 
 [[action.cedar_gate]]
