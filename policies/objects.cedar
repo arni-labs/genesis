@@ -281,12 +281,34 @@ permit(
 // never widens to other tenants' overflow blobs.
 
 permit(
-  principal,
+  principal is Agent,
   action in [Action::"read_blob_object", Action::"write_blob_object"],
   resource is BlobObject
 ) when {
+  // Only the modules that implement the git wire and its integrations. An
+  // unconstrained principal here handed every authenticated principal in the
+  // tenant read AND write over the whole object cache (review, 2026-09-15).
+  // Guests carry their module identity as the principal; triggered
+  // integrations carry it in context.module. Accept either, nothing else.
+  (
+    [
+      Agent::"git_refs_advertise",
+      Agent::"git_upload_pack",
+      Agent::"git_receive_pack",
+      Agent::"scm_ingest_pack",
+      Agent::"scm_merge_pr"
+    ].contains(principal) ||
+    (context has module && [
+      "git_refs_advertise",
+      "git_upload_pack",
+      "git_receive_pack",
+      "scm_ingest_pack",
+      "scm_merge_pr"
+    ].contains(context.module))
+  ) && (
   resource.id like "git-objects/*" ||
   resource.id like "field-overflow/*"
+  )
 };
 
 // `field-overflow/` is the kernel's own storage for entity field values too

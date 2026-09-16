@@ -755,3 +755,29 @@ test script decides.
 
 **Where.** `.github/workflows/ci.yml` (Boot Genesis env),
 `scripts/live-github-workflow-smoke.sh`.
+
+## D18: The object-cache permit names its modules; it does not trust the tenant
+
+**Decision:** Constrain the `read_blob_object` / `write_blob_object` permit to the
+five modules that implement the git wire and its integrations, accepting the
+module either as the guest principal or as `context.module` for triggered
+integrations.
+
+**Came up because:** The review round on this PR — codex and fable, separately
+— found the permit written in D3 had an unconstrained `principal`: every
+authenticated principal in the tenant could read and write the whole git-object
+cache and every field-overflow blob. D3 assumed operators; the policy said
+anyone.
+
+**Options:** Constrain by principal only (the GitToken permit's pattern);
+constrain by `context.module` only (the `http_call` permit's pattern); accept
+either.
+
+**Chose either because** the two kinds of caller genuinely differ. HttpEndpoint
+guests act as `Agent::"<module>"` (temper D7); spec-triggered integrations such
+as `scm_ingest_pack` are identified by `context.module`. A single form would
+silently exclude one of them and clone or push would 403 on the object cache —
+the exact symptom D3 fixed. The CI round-trip smoke drives both paths and is
+the check that this permit is neither too wide nor too narrow.
+
+**Where.** `policies/objects.cedar`.
