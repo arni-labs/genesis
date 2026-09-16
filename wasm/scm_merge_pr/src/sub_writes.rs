@@ -122,10 +122,9 @@ pub fn pull_request_merge_sub_write(
             "Strategy": strategy,
             "Message": message,
             "ClientRequestId": client_request_id,
-            // Not declared in pull_request.ioa.toml's Merge params today
-            // (spec gap reported with this module); carried so the row
-            // records which commit the merge produced.
-            "MergeCommitSha": merge_commit_sha,
+            // The row's `MergedCommitSha` (model.csdl.xml): the commit the
+            // merge produced. The REST layer answers PUT .../merge with it.
+            "MergedCommitSha": merge_commit_sha,
         }),
     )
 }

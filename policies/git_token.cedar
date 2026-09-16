@@ -24,6 +24,49 @@ permit(
   resource is GitToken
 );
 
+// The same module-internal token resolution, under the identity the kernel
+// actually supplies. The comment above describes handlers looking tokens up
+// "under their own admin-kind module identity" — that was asserted with
+// `X-Temper-Principal-Kind` headers, which the kernel now strips on purpose and
+// replaces with the module's own principal (Agent, id = module name). Without a
+// permit for it the lookup returns nothing, every caller degrades to anonymous,
+// and `git push` answers 401 with a perfectly valid token.
+//
+// Scoped to the six wire/REST handlers that authenticate callers. A module may
+// read GitTokens only to resolve the credential presented to it; nothing here
+// grants Create, Revoke, or any customer scope.
+permit(
+  principal is Agent,
+  action in [Action::"read", Action::"list"],
+  resource is GitToken
+) when {
+  [
+    Agent::"git_refs_advertise",
+    Agent::"git_upload_pack",
+    Agent::"git_receive_pack",
+    Agent::"github_rest_repos",
+    Agent::"github_rest_refs",
+    Agent::"github_rest_pulls"
+  ].contains(principal)
+};
+
+// MarkUsed fires on every successful auth check and is likewise performed by
+// the module, not by the caller it just authenticated.
+permit(
+  principal is Agent,
+  action == Action::"MarkUsed",
+  resource is GitToken
+) when {
+  [
+    Agent::"git_refs_advertise",
+    Agent::"git_upload_pack",
+    Agent::"git_receive_pack",
+    Agent::"github_rest_repos",
+    Agent::"github_rest_refs",
+    Agent::"github_rest_pulls"
+  ].contains(principal)
+};
+
 permit(
   principal,
   action in [Action::"read", Action::"list"],
