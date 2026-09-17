@@ -92,35 +92,46 @@ fn run_publish_new_version(ctx: &Context) -> Result<Value, String> {
 }
 
 fn ensure_commit_exists(ctx: &Context, repository_id: &str, sha: &str) -> Result<(), String> {
-    let filter = format!(
-        "Id eq '{}' and RepositoryId eq '{}'",
-        sha.replace('\'', "''"),
-        repository_id.replace('\'', "''")
-    );
+    let scoped_id = genesis_git_object::object_entity_id(repository_id, sha);
     let temper_api = temper_api_base(ctx);
-    let url = format!(
-        "{temper_api}/tdata/Commits?$filter={}&$select=Id,RepositoryId&$top=1",
-        urlencode(&filter)
-    );
-    let resp = ctx
-        .http_call("GET", &url, &[], "")
-        .map_err(|e| format!("fetch Commit: {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("Commit {sha} status {}", resp.status));
+    // Point reads hydrate cold durable entities; collection projections need not
+    // contain every commit. The second key supports pre-scoped legacy objects.
+    for entity_id in [&scoped_id, sha] {
+        let url = format!(
+            "{temper_api}/tdata/Commits('{}')",
+            urlencode(&odata_key(entity_id))
+        );
+        let resp = ctx
+            .http_call("GET", &url, &[], "")
+            .map_err(|e| format!("fetch Commit: {e}"))?;
+        if resp.status == 404 {
+            continue;
+        }
+        if !(200..300).contains(&resp.status) {
+            return Err(format!("Commit {sha} status {}", resp.status));
+        }
+        let parsed: Value =
+            serde_json::from_str(&resp.body).map_err(|e| format!("Commit json: {e}"))?;
+        if commit_matches_repository(&parsed, repository_id, entity_id, sha) {
+            return Ok(());
+        }
+        return Err(format!(
+            "Commit {sha} identity does not match repository {repository_id}"
+        ));
     }
-    let parsed: Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("Commit json: {e}"))?;
-    let found = parsed
-        .get("value")
-        .and_then(|value| value.as_array())
-        .is_some_and(|rows| !rows.is_empty());
-    if found {
-        Ok(())
-    } else {
-        Err(format!(
-            "NewHash must be an existing Git commit in repository {repository_id}; {sha} was not found"
-        ))
-    }
+    Err(format!(
+        "NewHash must be an existing Git commit in repository {repository_id}; {sha} was not found"
+    ))
+}
+
+fn commit_matches_repository(row: &Value, repository_id: &str, entity_id: &str, sha: &str) -> bool {
+    let fields = row.get("fields").unwrap_or(row);
+    fields.get("RepositoryId").and_then(Value::as_str) == Some(repository_id)
+        && matches!(fields.get("Id").and_then(Value::as_str), Some(id) if id == entity_id || id == sha)
+        && row
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .is_none_or(|id| id == entity_id)
 }
 
 fn run_install(ctx: &Context) -> Result<Value, String> {
@@ -899,6 +910,42 @@ mod tests {
             build_publish_sub_writes(&app, &publish_params, &current_ref)
                 .expect("publish sub-writes should build"),
         )
+    }
+
+    #[test]
+    fn publication_requires_the_requested_repository_and_stored_commit_identity() {
+        let repo = "rp-katagami-katagami-commons";
+        let sha = "d4dd676f5b215a16fa99509fe05b7a5ab74f45d1";
+        let scoped = genesis_git_object::object_entity_id(repo, sha);
+        for id in [&scoped, sha] {
+            let stored = json!({"entity_id": scoped, "fields": {"Id": id, "RepositoryId": repo}});
+            assert!(commit_matches_repository(&stored, repo, &scoped, sha));
+            assert!(!commit_matches_repository(
+                &stored,
+                "another-repository",
+                &scoped,
+                sha
+            ));
+            assert!(!commit_matches_repository(&stored, repo, "wrong-key", sha));
+        }
+        assert!(!commit_matches_repository(
+            &json!({"Id": scoped}),
+            repo,
+            &scoped,
+            sha
+        ));
+        assert!(!commit_matches_repository(
+            &json!({"Id": "wrong", "RepositoryId": repo}),
+            repo,
+            &scoped,
+            sha
+        ));
+        assert!(commit_matches_repository(
+            &json!({"Id": sha, "RepositoryId": repo}),
+            repo,
+            sha,
+            sha
+        ));
     }
 
     #[test]
