@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use genesis_git_object::object_entity_id;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use temper_wasm_sdk::http_stream::streaming_call;
@@ -708,26 +709,6 @@ fn is_zero_sha(value: &str) -> bool {
 
 fn ref_id_for(repository_id: &str, refname: &str) -> String {
     format!("rf-{}-{}", repository_id, refname.replace('/', "-"))
-}
-
-fn object_entity_id(repository_id: &str, sha: &str) -> String {
-    let mut repo = String::with_capacity(repository_id.len());
-    let mut last_dash = false;
-    for ch in repository_id.chars() {
-        if ch.is_ascii_alphanumeric() {
-            repo.push(ch.to_ascii_lowercase());
-            last_dash = false;
-        } else if !last_dash {
-            repo.push('-');
-            last_dash = true;
-        }
-    }
-    let repo = repo.trim_matches('-');
-    if repo.is_empty() {
-        format!("obj-{sha}")
-    } else {
-        format!("{repo}-{sha}")
-    }
 }
 
 fn build_object_row(
