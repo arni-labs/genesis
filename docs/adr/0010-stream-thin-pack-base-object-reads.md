@@ -26,11 +26,19 @@ pack delta base not found: ... fetch Blobs(...): HTTP response too large for buf
 `scm_ingest_pack` resolves external thin-pack bases with a streaming GET rather
 than bounded `http_call`.
 
-The lookup also asks OData for only `CanonicalBytes`:
+The lookup uses the same repository-scoped durable entity identity written by
+ingestion, `object_entity_id(repository_id, sha)`, and asks OData for only the
+identity fields plus `CanonicalBytes`:
 
 ```text
-$select=CanonicalBytes&$top=1
+GET /tdata/Blobs('<repository-scoped-id>')?$select=Id,RepositoryId,CanonicalBytes
 ```
+
+Legacy rows keyed by the bare Git SHA remain readable as a fallback. Both
+lookup forms must match the requested repository and SHA. Before a base is
+given to the pack parser, Genesis verifies the canonical Git kind and length
+header and recomputes the SHA from the body. A row with mismatched identity or
+content fails ingestion rather than supplying bytes to delta expansion.
 
 If `CanonicalBytes` is a field-overflow ref, the integration dereferences it
 through the same streamed blob endpoint used for staged pack bytes.
@@ -41,6 +49,10 @@ through the same streamed blob endpoint used for staged pack bytes.
   the host response buffer.
 - Base lookup avoids fetching the blob `Content` field, which halves the
   response size for legacy inline large blobs.
+- Repository-scoped keys prevent one repository's object row from satisfying
+  another repository's thin-pack base lookup.
+- Corrupt or incorrectly keyed canonical bytes are rejected before delta
+  expansion.
 - Object state remains Temper-native. No filesystem repo cache or host-side git
   helper is introduced.
 - The integration may still materialize one decoded base object in WASM memory
