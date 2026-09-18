@@ -556,40 +556,53 @@ fn fetch_existing_object_body(
     set: &str,
     sha: &str,
 ) -> Result<Option<Vec<u8>>, String> {
-    let url = existing_object_lookup_url(api_base, set, repository_id, sha);
+    let scoped_id = object_entity_id(repository_id, sha);
     let headers = internal_read_headers();
     let header_refs = header_refs(&headers);
-    let body = get_streamed_text(&url, &format!("fetch {set}({sha})"), &header_refs)?;
-    let parsed: Value = serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
-    let row = parsed
-        .get("value")
-        .and_then(|v| v.as_array())
-        .and_then(|items| items.first())
-        .cloned();
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let fields = row.get("fields").unwrap_or(&row);
-    let canonical_value = fields
-        .get("CanonicalBytes")
-        .or_else(|| fields.get("canonical_bytes"))
-        .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
-    canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
-        get_overflow_blob(blob_endpoint, blob_key)
-    })
-    .map(Some)
+    for entity_id in [&scoped_id, sha] {
+        let url = existing_object_lookup_url(api_base, set, entity_id);
+        let Some(body) =
+            get_optional_streamed_text(&url, &format!("fetch {set}({sha})"), &header_refs)?
+        else {
+            continue;
+        };
+        let row: Value = serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
+        if !base_identity_matches(&row, repository_id, entity_id, sha) {
+            return Err(format!(
+                "{set}({sha}) identity does not match repository {repository_id}"
+            ));
+        }
+        let fields = row.get("fields").unwrap_or(&row);
+        let canonical_value = fields
+            .get("CanonicalBytes")
+            .or_else(|| fields.get("canonical_bytes"))
+            .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
+        return canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
+            get_overflow_blob(blob_endpoint, blob_key)
+        })
+        .map(Some);
+    }
+    Ok(None)
 }
 
-fn existing_object_lookup_url(api_base: &str, set: &str, repository_id: &str, sha: &str) -> String {
-    let filter = format!(
-        "Id eq {} and RepositoryId eq {}",
-        odata_string_literal(sha),
-        odata_string_literal(repository_id)
-    );
+fn base_identity_matches(row: &Value, repository_id: &str, entity_id: &str, sha: &str) -> bool {
+    let fields = row.get("fields").unwrap_or(row);
+    let expected_scoped_id = object_entity_id(repository_id, sha);
+    let requested_identity_matches = entity_id == sha || entity_id == expected_scoped_id;
+    fields.get("RepositoryId").and_then(Value::as_str) == Some(repository_id)
+        && requested_identity_matches
+        && fields.get("Id").and_then(Value::as_str) == Some(entity_id)
+        && row
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .is_none_or(|id| id == entity_id)
+}
+
+fn existing_object_lookup_url(api_base: &str, set: &str, entity_id: &str) -> String {
     format!(
-        "{}/tdata/{set}?$filter={}&$select=CanonicalBytes&$top=1",
+        "{}/tdata/{set}('{}')?$select=Id,RepositoryId,CanonicalBytes",
         api_base.trim_end_matches('/'),
-        urlencode(&filter)
+        urlencode(&entity_id.replace('\'', "''"))
     )
 }
 
@@ -917,12 +930,25 @@ fn get_overflow_blob(blob_endpoint: &str, blob_key: &str) -> Result<String, Stri
 }
 
 fn get_streamed_text(url: &str, label: &str, headers: &[(&str, &str)]) -> Result<String, String> {
+    get_optional_streamed_text(url, label, headers)?
+        .ok_or_else(|| format!("{label} returned HTTP 404"))
+}
+
+fn get_optional_streamed_text(
+    url: &str,
+    label: &str,
+    headers: &[(&str, &str)],
+) -> Result<Option<String>, String> {
     let (request_body, mut response_body, response_head) =
         streaming_call("GET", url, headers).map_err(|e| format!("{label} stream begin: {e}"))?;
     request_body
         .finish()
         .map_err(|e| format!("{label} request close: {e}"))?;
     let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
+    if head.status == 404 {
+        let _ = response_body.close();
+        return Ok(None);
+    }
     if !(200..300).contains(&head.status) {
         let _ = response_body.close();
         return Err(format!("{label} returned HTTP {}", head.status));
@@ -940,7 +966,9 @@ fn get_streamed_text(url: &str, label: &str, headers: &[(&str, &str)]) -> Result
         out.extend_from_slice(&buf[..n]);
     }
     let _ = response_body.close();
-    String::from_utf8(out).map_err(|e| format!("{label} utf8: {e}"))
+    String::from_utf8(out)
+        .map(Some)
+        .map_err(|e| format!("{label} utf8: {e}"))
 }
 
 fn header_refs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
@@ -1103,13 +1131,66 @@ mod tests {
 
     #[test]
     fn existing_object_lookup_selects_only_canonical_bytes() {
-        let url =
-            existing_object_lookup_url("https://temper.example/", "Blobs", "repo ' one", "abc123");
+        let url = existing_object_lookup_url(
+            "https://temper.example/",
+            "Blobs",
+            &object_entity_id("repo ' one", "abc123"),
+        );
 
         assert_eq!(
             url,
-            "https://temper.example/tdata/Blobs?$filter=Id%20eq%20%27abc123%27%20and%20RepositoryId%20eq%20%27repo%20%27%27%20one%27&$select=CanonicalBytes&$top=1"
+            "https://temper.example/tdata/Blobs('repo-one-abc123')?$select=Id,RepositoryId,CanonicalBytes"
         );
+    }
+
+    #[test]
+    fn scoped_delta_base_identity_matches_ingested_row() {
+        let repository_id = "rp-temperpaw-paw-agent";
+        let sha = "2e7e9e01619aa4f92007a759bbe0124e963c48bc";
+        let entity_id = object_entity_id(repository_id, sha);
+        let row = json!({
+            "entity_id": entity_id,
+            "fields": {
+                "Id": object_entity_id(repository_id, sha),
+                "RepositoryId": repository_id,
+                "CanonicalBytes": "unused",
+            }
+        });
+
+        assert!(base_identity_matches(
+            &row,
+            repository_id,
+            &object_entity_id(repository_id, sha),
+            sha,
+        ));
+        assert!(!base_identity_matches(
+            &row,
+            "rp-other-repository",
+            &object_entity_id(repository_id, sha),
+            sha,
+        ));
+    }
+
+    #[test]
+    fn legacy_delta_base_requires_repository_and_sha_match() {
+        let repository_id = "rp-temperpaw-paw-agent";
+        let sha = "2e7e9e01619aa4f92007a759bbe0124e963c48bc";
+        let row = json!({
+            "entity_id": sha,
+            "fields": {
+                "Id": sha,
+                "RepositoryId": repository_id,
+                "CanonicalBytes": "unused",
+            }
+        });
+
+        assert!(base_identity_matches(&row, repository_id, sha, sha));
+        assert!(!base_identity_matches(
+            &row,
+            repository_id,
+            sha,
+            "ffffffffffffffffffffffffffffffffffffffff",
+        ));
     }
 
     #[test]
