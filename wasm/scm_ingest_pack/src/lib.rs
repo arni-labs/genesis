@@ -146,15 +146,25 @@ fn parse_pack_objects(
     repository_id: &str,
     pack_bytes: &[u8],
 ) -> Result<Vec<pack::PackObject>, String> {
+    parse_pack_objects_with_base(pack_bytes, |sha| {
+        fetch_existing_delta_base(ctx, api_base, blob_endpoint, repository_id, sha)
+            .map_err(|e| pack::PackError::DeltaBaseMissing(format!("{sha}: {e}")))
+    })
+}
+
+fn parse_pack_objects_with_base<F>(
+    pack_bytes: &[u8],
+    mut resolve_base: F,
+) -> Result<Vec<pack::PackObject>, String>
+where
+    F: FnMut(&str) -> Result<Option<pack::PackObject>, pack::PackError>,
+{
     let cursor = std::io::Cursor::new(pack_bytes);
     let mut parser =
         pack::StreamingPackParser::begin(cursor).map_err(|e| format!("pack header: {e}"))?;
     let mut objects = Vec::with_capacity(parser.object_count() as usize);
     while let Some(obj) = parser
-        .next_object_with_ref_delta_base(|sha| {
-            fetch_existing_delta_base(ctx, api_base, blob_endpoint, repository_id, sha)
-                .map_err(|e| pack::PackError::DeltaBaseMissing(format!("{sha}: {e}")))
-        })
+        .next_object_with_ref_delta_base(&mut resolve_base)
         .map_err(|e| format!("pack next: {e}"))?
     {
         objects.push(obj);
@@ -556,40 +566,53 @@ fn fetch_existing_object_body(
     set: &str,
     sha: &str,
 ) -> Result<Option<Vec<u8>>, String> {
-    let url = existing_object_lookup_url(api_base, set, repository_id, sha);
+    let scoped_id = object_entity_id(repository_id, sha);
     let headers = internal_read_headers();
     let header_refs = header_refs(&headers);
-    let body = get_streamed_text(&url, &format!("fetch {set}({sha})"), &header_refs)?;
-    let parsed: Value = serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
-    let row = parsed
-        .get("value")
-        .and_then(|v| v.as_array())
-        .and_then(|items| items.first())
-        .cloned();
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let fields = row.get("fields").unwrap_or(&row);
-    let canonical_value = fields
-        .get("CanonicalBytes")
-        .or_else(|| fields.get("canonical_bytes"))
-        .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
-    canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
-        get_overflow_blob(blob_endpoint, blob_key)
-    })
-    .map(Some)
+    for entity_id in [&scoped_id, sha] {
+        let url = existing_object_lookup_url(api_base, set, entity_id);
+        let Some(body) =
+            get_optional_streamed_text(&url, &format!("fetch {set}({sha})"), &header_refs)?
+        else {
+            continue;
+        };
+        let row: Value = serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
+        if !base_identity_matches(&row, repository_id, entity_id, sha) {
+            return Err(format!(
+                "{set}({sha}) identity does not match repository {repository_id}"
+            ));
+        }
+        let fields = row.get("fields").unwrap_or(&row);
+        let canonical_value = fields
+            .get("CanonicalBytes")
+            .or_else(|| fields.get("canonical_bytes"))
+            .ok_or_else(|| format!("{set}({sha}): no CanonicalBytes"))?;
+        return canonical_body_from_field_value(set, sha, canonical_value, |blob_key| {
+            get_overflow_blob(blob_endpoint, blob_key)
+        })
+        .map(Some);
+    }
+    Ok(None)
 }
 
-fn existing_object_lookup_url(api_base: &str, set: &str, repository_id: &str, sha: &str) -> String {
-    let filter = format!(
-        "Id eq {} and RepositoryId eq {}",
-        odata_string_literal(sha),
-        odata_string_literal(repository_id)
-    );
+fn base_identity_matches(row: &Value, repository_id: &str, entity_id: &str, sha: &str) -> bool {
+    let fields = row.get("fields").unwrap_or(row);
+    let expected_scoped_id = object_entity_id(repository_id, sha);
+    let requested_identity_matches = entity_id == sha || entity_id == expected_scoped_id;
+    fields.get("RepositoryId").and_then(Value::as_str) == Some(repository_id)
+        && requested_identity_matches
+        && matches!(fields.get("Id").and_then(Value::as_str), Some(id) if id == entity_id || id == sha)
+        && row
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .is_none_or(|id| id == entity_id)
+}
+
+fn existing_object_lookup_url(api_base: &str, set: &str, entity_id: &str) -> String {
     format!(
-        "{}/tdata/{set}?$filter={}&$select=CanonicalBytes&$top=1",
+        "{}/tdata/{set}('{}')?$select=Id,RepositoryId,CanonicalBytes",
         api_base.trim_end_matches('/'),
-        urlencode(&filter)
+        urlencode(&entity_id.replace('\'', "''"))
     )
 }
 
@@ -612,7 +635,26 @@ where
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
-    Ok(canonical[nul + 1..].to_vec())
+    let body = &canonical[nul + 1..];
+    let kind = git_kind_for_set(set).ok_or_else(|| format!("unsupported object set {set}"))?;
+    let expected_header = format!("{kind} {}", body.len());
+    if canonical[..nul] != *expected_header.as_bytes() {
+        return Err(format!("{set}({sha}): canonical header mismatch"));
+    }
+    if sha_from_prefix(kind, body) != sha {
+        return Err(format!("{set}({sha}): canonical SHA mismatch"));
+    }
+    Ok(body.to_vec())
+}
+
+fn git_kind_for_set(set: &str) -> Option<&'static str> {
+    match set {
+        "Blobs" => Some("blob"),
+        "Trees" => Some("tree"),
+        "Commits" => Some("commit"),
+        "Tags" => Some("tag"),
+        _ => None,
+    }
 }
 
 fn string_from_field_value<F>(
@@ -917,12 +959,25 @@ fn get_overflow_blob(blob_endpoint: &str, blob_key: &str) -> Result<String, Stri
 }
 
 fn get_streamed_text(url: &str, label: &str, headers: &[(&str, &str)]) -> Result<String, String> {
+    get_optional_streamed_text(url, label, headers)?
+        .ok_or_else(|| format!("{label} returned HTTP 404"))
+}
+
+fn get_optional_streamed_text(
+    url: &str,
+    label: &str,
+    headers: &[(&str, &str)],
+) -> Result<Option<String>, String> {
     let (request_body, mut response_body, response_head) =
         streaming_call("GET", url, headers).map_err(|e| format!("{label} stream begin: {e}"))?;
     request_body
         .finish()
         .map_err(|e| format!("{label} request close: {e}"))?;
     let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
+    if head.status == 404 {
+        let _ = response_body.close();
+        return Ok(None);
+    }
     if !(200..300).contains(&head.status) {
         let _ = response_body.close();
         return Err(format!("{label} returned HTTP {}", head.status));
@@ -940,7 +995,9 @@ fn get_streamed_text(url: &str, label: &str, headers: &[(&str, &str)]) -> Result
         out.extend_from_slice(&buf[..n]);
     }
     let _ = response_body.close();
-    String::from_utf8(out).map_err(|e| format!("{label} utf8: {e}"))
+    String::from_utf8(out)
+        .map(Some)
+        .map_err(|e| format!("{label} utf8: {e}"))
 }
 
 fn header_refs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
@@ -983,6 +1040,52 @@ fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+
+    fn git(dir: &Path, args: &[&str]) -> std::process::Output {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output
+    }
+
+    fn git_text(dir: &Path, args: &[&str]) -> String {
+        String::from_utf8(git(dir, args).stdout)
+            .expect("git output is utf-8")
+            .trim()
+            .to_string()
+    }
+
+    struct TestRepository(PathBuf);
+
+    impl TestRepository {
+        fn create(path: PathBuf) -> Self {
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create test repository");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRepository {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn ref_update_projects_target_commit_sha() {
@@ -1102,31 +1205,215 @@ mod tests {
     }
 
     #[test]
-    fn existing_object_lookup_selects_only_canonical_bytes() {
-        let url =
-            existing_object_lookup_url("https://temper.example/", "Blobs", "repo ' one", "abc123");
+    fn existing_object_lookup_selects_identity_and_canonical_bytes() {
+        let url = existing_object_lookup_url(
+            "https://temper.example/",
+            "Blobs",
+            &object_entity_id("repo ' one", "abc123"),
+        );
 
         assert_eq!(
             url,
-            "https://temper.example/tdata/Blobs?$filter=Id%20eq%20%27abc123%27%20and%20RepositoryId%20eq%20%27repo%20%27%27%20one%27&$select=CanonicalBytes&$top=1"
+            "https://temper.example/tdata/Blobs('repo-one-abc123')?$select=Id,RepositoryId,CanonicalBytes"
         );
     }
 
     #[test]
+    fn scoped_delta_base_identity_matches_ingested_row() {
+        let repository_id = "rp-temperpaw-paw-agent";
+        let sha = "2e7e9e01619aa4f92007a759bbe0124e963c48bc";
+        let entity_id = object_entity_id(repository_id, sha);
+        let row = json!({
+            "entity_id": entity_id,
+            "fields": {
+                "Id": object_entity_id(repository_id, sha),
+                "RepositoryId": repository_id,
+                "CanonicalBytes": "unused",
+            }
+        });
+
+        assert!(base_identity_matches(
+            &row,
+            repository_id,
+            &object_entity_id(repository_id, sha),
+            sha,
+        ));
+        let bare_id_row = json!({
+            "entity_id": object_entity_id(repository_id, sha),
+            "fields": {
+                "Id": sha,
+                "RepositoryId": repository_id,
+                "CanonicalBytes": "unused",
+            }
+        });
+        assert!(base_identity_matches(
+            &bare_id_row,
+            repository_id,
+            &object_entity_id(repository_id, sha),
+            sha,
+        ));
+        assert!(!base_identity_matches(
+            &row,
+            "rp-other-repository",
+            &object_entity_id(repository_id, sha),
+            sha,
+        ));
+    }
+
+    #[test]
+    fn legacy_delta_base_requires_repository_and_sha_match() {
+        let repository_id = "rp-temperpaw-paw-agent";
+        let sha = "2e7e9e01619aa4f92007a759bbe0124e963c48bc";
+        let row = json!({
+            "entity_id": sha,
+            "fields": {
+                "Id": sha,
+                "RepositoryId": repository_id,
+                "CanonicalBytes": "unused",
+            }
+        });
+
+        assert!(base_identity_matches(&row, repository_id, sha, sha));
+        assert!(!base_identity_matches(
+            &row,
+            repository_id,
+            sha,
+            "ffffffffffffffffffffffffffffffffffffffff",
+        ));
+    }
+
+    #[test]
+    fn real_git_thin_pack_resolves_external_repository_blob() {
+        assert!(
+            Command::new("git")
+                .arg("--version")
+                .status()
+                .is_ok_and(|status| status.success()),
+            "git is required for the real-Git thin-pack regression"
+        );
+
+        let dir = TestRepository::create(std::env::temp_dir().join(format!(
+            "genesis-ingest-thin-pack-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        )));
+        git(dir.path(), &["init", "--quiet"]);
+        git(dir.path(), &["config", "user.name", "Genesis Test"]);
+        git(
+            dir.path(),
+            &["config", "user.email", "genesis@example.invalid"],
+        );
+        git(dir.path(), &["config", "commit.gpgsign", "false"]);
+
+        let mut base = Vec::with_capacity(256 * 1024);
+        for line in 0..4096 {
+            writeln!(
+                base,
+                "stable package payload line {line:04}: abcdefghijklmnopqrstuvwxyz0123456789"
+            )
+            .expect("write base fixture");
+        }
+        std::fs::write(dir.path().join("package.bin"), &base).expect("write base blob");
+        git(dir.path(), &["add", "package.bin"]);
+        git(dir.path(), &["commit", "--quiet", "-m", "base package"]);
+        let base_commit = git_text(dir.path(), &["rev-parse", "HEAD"]);
+        let base_sha = git_text(dir.path(), &["rev-parse", "HEAD:package.bin"]);
+
+        let mut target = base.clone();
+        let replacement = b"bounded publication delta";
+        target[64 * 1024..64 * 1024 + replacement.len()].copy_from_slice(replacement);
+        std::fs::write(dir.path().join("package.bin"), &target).expect("write target blob");
+        git(dir.path(), &["add", "package.bin"]);
+        git(dir.path(), &["commit", "--quiet", "-m", "updated package"]);
+        let target_commit = git_text(dir.path(), &["rev-parse", "HEAD"]);
+        let target_sha = git_text(dir.path(), &["rev-parse", "HEAD:package.bin"]);
+
+        let mut child = Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args([
+                "pack-objects",
+                "--stdout",
+                "--revs",
+                "--thin",
+                "--no-reuse-delta",
+                "--no-reuse-object",
+                "--window=250",
+                "--depth=50",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn git pack-objects");
+        write!(
+            child.stdin.as_mut().expect("pack stdin"),
+            "{target_commit}\n^{base_commit}\n"
+        )
+        .expect("write pack revisions");
+        let packed = child.wait_with_output().expect("wait for git pack-objects");
+        assert!(
+            packed.status.success(),
+            "git pack-objects failed: {}",
+            String::from_utf8_lossy(&packed.stderr)
+        );
+
+        let mut resolved_external_base = false;
+        let objects = parse_pack_objects_with_base(&packed.stdout, |requested_sha| {
+            assert_eq!(requested_sha, base_sha);
+            resolved_external_base = true;
+            Ok(Some(pack::PackObject {
+                kind: pack::ObjectKind::Blob,
+                data: base.clone(),
+            }))
+        })
+        .expect("parse real Git thin pack");
+
+        assert!(
+            resolved_external_base,
+            "pack did not contain an external delta"
+        );
+        assert!(objects.iter().any(|object| {
+            object.kind == pack::ObjectKind::Blob
+                && sha_from_prefix("blob", &object.data) == target_sha
+                && object.data == target
+        }));
+    }
+
+    #[test]
     fn canonical_body_resolves_field_overflow_ref() {
+        let sha = sha_from_prefix("blob", b"hello");
         let canonical_b64 = B64.encode(b"blob 5\0hello");
         let value = json!({
             FIELD_OVERFLOW_REF_KEY: "field-overflow/sha256/canonical.json",
             FIELD_OVERFLOW_ENCODING_KEY: "json",
         });
 
-        let body = canonical_body_from_field_value("Blobs", "abc123", &value, |blob_key| {
+        let body = canonical_body_from_field_value("Blobs", &sha, &value, |blob_key| {
             assert_eq!(blob_key, "field-overflow/sha256/canonical.json");
             Ok(serde_json::to_string(&canonical_b64).unwrap())
         })
         .unwrap();
 
         assert_eq!(body, b"hello");
+    }
+
+    #[test]
+    fn canonical_body_rejects_wrong_kind_or_sha() {
+        let blob_sha = sha_from_prefix("blob", b"hello");
+        let wrong_kind = Value::String(B64.encode(b"tree 5\0hello"));
+        let wrong_sha = Value::String(B64.encode(b"blob 5\0world"));
+
+        assert!(
+            canonical_body_from_field_value("Blobs", &blob_sha, &wrong_kind, |_| unreachable!())
+                .unwrap_err()
+                .contains("canonical header mismatch")
+        );
+        assert!(
+            canonical_body_from_field_value("Blobs", &blob_sha, &wrong_sha, |_| unreachable!())
+                .unwrap_err()
+                .contains("canonical SHA mismatch")
+        );
     }
 
     fn chain_parents(chain: &[(&str, &[&str])]) -> std::collections::BTreeMap<String, Vec<String>> {

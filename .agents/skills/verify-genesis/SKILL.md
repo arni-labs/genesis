@@ -25,6 +25,9 @@ bootstrapped (the README's serve command). Wait for the HTTP port.
    HTTP 200, is the proof.
 4. **Registry install read**: the pinned-ref bundle URL for the new hash
    serves the new content.
+5. **Repository ingest pack**: push a base commit and a closely related second
+   commit with real Git, then read the repository-scoped base and expanded
+   target objects, moved ref, and cloned working tree back from Genesis.
 
 ## Prove
 
