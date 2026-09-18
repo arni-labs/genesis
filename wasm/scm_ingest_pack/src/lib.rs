@@ -1041,7 +1041,7 @@ fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::process::{Command, Stdio};
 
     fn git(dir: &Path, args: &[&str]) -> std::process::Output {
@@ -1065,6 +1065,26 @@ mod tests {
             .expect("git output is utf-8")
             .trim()
             .to_string()
+    }
+
+    struct TestRepository(PathBuf);
+
+    impl TestRepository {
+        fn create(path: PathBuf) -> Self {
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create test repository");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRepository {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -1264,22 +1284,26 @@ mod tests {
 
     #[test]
     fn real_git_thin_pack_resolves_external_repository_blob() {
-        if Command::new("git").arg("--version").status().is_err() {
-            eprintln!("git unavailable; skipping real-git thin-pack regression");
-            return;
-        }
+        assert!(
+            Command::new("git")
+                .arg("--version")
+                .status()
+                .is_ok_and(|status| status.success()),
+            "git is required for the real-Git thin-pack regression"
+        );
 
-        let dir = std::env::temp_dir().join(format!(
+        let dir = TestRepository::create(std::env::temp_dir().join(format!(
             "genesis-ingest-thin-pack-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("create test repository");
-        git(&dir, &["init", "--quiet"]);
-        git(&dir, &["config", "user.name", "Genesis Test"]);
-        git(&dir, &["config", "user.email", "genesis@example.invalid"]);
-        git(&dir, &["config", "commit.gpgsign", "false"]);
+        )));
+        git(dir.path(), &["init", "--quiet"]);
+        git(dir.path(), &["config", "user.name", "Genesis Test"]);
+        git(
+            dir.path(),
+            &["config", "user.email", "genesis@example.invalid"],
+        );
+        git(dir.path(), &["config", "commit.gpgsign", "false"]);
 
         let mut base = Vec::with_capacity(256 * 1024);
         for line in 0..4096 {
@@ -1289,24 +1313,24 @@ mod tests {
             )
             .expect("write base fixture");
         }
-        std::fs::write(dir.join("package.bin"), &base).expect("write base blob");
-        git(&dir, &["add", "package.bin"]);
-        git(&dir, &["commit", "--quiet", "-m", "base package"]);
-        let base_commit = git_text(&dir, &["rev-parse", "HEAD"]);
-        let base_sha = git_text(&dir, &["rev-parse", "HEAD:package.bin"]);
+        std::fs::write(dir.path().join("package.bin"), &base).expect("write base blob");
+        git(dir.path(), &["add", "package.bin"]);
+        git(dir.path(), &["commit", "--quiet", "-m", "base package"]);
+        let base_commit = git_text(dir.path(), &["rev-parse", "HEAD"]);
+        let base_sha = git_text(dir.path(), &["rev-parse", "HEAD:package.bin"]);
 
         let mut target = base.clone();
         let replacement = b"bounded publication delta";
         target[64 * 1024..64 * 1024 + replacement.len()].copy_from_slice(replacement);
-        std::fs::write(dir.join("package.bin"), &target).expect("write target blob");
-        git(&dir, &["add", "package.bin"]);
-        git(&dir, &["commit", "--quiet", "-m", "updated package"]);
-        let target_commit = git_text(&dir, &["rev-parse", "HEAD"]);
-        let target_sha = git_text(&dir, &["rev-parse", "HEAD:package.bin"]);
+        std::fs::write(dir.path().join("package.bin"), &target).expect("write target blob");
+        git(dir.path(), &["add", "package.bin"]);
+        git(dir.path(), &["commit", "--quiet", "-m", "updated package"]);
+        let target_commit = git_text(dir.path(), &["rev-parse", "HEAD"]);
+        let target_sha = git_text(dir.path(), &["rev-parse", "HEAD:package.bin"]);
 
         let mut child = Command::new("git")
             .arg("-C")
-            .arg(&dir)
+            .arg(dir.path())
             .args([
                 "pack-objects",
                 "--stdout",
@@ -1354,8 +1378,6 @@ mod tests {
                 && sha_from_prefix("blob", &object.data) == target_sha
                 && object.data == target
         }));
-
-        std::fs::remove_dir_all(&dir).expect("remove test repository");
     }
 
     #[test]

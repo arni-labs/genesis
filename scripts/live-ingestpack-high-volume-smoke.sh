@@ -9,9 +9,9 @@ set -euo pipefail
 #     scripts/live-ingestpack-high-volume-smoke.sh
 #
 # The smoke creates FILE_COUNT unique files, pushes a base commit, then pushes a
-# closely related second commit. Real Git sends the second update as a thin pack
-# against repository-scoped objects from the first push. The smoke verifies both
-# object identities, the moved ref, and a clone of the resulting working tree.
+# closely related second commit. The focused module test proves Git's external
+# REF_DELTA selection; this live smoke verifies the same related update through
+# the rebuilt WASM, both object identities, the moved ref, and a clone.
 
 BASE_URL="${TEMPER_URL:-http://127.0.0.1:3000}"
 BASE_URL="${BASE_URL%/}"
@@ -127,14 +127,21 @@ field_from_entity() {
 collection_count_for_repo() {
   local set_name="$1"
   local filter
+  local top="$(( FILE_COUNT + 100 ))"
   local body="$TMP_DIR/${set_name}.json"
   filter="$(urlencode "RepositoryId eq '${REPO_ID}'")"
-  curl -fsS "${api_headers[@]}" "${BASE_URL}/tdata/${set_name}?\$filter=${filter}&\$top=5000" > "$body"
+  curl -fsS "${api_headers[@]}" "${BASE_URL}/tdata/${set_name}?\$filter=${filter}&\$top=${top}" > "$body"
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
     process.stdout.write(String(Array.isArray(body.value) ? body.value.length : 0));
   ' "$body"
+}
+
+object_key_prefix() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
 
 printf 'Seeding smart-HTTP endpoints for %s\n' "$BASE_URL"
@@ -153,8 +160,10 @@ TOKEN_SECRET="$(openssl rand -hex 20)"
 TOKEN_HASH="$(sha256_hex "$TOKEN_SECRET")"
 post_json "/tdata/GitTokens" \
   "{\"Id\":\"gt-${RUN_ID}\",\"PrincipalId\":$(json_escape "$OWNER"),\"HashedSecret\":$(json_escape "$TOKEN_HASH"),\"KeyPrefix\":$(json_escape "${TOKEN_SECRET:0:8}"),\"Scopes\":\"repo:read,repo:write\",\"ExpiresAt\":\"2030-01-01T00:00:00Z\"}"
-REMOTE="${SCHEME}://${TOKEN_SECRET}:x@${HOST_PORT}/${OWNER}/${REPO}.git"
-DISPLAY_REMOTE="${BASE_URL}/${OWNER}/${REPO}.git"
+AUTH_BASIC="$(printf '%s:x' "$TOKEN_SECRET" | base64 | tr -d '\n')"
+GIT_AUTH_HEADER="Authorization: Basic ${AUTH_BASIC}"
+REMOTE="${BASE_URL}/${OWNER}/${REPO}.git"
+OBJECT_KEY_PREFIX="$(object_key_prefix "$REPO_ID")"
 
 printf 'Creating Repository %s\n' "$REPO_ID"
 post_json "/tdata/Repositories" \
@@ -183,14 +192,14 @@ BASE_COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
 BASE_BLOB_SHA="$(git -C "$WORK" rev-parse HEAD:files/file-0001.txt)"
 PACK_OBJECTS="$(git -C "$WORK" rev-list --objects --all | wc -l | tr -d ' ')"
 
-printf 'Pushing base with %s files (%s git objects) to %s\n' "$FILE_COUNT" "$PACK_OBJECTS" "$DISPLAY_REMOTE"
+printf 'Pushing base with %s files (%s git objects) to %s\n' "$FILE_COUNT" "$PACK_OBJECTS" "$REMOTE"
 start_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
-if ! git -C "$WORK" push "$REMOTE" main > "$TMP_DIR/push.log" 2>&1; then
+if ! git -C "$WORK" -c http.extraHeader="$GIT_AUTH_HEADER" push "$REMOTE" main > "$TMP_DIR/push.log" 2>&1; then
   sed -n '1,160p' "$TMP_DIR/push.log" >&2
   exit 1
 fi
 
-BASE_BLOB_ID="${REPO_ID}-${BASE_BLOB_SHA}"
+BASE_BLOB_ID="${OBJECT_KEY_PREFIX}-${BASE_BLOB_SHA}"
 if ! entity_exists "Blobs" "$BASE_BLOB_ID"; then
   printf 'Base blob missing at repository-scoped identity %s\n' "$BASE_BLOB_ID" >&2
   exit 1
@@ -201,14 +210,14 @@ git -C "$WORK" add files/file-0001.txt
 git -C "$WORK" commit -m "thin-pack update" >/dev/null
 COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
 TARGET_BLOB_SHA="$(git -C "$WORK" rev-parse HEAD:files/file-0001.txt)"
-if ! git -C "$WORK" push "$REMOTE" main >> "$TMP_DIR/push.log" 2>&1; then
+if ! git -C "$WORK" -c http.extraHeader="$GIT_AUTH_HEADER" push "$REMOTE" main >> "$TMP_DIR/push.log" 2>&1; then
   sed -n '1,240p' "$TMP_DIR/push.log" >&2
   exit 1
 fi
 end_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
 push_ms="$(( end_ms - start_ms ))"
 
-TARGET_BLOB_ID="${REPO_ID}-${TARGET_BLOB_SHA}"
+TARGET_BLOB_ID="${OBJECT_KEY_PREFIX}-${TARGET_BLOB_SHA}"
 if ! entity_exists "Blobs" "$TARGET_BLOB_ID"; then
   printf 'Expanded thin-pack blob missing at repository-scoped identity %s\n' "$TARGET_BLOB_ID" >&2
   exit 1
@@ -238,7 +247,7 @@ if [[ "$TREE_COUNT" -lt 1 ]]; then
   exit 1
 fi
 
-git clone "$REMOTE" "$TMP_DIR/clone" > "$TMP_DIR/clone.log" 2>&1
+git -c http.extraHeader="$GIT_AUTH_HEADER" clone "$REMOTE" "$TMP_DIR/clone" > "$TMP_DIR/clone.log" 2>&1
 CLONED_SHA="$(git -C "$TMP_DIR/clone" rev-parse HEAD)"
 if [[ "$CLONED_SHA" != "$COMMIT_SHA" ]]; then
   printf 'Clone HEAD mismatch: got %s, expected %s\n' "$CLONED_SHA" "$COMMIT_SHA" >&2
