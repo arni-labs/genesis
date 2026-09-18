@@ -146,15 +146,25 @@ fn parse_pack_objects(
     repository_id: &str,
     pack_bytes: &[u8],
 ) -> Result<Vec<pack::PackObject>, String> {
+    parse_pack_objects_with_base(pack_bytes, |sha| {
+        fetch_existing_delta_base(ctx, api_base, blob_endpoint, repository_id, sha)
+            .map_err(|e| pack::PackError::DeltaBaseMissing(format!("{sha}: {e}")))
+    })
+}
+
+fn parse_pack_objects_with_base<F>(
+    pack_bytes: &[u8],
+    mut resolve_base: F,
+) -> Result<Vec<pack::PackObject>, String>
+where
+    F: FnMut(&str) -> Result<Option<pack::PackObject>, pack::PackError>,
+{
     let cursor = std::io::Cursor::new(pack_bytes);
     let mut parser =
         pack::StreamingPackParser::begin(cursor).map_err(|e| format!("pack header: {e}"))?;
     let mut objects = Vec::with_capacity(parser.object_count() as usize);
     while let Some(obj) = parser
-        .next_object_with_ref_delta_base(|sha| {
-            fetch_existing_delta_base(ctx, api_base, blob_endpoint, repository_id, sha)
-                .map_err(|e| pack::PackError::DeltaBaseMissing(format!("{sha}: {e}")))
-        })
+        .next_object_with_ref_delta_base(&mut resolve_base)
         .map_err(|e| format!("pack next: {e}"))?
     {
         objects.push(obj);
@@ -1030,6 +1040,32 @@ fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::path::Path;
+    use std::process::{Command, Stdio};
+
+    fn git(dir: &Path, args: &[&str]) -> std::process::Output {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output
+    }
+
+    fn git_text(dir: &Path, args: &[&str]) -> String {
+        String::from_utf8(git(dir, args).stdout)
+            .expect("git output is utf-8")
+            .trim()
+            .to_string()
+    }
 
     #[test]
     fn ref_update_projects_target_commit_sha() {
@@ -1224,6 +1260,102 @@ mod tests {
             sha,
             "ffffffffffffffffffffffffffffffffffffffff",
         ));
+    }
+
+    #[test]
+    fn real_git_thin_pack_resolves_external_repository_blob() {
+        if Command::new("git").arg("--version").status().is_err() {
+            eprintln!("git unavailable; skipping real-git thin-pack regression");
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!(
+            "genesis-ingest-thin-pack-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create test repository");
+        git(&dir, &["init", "--quiet"]);
+        git(&dir, &["config", "user.name", "Genesis Test"]);
+        git(&dir, &["config", "user.email", "genesis@example.invalid"]);
+        git(&dir, &["config", "commit.gpgsign", "false"]);
+
+        let mut base = Vec::with_capacity(256 * 1024);
+        for line in 0..4096 {
+            writeln!(
+                base,
+                "stable package payload line {line:04}: abcdefghijklmnopqrstuvwxyz0123456789"
+            )
+            .expect("write base fixture");
+        }
+        std::fs::write(dir.join("package.bin"), &base).expect("write base blob");
+        git(&dir, &["add", "package.bin"]);
+        git(&dir, &["commit", "--quiet", "-m", "base package"]);
+        let base_commit = git_text(&dir, &["rev-parse", "HEAD"]);
+        let base_sha = git_text(&dir, &["rev-parse", "HEAD:package.bin"]);
+
+        let mut target = base.clone();
+        let replacement = b"bounded publication delta";
+        target[64 * 1024..64 * 1024 + replacement.len()].copy_from_slice(replacement);
+        std::fs::write(dir.join("package.bin"), &target).expect("write target blob");
+        git(&dir, &["add", "package.bin"]);
+        git(&dir, &["commit", "--quiet", "-m", "updated package"]);
+        let target_commit = git_text(&dir, &["rev-parse", "HEAD"]);
+        let target_sha = git_text(&dir, &["rev-parse", "HEAD:package.bin"]);
+
+        let mut child = Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args([
+                "pack-objects",
+                "--stdout",
+                "--revs",
+                "--thin",
+                "--no-reuse-delta",
+                "--no-reuse-object",
+                "--window=250",
+                "--depth=50",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn git pack-objects");
+        write!(
+            child.stdin.as_mut().expect("pack stdin"),
+            "{target_commit}\n^{base_commit}\n"
+        )
+        .expect("write pack revisions");
+        let packed = child.wait_with_output().expect("wait for git pack-objects");
+        assert!(
+            packed.status.success(),
+            "git pack-objects failed: {}",
+            String::from_utf8_lossy(&packed.stderr)
+        );
+
+        let mut resolved_external_base = false;
+        let objects = parse_pack_objects_with_base(&packed.stdout, |requested_sha| {
+            assert_eq!(requested_sha, base_sha);
+            resolved_external_base = true;
+            Ok(Some(pack::PackObject {
+                kind: pack::ObjectKind::Blob,
+                data: base.clone(),
+            }))
+        })
+        .expect("parse real Git thin pack");
+
+        assert!(
+            resolved_external_base,
+            "pack did not contain an external delta"
+        );
+        assert!(objects.iter().any(|object| {
+            object.kind == pack::ObjectKind::Blob
+                && sha_from_prefix("blob", &object.data) == target_sha
+                && object.data == target
+        }));
+
+        std::fs::remove_dir_all(&dir).expect("remove test repository");
     }
 
     #[test]

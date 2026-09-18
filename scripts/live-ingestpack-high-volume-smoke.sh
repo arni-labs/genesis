@@ -8,9 +8,10 @@ set -euo pipefail
 #   TEMPER_URL=http://127.0.0.1:3137 \
 #     scripts/live-ingestpack-high-volume-smoke.sh
 #
-# The smoke creates one git commit containing FILE_COUNT unique files, pushes it
-# through smart HTTP, verifies object projections by repository, verifies the
-# stored Ref target, then clones and diffs the working tree.
+# The smoke creates FILE_COUNT unique files, pushes a base commit, then pushes a
+# closely related second commit. Real Git sends the second update as a thin pack
+# against repository-scoped objects from the first push. The smoke verifies both
+# object identities, the moved ref, and a clone of the resulting working tree.
 
 BASE_URL="${TEMPER_URL:-http://127.0.0.1:3000}"
 BASE_URL="${BASE_URL%/}"
@@ -157,14 +158,34 @@ for i in $(seq 1 "$FILE_COUNT"); do
 done
 git -C "$WORK" add files
 git -C "$WORK" commit -m "stress ${FILE_COUNT} files" >/dev/null
-COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
+BASE_COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
+BASE_BLOB_SHA="$(git -C "$WORK" rev-parse HEAD:files/file-0001.txt)"
 PACK_OBJECTS="$(git -C "$WORK" rev-list --objects --all | wc -l | tr -d ' ')"
 
-printf 'Pushing %s files (%s git objects) to %s\n' "$FILE_COUNT" "$PACK_OBJECTS" "$REMOTE"
+printf 'Pushing base with %s files (%s git objects) to %s\n' "$FILE_COUNT" "$PACK_OBJECTS" "$REMOTE"
 start_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
 git -C "$WORK" push "$REMOTE" main > "$TMP_DIR/push.log" 2>&1
+
+BASE_BLOB_ID="${REPO_ID}-${BASE_BLOB_SHA}"
+if ! entity_exists "Blobs" "$BASE_BLOB_ID"; then
+  printf 'Base blob missing at repository-scoped identity %s\n' "$BASE_BLOB_ID" >&2
+  exit 1
+fi
+
+printf 'bounded thin-pack update for %s\n' "$RUN_ID" >> "$WORK/files/file-0001.txt"
+git -C "$WORK" add files/file-0001.txt
+git -C "$WORK" commit -m "thin-pack update" >/dev/null
+COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
+TARGET_BLOB_SHA="$(git -C "$WORK" rev-parse HEAD:files/file-0001.txt)"
+git -C "$WORK" push "$REMOTE" main >> "$TMP_DIR/push.log" 2>&1
 end_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
 push_ms="$(( end_ms - start_ms ))"
+
+TARGET_BLOB_ID="${REPO_ID}-${TARGET_BLOB_SHA}"
+if ! entity_exists "Blobs" "$TARGET_BLOB_ID"; then
+  printf 'Expanded thin-pack blob missing at repository-scoped identity %s\n' "$TARGET_BLOB_ID" >&2
+  exit 1
+fi
 
 TARGET_SHA="$(field_from_entity Refs "$REF_ID" TargetCommitSha)"
 if [[ "$TARGET_SHA" != "$COMMIT_SHA" ]]; then
@@ -176,12 +197,13 @@ fi
 BLOB_COUNT="$(collection_count_for_repo Blobs)"
 COMMIT_COUNT="$(collection_count_for_repo Commits)"
 TREE_COUNT="$(collection_count_for_repo Trees)"
-if [[ "$BLOB_COUNT" -ne "$FILE_COUNT" ]]; then
-  printf 'Expected %s Blob rows, got %s\n' "$FILE_COUNT" "$BLOB_COUNT" >&2
+EXPECTED_BLOB_COUNT="$(( FILE_COUNT + 1 ))"
+if [[ "$BLOB_COUNT" -ne "$EXPECTED_BLOB_COUNT" ]]; then
+  printf 'Expected %s Blob rows, got %s\n' "$EXPECTED_BLOB_COUNT" "$BLOB_COUNT" >&2
   exit 1
 fi
-if [[ "$COMMIT_COUNT" -lt 1 ]]; then
-  printf 'Expected at least one Commit row, got %s\n' "$COMMIT_COUNT" >&2
+if [[ "$COMMIT_COUNT" -lt 2 ]]; then
+  printf 'Expected at least two Commit rows, got %s\n' "$COMMIT_COUNT" >&2
   exit 1
 fi
 if [[ "$TREE_COUNT" -lt 1 ]]; then
@@ -205,4 +227,6 @@ printf '  files: %s\n' "$FILE_COUNT"
 printf '  git objects: %s\n' "$PACK_OBJECTS"
 printf '  push_ms: %s\n' "$push_ms"
 printf '  blobs/commits/trees: %s/%s/%s\n' "$BLOB_COUNT" "$COMMIT_COUNT" "$TREE_COUNT"
+printf '  base: %s -> %s\n' "$BASE_COMMIT_SHA" "$BASE_BLOB_ID"
+printf '  thin-pack target: %s\n' "$TARGET_BLOB_ID"
 printf '  ref: %s -> %s\n' "$REF_ID" "$TARGET_SHA"
