@@ -23,9 +23,6 @@ OWNER="stress-${RUN_ID}"
 REPO="ingestpack-${RUN_ID}"
 REPO_ID="rp-${OWNER}-${REPO}"
 REF_ID="rf-${REPO_ID}-refs-heads-main"
-SCHEME="${BASE_URL%%://*}"
-HOST_PORT="${BASE_URL#*://}"
-
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/temper-ingestpack-stress.XXXXXX")"
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -127,14 +124,14 @@ field_from_entity() {
 collection_count_for_repo() {
   local set_name="$1"
   local filter
-  local top="$(( FILE_COUNT + 100 ))"
   local body="$TMP_DIR/${set_name}.json"
   filter="$(urlencode "RepositoryId eq '${REPO_ID}'")"
-  curl -fsS "${api_headers[@]}" "${BASE_URL}/tdata/${set_name}?\$filter=${filter}&\$top=${top}" > "$body"
+  curl -fsS "${api_headers[@]}" "${BASE_URL}/tdata/${set_name}?\$filter=${filter}&\$count=true&\$top=1" > "$body"
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    process.stdout.write(String(Array.isArray(body.value) ? body.value.length : 0));
+    if (!Number.isInteger(body["@odata.count"])) process.exit(1);
+    process.stdout.write(String(body["@odata.count"]));
   ' "$body"
 }
 
