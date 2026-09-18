@@ -23,7 +23,8 @@ OWNER="stress-${RUN_ID}"
 REPO="ingestpack-${RUN_ID}"
 REPO_ID="rp-${OWNER}-${REPO}"
 REF_ID="rf-${REPO_ID}-refs-heads-main"
-REMOTE="${BASE_URL}/${OWNER}/${REPO}.git"
+SCHEME="${BASE_URL%%://*}"
+HOST_PORT="${BASE_URL#*://}"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/temper-ingestpack-stress.XXXXXX")"
 cleanup() {
@@ -35,7 +36,8 @@ api_headers=(
   -H "X-Tenant-Id: ${TENANT}"
   -H "X-Temper-Principal-Kind: admin"
   -H "X-Temper-Principal-Id: ${PRINCIPAL_ID}"
-  -H "X-Temper-Principal-Scopes: admin:repos repo:write pr:write"
+  -H "X-Temper-Principal-Scopes: admin:repos admin:tokens repo:write pr:write"
+  -H "X-Temper-Agent-Type: admin"
   -H "Accept: application/json"
 )
 json_headers=("${api_headers[@]}" -H "Content-Type: application/json")
@@ -51,6 +53,14 @@ system_headers=(
 
 json_escape() {
   node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$1"
+}
+
+sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | cut -d' ' -f1
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
+  fi
 }
 
 urlencode() {
@@ -139,6 +149,13 @@ ensure_endpoint "he-upload-pack" \
 ensure_endpoint "he-receive-pack" \
   '{"Id":"he-receive-pack","PathPrefix":"/{owner}/{repo}.git/git-receive-pack","Methods":"POST","IntegrationModule":"git_receive_pack","RequiresAuth":false,"TimeoutSecs":300,"MaxFuel":20000000000,"MaxMemory":536870912,"MaxResponseBytes":134217728,"ActionBridgeEntityType":"Repository","ActionBridgeEntityId":"rp-{owner}-{repo}","ActionBridgeAction":"IngestPack","ActionBridgeResponse":"git-receive-pack"}'
 
+TOKEN_SECRET="$(openssl rand -hex 20)"
+TOKEN_HASH="$(sha256_hex "$TOKEN_SECRET")"
+post_json "/tdata/GitTokens" \
+  "{\"Id\":\"gt-${RUN_ID}\",\"PrincipalId\":$(json_escape "$OWNER"),\"HashedSecret\":$(json_escape "$TOKEN_HASH"),\"KeyPrefix\":$(json_escape "${TOKEN_SECRET:0:8}"),\"Scopes\":\"repo:read,repo:write\",\"ExpiresAt\":\"2030-01-01T00:00:00Z\"}"
+REMOTE="${SCHEME}://${TOKEN_SECRET}:x@${HOST_PORT}/${OWNER}/${REPO}.git"
+DISPLAY_REMOTE="${BASE_URL}/${OWNER}/${REPO}.git"
+
 printf 'Creating Repository %s\n' "$REPO_ID"
 post_json "/tdata/Repositories" \
   "{\"Id\":$(json_escape "$REPO_ID"),\"OwnerAccountId\":$(json_escape "$OWNER"),\"Name\":$(json_escape "$REPO"),\"Description\":\"IngestPack high-volume smoke\",\"DefaultBranch\":\"main\",\"Visibility\":\"public\"}"
@@ -156,15 +173,22 @@ printf 'Creating %s unique files\n' "$FILE_COUNT"
 for i in $(seq 1 "$FILE_COUNT"); do
   printf 'stress file %04d for %s\n' "$i" "$RUN_ID" > "$WORK/files/file-$(printf '%04d' "$i").txt"
 done
+for line in $(seq 1 4096); do
+  printf 'stable package payload line %04d: abcdefghijklmnopqrstuvwxyz0123456789\n' "$line" \
+    >> "$WORK/files/file-0001.txt"
+done
 git -C "$WORK" add files
 git -C "$WORK" commit -m "stress ${FILE_COUNT} files" >/dev/null
 BASE_COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
 BASE_BLOB_SHA="$(git -C "$WORK" rev-parse HEAD:files/file-0001.txt)"
 PACK_OBJECTS="$(git -C "$WORK" rev-list --objects --all | wc -l | tr -d ' ')"
 
-printf 'Pushing base with %s files (%s git objects) to %s\n' "$FILE_COUNT" "$PACK_OBJECTS" "$REMOTE"
+printf 'Pushing base with %s files (%s git objects) to %s\n' "$FILE_COUNT" "$PACK_OBJECTS" "$DISPLAY_REMOTE"
 start_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
-git -C "$WORK" push "$REMOTE" main > "$TMP_DIR/push.log" 2>&1
+if ! git -C "$WORK" push "$REMOTE" main > "$TMP_DIR/push.log" 2>&1; then
+  sed -n '1,160p' "$TMP_DIR/push.log" >&2
+  exit 1
+fi
 
 BASE_BLOB_ID="${REPO_ID}-${BASE_BLOB_SHA}"
 if ! entity_exists "Blobs" "$BASE_BLOB_ID"; then
@@ -177,7 +201,10 @@ git -C "$WORK" add files/file-0001.txt
 git -C "$WORK" commit -m "thin-pack update" >/dev/null
 COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
 TARGET_BLOB_SHA="$(git -C "$WORK" rev-parse HEAD:files/file-0001.txt)"
-git -C "$WORK" push "$REMOTE" main >> "$TMP_DIR/push.log" 2>&1
+if ! git -C "$WORK" push "$REMOTE" main >> "$TMP_DIR/push.log" 2>&1; then
+  sed -n '1,240p' "$TMP_DIR/push.log" >&2
+  exit 1
+fi
 end_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
 push_ms="$(( end_ms - start_ms ))"
 
