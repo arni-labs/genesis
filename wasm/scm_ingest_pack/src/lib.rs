@@ -591,7 +591,7 @@ fn base_identity_matches(row: &Value, repository_id: &str, entity_id: &str, sha:
     let requested_identity_matches = entity_id == sha || entity_id == expected_scoped_id;
     fields.get("RepositoryId").and_then(Value::as_str) == Some(repository_id)
         && requested_identity_matches
-        && fields.get("Id").and_then(Value::as_str) == Some(entity_id)
+        && matches!(fields.get("Id").and_then(Value::as_str), Some(id) if id == entity_id || id == sha)
         && row
             .get("entity_id")
             .and_then(Value::as_str)
@@ -625,7 +625,26 @@ where
         .iter()
         .position(|&b| b == 0)
         .ok_or_else(|| format!("{set}({sha}): no NUL in canonical"))?;
-    Ok(canonical[nul + 1..].to_vec())
+    let body = &canonical[nul + 1..];
+    let kind = git_kind_for_set(set).ok_or_else(|| format!("unsupported object set {set}"))?;
+    let expected_header = format!("{kind} {}", body.len());
+    if canonical[..nul] != *expected_header.as_bytes() {
+        return Err(format!("{set}({sha}): canonical header mismatch"));
+    }
+    if sha_from_prefix(kind, body) != sha {
+        return Err(format!("{set}({sha}): canonical SHA mismatch"));
+    }
+    Ok(body.to_vec())
+}
+
+fn git_kind_for_set(set: &str) -> Option<&'static str> {
+    match set {
+        "Blobs" => Some("blob"),
+        "Trees" => Some("tree"),
+        "Commits" => Some("commit"),
+        "Tags" => Some("tag"),
+        _ => None,
+    }
 }
 
 fn string_from_field_value<F>(
@@ -1130,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_object_lookup_selects_only_canonical_bytes() {
+    fn existing_object_lookup_selects_identity_and_canonical_bytes() {
         let url = existing_object_lookup_url(
             "https://temper.example/",
             "Blobs",
@@ -1159,6 +1178,20 @@ mod tests {
 
         assert!(base_identity_matches(
             &row,
+            repository_id,
+            &object_entity_id(repository_id, sha),
+            sha,
+        ));
+        let bare_id_row = json!({
+            "entity_id": object_entity_id(repository_id, sha),
+            "fields": {
+                "Id": sha,
+                "RepositoryId": repository_id,
+                "CanonicalBytes": "unused",
+            }
+        });
+        assert!(base_identity_matches(
+            &bare_id_row,
             repository_id,
             &object_entity_id(repository_id, sha),
             sha,
@@ -1195,19 +1228,38 @@ mod tests {
 
     #[test]
     fn canonical_body_resolves_field_overflow_ref() {
+        let sha = sha_from_prefix("blob", b"hello");
         let canonical_b64 = B64.encode(b"blob 5\0hello");
         let value = json!({
             FIELD_OVERFLOW_REF_KEY: "field-overflow/sha256/canonical.json",
             FIELD_OVERFLOW_ENCODING_KEY: "json",
         });
 
-        let body = canonical_body_from_field_value("Blobs", "abc123", &value, |blob_key| {
+        let body = canonical_body_from_field_value("Blobs", &sha, &value, |blob_key| {
             assert_eq!(blob_key, "field-overflow/sha256/canonical.json");
             Ok(serde_json::to_string(&canonical_b64).unwrap())
         })
         .unwrap();
 
         assert_eq!(body, b"hello");
+    }
+
+    #[test]
+    fn canonical_body_rejects_wrong_kind_or_sha() {
+        let blob_sha = sha_from_prefix("blob", b"hello");
+        let wrong_kind = Value::String(B64.encode(b"tree 5\0hello"));
+        let wrong_sha = Value::String(B64.encode(b"blob 5\0world"));
+
+        assert!(
+            canonical_body_from_field_value("Blobs", &blob_sha, &wrong_kind, |_| unreachable!())
+                .unwrap_err()
+                .contains("canonical header mismatch")
+        );
+        assert!(
+            canonical_body_from_field_value("Blobs", &blob_sha, &wrong_sha, |_| unreachable!())
+                .unwrap_err()
+                .contains("canonical SHA mismatch")
+        );
     }
 
     fn chain_parents(chain: &[(&str, &[&str])]) -> std::collections::BTreeMap<String, Vec<String>> {
