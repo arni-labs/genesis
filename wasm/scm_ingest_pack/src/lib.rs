@@ -26,6 +26,7 @@ use tg_wire::pack;
 const TEMPER_API: &str = "http://127.0.0.1:3000";
 const SYSTEM_TENANT: &str = "default";
 const SYSTEM_PRINCIPAL: &str = "scm-ingest-pack";
+#[cfg(test)]
 const FIELD_INLINE_MAX_BYTES: usize = 131_072;
 const FIELD_OVERFLOW_BLOB_PREFIX: &str = "field-overflow/sha256/";
 const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
@@ -781,15 +782,15 @@ fn build_object_row(
             "Id": sha,
             "RepositoryId": repository_id,
             "Size": raw.len(),
-            "Content": always_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
-            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "Content": always_stage_field_value(blob_endpoint, B64.encode(raw))?,
+            "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
         pack::ObjectKind::Tree => json!({
             "Id": sha,
             "RepositoryId": repository_id,
-            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
@@ -814,7 +815,7 @@ fn build_object_row(
                 "Author": author,
                 "Committer": committer,
                 "Message": message,
-                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -844,7 +845,7 @@ fn build_object_row(
                 "TagName": name,
                 "Tagger": tagger,
                 "Message": message,
-                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -865,10 +866,13 @@ fn put_raw_git_object_cache(
 ) -> Result<(), String> {
     let blob_key = format!("git-objects/{repository_id}/{sha}.b64");
     let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
-    let response = ctx
-        .http_call("PUT", &url, &[], &B64.encode(raw))
-        .map_err(|e| format!("raw-object cache PUT {sha}: {e}"))?;
-    if (200..300).contains(&response.status) {
+    let encoded = B64.encode(raw);
+    let status = put_streamed_bytes(
+        &url,
+        &format!("raw-object cache PUT {sha}"),
+        encoded.as_bytes(),
+    )?;
+    if (200..300).contains(&status) {
         Ok(())
     } else {
         let _ = ctx.log_structured(
@@ -877,31 +881,11 @@ fn put_raw_git_object_cache(
             &json!({
                 "repository_id": repository_id,
                 "sha": sha,
-                "status": response.status,
+                "status": status,
             }),
         );
-        Err(format!(
-            "raw-object cache PUT returned HTTP {}",
-            response.status
-        ))
+        Err(format!("raw-object cache PUT returned HTTP {status}"))
     }
-}
-
-fn maybe_stage_field_value(
-    ctx: &Context,
-    blob_endpoint: &str,
-    value: String,
-) -> Result<Value, String> {
-    let json_value = Value::String(value);
-    let serialized =
-        serde_json::to_vec(&json_value).map_err(|e| format!("field-overflow serialize: {e}"))?;
-    if serialized.len() <= FIELD_INLINE_MAX_BYTES {
-        return Ok(json_value);
-    }
-
-    let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
-    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
-    Ok(blob_ref)
 }
 
 fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
@@ -927,16 +911,12 @@ fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
 /// object content never sits inline on entity rows; the row keeps a
 /// content-addressed reference. Readers already resolve these refs and
 /// legacy inline rows stay readable.
-fn always_stage_field_value(
-    ctx: &Context,
-    blob_endpoint: &str,
-    value: String,
-) -> Result<Value, String> {
+fn always_stage_field_value(blob_endpoint: &str, value: String) -> Result<Value, String> {
     let json_value = Value::String(value);
     let serialized =
         serde_json::to_vec(&json_value).map_err(|e| format!("object-content serialize: {e}"))?;
     let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
-    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
+    put_overflow_blob(blob_endpoint, &blob_key, &serialized)?;
     Ok(blob_ref)
 }
 
@@ -1007,26 +987,35 @@ fn header_refs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-fn put_overflow_blob(
-    ctx: &Context,
-    blob_endpoint: &str,
-    blob_key: &str,
-    serialized: &[u8],
-) -> Result<(), String> {
-    let body = core::str::from_utf8(serialized)
-        .map_err(|e| format!("field-overflow body was not utf-8: {e}"))?;
+fn put_overflow_blob(blob_endpoint: &str, blob_key: &str, serialized: &[u8]) -> Result<(), String> {
     let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
-    let response = ctx
-        .http_call("PUT", &url, &[], body)
-        .map_err(|e| format!("field-overflow PUT {blob_key}: {e}"))?;
-    if (200..300).contains(&response.status) {
+    let status = put_streamed_bytes(&url, &format!("field-overflow PUT {blob_key}"), serialized)?;
+    if (200..300).contains(&status) {
         Ok(())
     } else {
         Err(format!(
-            "field-overflow PUT {blob_key} returned HTTP {}",
-            response.status
+            "field-overflow PUT {blob_key} returned HTTP {status}"
         ))
     }
+}
+
+fn put_streamed_bytes(url: &str, label: &str, body: &[u8]) -> Result<u16, String> {
+    let (mut request_body, response_body, response_head) =
+        streaming_call("PUT", url, &[]).map_err(|e| format!("{label} stream begin: {e}"))?;
+    for chunk in body.chunks(HTTP_STREAM_READ_CHUNK_BYTES) {
+        request_body
+            .write_all_chunk(chunk)
+            .map_err(|e| format!("{label} request body: {e}"))?;
+    }
+    request_body
+        .finish()
+        .map_err(|e| format!("{label} request close: {e}"))?;
+    let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
+    let _ = response_body.close();
+    if head.status == 0 {
+        return Err(format!("{label}: transport failed"));
+    }
+    Ok(head.status)
 }
 
 fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {

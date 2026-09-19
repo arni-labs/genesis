@@ -303,7 +303,7 @@ merge_pull() {
 # ---------------------------------------------------------------------
 
 deadline=$((SECONDS + WAIT_SECS))
-until curl -fsS -H "X-Tenant-Id: ${TENANT}" "${BASE_URL}/tdata/Apps?\$top=1" >/dev/null 2>&1; do
+until curl -fsS "${BASE_URL}/healthz" >/dev/null 2>&1; do
   if [[ "$SECONDS" -ge "$deadline" ]]; then
     printf 'Server at %s not reachable within %ss\n' "$BASE_URL" "$WAIT_SECS" >&2
     exit 1
@@ -351,7 +351,11 @@ git_in "$SRC" config user.email "workflow-smoke@genesis.local"
 git_in "$SRC" config user.name "Genesis Workflow Smoke"
 git_in "$SRC" remote add origin "$(remote_url "$TOKEN_A")"
 printf '# workflow smoke %s\n' "$RUN_ID" > "${SRC}/README.md"
-git_in "$SRC" add README.md
+# A compressible object whose encoded form exceeds the former 16 MiB ceiling
+# exercises more than one full host-channel window without making the pack large.
+head -c 17825792 /dev/zero > "${SRC}/large-object.bin"
+LARGE_OBJECT_SHA="$(git_in "$SRC" hash-object large-object.bin)"
+git_in "$SRC" add README.md large-object.bin
 git_in "$SRC" commit -q -m "Seed main"
 git_in "$SRC" push -q origin main
 
@@ -479,6 +483,11 @@ if ! git_in "$CLONE_MERGE" log --format=%H | grep -q "^${MERGE_SHA}$"; then
 fi
 if [[ ! -f "${CLONE_MERGE}/feature-merge.txt" ]]; then
   printf 'feature-merge.txt missing from merged main\n' >&2
+  exit 1
+fi
+clone_large_sha="$(git_in "$CLONE_MERGE" hash-object large-object.bin)"
+if [[ "$clone_large_sha" != "$LARGE_OBJECT_SHA" ]]; then
+  printf 'large object mismatch: clone %s local %s\n' "$clone_large_sha" "$LARGE_OBJECT_SHA" >&2
   exit 1
 fi
 git_in "$CLONE_MERGE" fsck --full > "${TMP_DIR}/fsck-merge.log" 2>&1

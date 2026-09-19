@@ -43,10 +43,25 @@ content fails ingestion rather than supplying bytes to delta expansion.
 If `CanonicalBytes` is a field-overflow ref, the integration dereferences it
 through the same streamed blob endpoint used for staged pack bytes.
 
+The corresponding raw-object cache and field-overflow PUTs use the streaming
+HTTP body API as well. Large expanded objects must not be copied through the
+buffered `http_call` ABI: that path can trap while marshalling the base64 body
+before the host can return an ordinary error. Streaming preserves the same
+content-addressed keys and atomic composite write with a bounded host-call
+boundary. Each body is divided into fixed 64 KiB chunks and backpressured by the
+host. The Temper host closes the request reader when sending the outbound request
+fails, so the guest writer returns a closed-stream error instead of waiting for a
+reader that can no longer make progress.
+Status-zero response heads become a generic transport error; host details are
+not copied into action errors or logs because an endpoint URL may contain
+credentials.
+
 ## Consequences
 
 - Thin-pack pushes that delta against large existing blobs no longer fail on
   the host response buffer.
+- Expanded large objects no longer fail while the guest sends their cache and
+  overflow bodies back to the host.
 - Base lookup avoids fetching the blob `Content` field, which halves the
   response size for legacy inline large blobs.
 - Repository-scoped keys prevent one repository's object row from satisfying
