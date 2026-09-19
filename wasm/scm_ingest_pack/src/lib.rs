@@ -33,8 +33,6 @@ const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
 const FIELD_OVERFLOW_SIZE_KEY: &str = "__temper_blob_size";
 const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
 const HTTP_STREAM_READ_CHUNK_BYTES: usize = 64 * 1024;
-const HTTP_STREAM_WRITE_CHUNK_BYTES: usize = 512 * 1024;
-const HTTP_STREAM_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
@@ -1002,15 +1000,9 @@ fn put_overflow_blob(blob_endpoint: &str, blob_key: &str, serialized: &[u8]) -> 
 }
 
 fn put_streamed_bytes(url: &str, label: &str, body: &[u8]) -> Result<u16, String> {
-    if body.len() > HTTP_STREAM_WRITE_MAX_BODY_BYTES {
-        return Err(format!(
-            "{label} body is {} bytes; maximum is {HTTP_STREAM_WRITE_MAX_BODY_BYTES}",
-            body.len()
-        ));
-    }
     let (mut request_body, response_body, response_head) =
         streaming_call("PUT", url, &[]).map_err(|e| format!("{label} stream begin: {e}"))?;
-    for chunk in body.chunks(HTTP_STREAM_WRITE_CHUNK_BYTES) {
+    for chunk in body.chunks(HTTP_STREAM_READ_CHUNK_BYTES) {
         request_body
             .write_all_chunk(chunk)
             .map_err(|e| format!("{label} request body: {e}"))?;
@@ -1199,15 +1191,6 @@ mod tests {
             Some(serialized.len() as u64)
         );
         assert_eq!(value[FIELD_OVERFLOW_ENCODING_KEY].as_str(), Some("json"));
-    }
-
-    #[test]
-    fn outbound_stream_body_has_fixed_memory_bound() {
-        assert_eq!(
-            HTTP_STREAM_WRITE_MAX_BODY_BYTES.div_ceil(HTTP_STREAM_WRITE_CHUNK_BYTES),
-            32
-        );
-        assert!(HTTP_STREAM_WRITE_CHUNK_BYTES < HTTP_STREAM_WRITE_MAX_BODY_BYTES);
     }
 
     #[test]
