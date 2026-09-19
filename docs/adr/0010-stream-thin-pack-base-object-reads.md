@@ -48,7 +48,10 @@ HTTP body API as well. Large expanded objects must not be copied through the
 buffered `http_call` ABI: that path can trap while marshalling the base64 body
 before the host can return an ordinary error. Streaming preserves the same
 content-addressed keys and atomic composite write with a bounded host-call
-boundary.
+boundary. Each body is divided into at most eight chunks, below the host
+channel capacity, so an early transport failure cannot leave the guest spinning
+on a full request queue. Status-zero response heads surface the host's transport
+error instead of being reported as an HTTP response.
 
 ## Consequences
 

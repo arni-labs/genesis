@@ -26,12 +26,14 @@ use tg_wire::pack;
 const TEMPER_API: &str = "http://127.0.0.1:3000";
 const SYSTEM_TENANT: &str = "default";
 const SYSTEM_PRINCIPAL: &str = "scm-ingest-pack";
+#[cfg(test)]
 const FIELD_INLINE_MAX_BYTES: usize = 131_072;
 const FIELD_OVERFLOW_BLOB_PREFIX: &str = "field-overflow/sha256/";
 const FIELD_OVERFLOW_REF_KEY: &str = "__temper_blob_ref";
 const FIELD_OVERFLOW_SIZE_KEY: &str = "__temper_blob_size";
 const FIELD_OVERFLOW_ENCODING_KEY: &str = "__temper_blob_encoding";
 const HTTP_STREAM_READ_CHUNK_BYTES: usize = 64 * 1024;
+const HTTP_STREAM_WRITE_MAX_CHUNKS: usize = 8;
 
 temper_module! {
     fn run(ctx: Context) -> Result<Value> {
@@ -781,15 +783,15 @@ fn build_object_row(
             "Id": sha,
             "RepositoryId": repository_id,
             "Size": raw.len(),
-            "Content": always_stage_field_value(ctx, blob_endpoint, B64.encode(raw))?,
-            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "Content": always_stage_field_value(blob_endpoint, B64.encode(raw))?,
+            "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
         pack::ObjectKind::Tree => json!({
             "Id": sha,
             "RepositoryId": repository_id,
-            "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+            "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
             "Status": "Durable",
             "CreatedAt": created_at,
         }),
@@ -814,7 +816,7 @@ fn build_object_row(
                 "Author": author,
                 "Committer": committer,
                 "Message": message,
-                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -844,7 +846,7 @@ fn build_object_row(
                 "TagName": name,
                 "Tagger": tagger,
                 "Message": message,
-                "CanonicalBytes": always_stage_field_value(ctx, blob_endpoint, canonical_b64)?,
+                "CanonicalBytes": always_stage_field_value(blob_endpoint, canonical_b64)?,
                 "Status": "Durable",
                 "CreatedAt": created_at,
             });
@@ -887,23 +889,6 @@ fn put_raw_git_object_cache(
     }
 }
 
-fn maybe_stage_field_value(
-    ctx: &Context,
-    blob_endpoint: &str,
-    value: String,
-) -> Result<Value, String> {
-    let json_value = Value::String(value);
-    let serialized =
-        serde_json::to_vec(&json_value).map_err(|e| format!("field-overflow serialize: {e}"))?;
-    if serialized.len() <= FIELD_INLINE_MAX_BYTES {
-        return Ok(json_value);
-    }
-
-    let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
-    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
-    Ok(blob_ref)
-}
-
 fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
     let Some(obj) = value.as_object() else {
         return Ok(None);
@@ -927,16 +912,12 @@ fn field_overflow_blob_key(value: &Value) -> Result<Option<String>, String> {
 /// object content never sits inline on entity rows; the row keeps a
 /// content-addressed reference. Readers already resolve these refs and
 /// legacy inline rows stay readable.
-fn always_stage_field_value(
-    ctx: &Context,
-    blob_endpoint: &str,
-    value: String,
-) -> Result<Value, String> {
+fn always_stage_field_value(blob_endpoint: &str, value: String) -> Result<Value, String> {
     let json_value = Value::String(value);
     let serialized =
         serde_json::to_vec(&json_value).map_err(|e| format!("object-content serialize: {e}"))?;
     let (blob_key, blob_ref) = overflow_blob_ref_for_serialized(&serialized);
-    put_overflow_blob(ctx, blob_endpoint, &blob_key, &serialized)?;
+    put_overflow_blob(blob_endpoint, &blob_key, &serialized)?;
     Ok(blob_ref)
 }
 
@@ -1007,12 +988,7 @@ fn header_refs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-fn put_overflow_blob(
-    _ctx: &Context,
-    blob_endpoint: &str,
-    blob_key: &str,
-    serialized: &[u8],
-) -> Result<(), String> {
+fn put_overflow_blob(blob_endpoint: &str, blob_key: &str, serialized: &[u8]) -> Result<(), String> {
     let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
     let status = put_streamed_bytes(&url, &format!("field-overflow PUT {blob_key}"), serialized)?;
     if (200..300).contains(&status) {
@@ -1027,7 +1003,8 @@ fn put_overflow_blob(
 fn put_streamed_bytes(url: &str, label: &str, body: &[u8]) -> Result<u16, String> {
     let (mut request_body, response_body, response_head) =
         streaming_call("PUT", url, &[]).map_err(|e| format!("{label} stream begin: {e}"))?;
-    for chunk in body.chunks(HTTP_STREAM_READ_CHUNK_BYTES) {
+    let chunk_bytes = stream_write_chunk_bytes(body.len());
+    for chunk in body.chunks(chunk_bytes) {
         request_body
             .write_all_chunk(chunk)
             .map_err(|e| format!("{label} request body: {e}"))?;
@@ -1037,7 +1014,20 @@ fn put_streamed_bytes(url: &str, label: &str, body: &[u8]) -> Result<u16, String
         .map_err(|e| format!("{label} request close: {e}"))?;
     let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
     let _ = response_body.close();
+    if head.status == 0 {
+        let detail = head
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("x-temper-stream-error"))
+            .map(|(_, value)| value.as_str())
+            .unwrap_or("unknown transport error");
+        return Err(format!("{label}: {detail}"));
+    }
     Ok(head.status)
+}
+
+fn stream_write_chunk_bytes(body_len: usize) -> usize {
+    body_len.div_ceil(HTTP_STREAM_WRITE_MAX_CHUNKS).max(1)
 }
 
 fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {
@@ -1213,6 +1203,15 @@ mod tests {
             Some(serialized.len() as u64)
         );
         assert_eq!(value[FIELD_OVERFLOW_ENCODING_KEY].as_str(), Some("json"));
+    }
+
+    #[test]
+    fn outbound_stream_body_never_fills_the_host_channel() {
+        for body_len in [0, 1, 64 * 1024, 4 * 1024 * 1024, 16 * 1024 * 1024] {
+            let chunk_bytes = stream_write_chunk_bytes(body_len);
+            assert!(chunk_bytes >= 1);
+            assert!(body_len.div_ceil(chunk_bytes) <= HTTP_STREAM_WRITE_MAX_CHUNKS);
+        }
     }
 
     #[test]
