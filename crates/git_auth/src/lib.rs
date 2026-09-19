@@ -119,6 +119,18 @@ pub fn resolve_principal(
     headers: &[(String, String)],
 ) -> Principal {
     let Some(token) = extract_token(headers) else {
+        // The last silent exit. If the kernel withheld the credential header
+        // this is where every request lands, and the caller only ever sees 401.
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth found no credential in the request headers",
+            &serde_json::json!({
+                "header_names": headers
+                    .iter()
+                    .map(|(k, _)| k.to_ascii_lowercase())
+                    .collect::<alloc::vec::Vec<_>>(),
+            }),
+        );
         return Principal::anonymous(env);
     };
     let hash = sha256_hex(token.as_bytes());
@@ -129,9 +141,28 @@ pub fn resolve_principal(
     let lookup_headers = Principal::system(env).outbound_headers();
     let resp = match ctx.http_call("GET", &url, &lookup_headers, "") {
         Ok(r) => r,
-        Err(_) => return Principal::anonymous(env),
+        Err(error) => {
+            // ARN-52 diagnostic: every path out of this function returns
+            // `anonymous`, so a valid token and a broken lookup are
+            // indistinguishable from the caller's 401.
+            let _ = ctx.log_structured(
+                "warn",
+                "git_auth token lookup transport failed",
+                &serde_json::json!({ "temper_api": env.temper_api, "error": error }),
+            );
+            return Principal::anonymous(env);
+        }
     };
     if !(200..400).contains(&resp.status) {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth token lookup returned non-success",
+            &serde_json::json!({
+                "temper_api": env.temper_api,
+                "status": resp.status,
+                "body_prefix": resp.body.chars().take(160).collect::<String>(),
+            }),
+        );
         return Principal::anonymous(env);
     }
     let parsed: serde_json::Value = match serde_json::from_str(&resp.body) {
@@ -143,10 +174,26 @@ pub fn resolve_principal(
         .and_then(|v| v.as_array())
         .and_then(|a| a.first());
     let Some(row) = row else {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth token lookup matched no row",
+            &serde_json::json!({
+                "temper_api": env.temper_api,
+                "body_prefix": resp.body.chars().take(200).collect::<String>(),
+            }),
+        );
         return Principal::anonymous(env);
     };
     let fields = row.get("fields").unwrap_or(row);
     if fields.get("Status").and_then(|v| v.as_str()) != Some("Active") {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth token row is not Active",
+            &serde_json::json!({
+                "status_field": fields.get("Status").and_then(|v| v.as_str()).unwrap_or("<absent>"),
+                "field_keys": fields.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()),
+            }),
+        );
         return Principal::anonymous(env);
     }
     let id = fields

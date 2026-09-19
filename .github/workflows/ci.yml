@@ -85,6 +85,10 @@ jobs:
     needs: rust
     env:
       GENESIS_PORT: "3188"
+      # The kernel strips self-declared principal headers (ADR-0157) and
+      # requires a real credential for protected routes. This key exists only
+      # inside this job: it bootstraps the operator the smoke acts as.
+      TEMPER_API_KEY: genesis-ci-operator-key
     steps:
       - uses: actions/checkout@v6
         with:
@@ -137,12 +141,19 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/os-apps" && ln -sfn "$PWD" "${RUNNER_TEMP}/os-apps/temper-git"
           TEMPER_OS_APPS_DIR="${RUNNER_TEMP}/os-apps" \
           TURSO_URL="file:${RUNNER_TEMP}/genesis-workflow-gate.db" \
+          TEMPER_API_KEY="$TEMPER_API_KEY" \
           nohup temper/target/release/temper serve \
             --port "$GENESIS_PORT" --storage turso --no-observe --app temper-git \
             > "${RUNNER_TEMP}/genesis-server.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/genesis-server.pid"
           deadline=$((SECONDS + 300))
-          until curl -fsS -H "X-Tenant-Id: default" "http://127.0.0.1:${GENESIS_PORT}/tdata/Apps?\$top=1" > /dev/null 2>&1; do
+          # Readiness is /healthz -- the same probe railway.toml uses in
+          # production. It used to be /tdata/Apps, which current temper treats
+          # as a protected route: an unauthenticated probe 401s forever and the
+          # boot step times out after 300s. /healthz is public by design, is
+          # what the deployed service is judged by, and so is the honest signal
+          # that this server is up.
+          until curl -fsS "http://127.0.0.1:${GENESIS_PORT}/healthz" > /dev/null 2>&1; do
             if ! kill -0 "$(cat "${RUNNER_TEMP}/genesis-server.pid")" 2> /dev/null; then
               echo "Genesis server exited during boot" >&2
               tail -200 "${RUNNER_TEMP}/genesis-server.log" >&2
