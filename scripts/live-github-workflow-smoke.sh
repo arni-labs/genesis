@@ -303,7 +303,7 @@ merge_pull() {
 # ---------------------------------------------------------------------
 
 deadline=$((SECONDS + WAIT_SECS))
-until curl -fsS -H "X-Tenant-Id: ${TENANT}" "${BASE_URL}/tdata/Apps?\$top=1" >/dev/null 2>&1; do
+until curl -fsS "${BASE_URL}/healthz" >/dev/null 2>&1; do
   if [[ "$SECONDS" -ge "$deadline" ]]; then
     printf 'Server at %s not reachable within %ss\n' "$BASE_URL" "$WAIT_SECS" >&2
     exit 1
