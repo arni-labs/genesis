@@ -135,8 +135,12 @@ jobs:
       - name: Boot Genesis
         run: |
           mkdir -p "${RUNNER_TEMP}/os-apps" && ln -sfn "$PWD" "${RUNNER_TEMP}/os-apps/temper-git"
+          operator_token="$(openssl rand -hex 32)"
+          echo "::add-mask::${operator_token}"
+          printf 'TEMPER_API_KEY=%s\n' "$operator_token" >> "$GITHUB_ENV"
           TEMPER_OS_APPS_DIR="${RUNNER_TEMP}/os-apps" \
           TURSO_URL="file:${RUNNER_TEMP}/genesis-workflow-gate.db" \
+          TEMPER_API_KEY="$operator_token" \
           nohup temper/target/release/temper serve \
             --port "$GENESIS_PORT" --storage turso --no-observe --app temper-git \
             > "${RUNNER_TEMP}/genesis-server.log" 2>&1 &
