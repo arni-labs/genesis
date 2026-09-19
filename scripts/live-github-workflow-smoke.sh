@@ -104,15 +104,17 @@ sha256_hex() {
   fi
 }
 
-# Admin/operator headers use the tenant-scoped credential that Temper registers
-# from TEMPER_API_KEY at boot. Identity headers are intentionally insufficient:
-# the host strips them before authorization.
-: "${TEMPER_API_KEY:?TEMPER_API_KEY is required for workflow setup}"
+# Admin/operator headers — same operator identity the install smoke
+# uses for entity seeding; admin:tokens + agent_type=admin satisfy
+# git_token.cedar's mint-for-another-principal rule.
 admin_headers=(
   -H "Content-Type: application/json"
   -H "Accept: application/json"
   -H "X-Tenant-Id: ${TENANT}"
-  -H "Authorization: Bearer ${TEMPER_API_KEY}"
+  -H "X-Temper-Principal-Kind: admin"
+  -H "X-Temper-Principal-Id: operator"
+  -H "X-Temper-Principal-Scopes: admin:platform admin:repos admin:owners admin:tokens repo:write pr:write"
+  -H "X-Temper-Agent-Type: admin"
 )
 
 admin_post() {
