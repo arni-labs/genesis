@@ -865,10 +865,13 @@ fn put_raw_git_object_cache(
 ) -> Result<(), String> {
     let blob_key = format!("git-objects/{repository_id}/{sha}.b64");
     let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
-    let response = ctx
-        .http_call("PUT", &url, &[], &B64.encode(raw))
-        .map_err(|e| format!("raw-object cache PUT {sha}: {e}"))?;
-    if (200..300).contains(&response.status) {
+    let encoded = B64.encode(raw);
+    let status = put_streamed_bytes(
+        &url,
+        &format!("raw-object cache PUT {sha}"),
+        encoded.as_bytes(),
+    )?;
+    if (200..300).contains(&status) {
         Ok(())
     } else {
         let _ = ctx.log_structured(
@@ -877,13 +880,10 @@ fn put_raw_git_object_cache(
             &json!({
                 "repository_id": repository_id,
                 "sha": sha,
-                "status": response.status,
+                "status": status,
             }),
         );
-        Err(format!(
-            "raw-object cache PUT returned HTTP {}",
-            response.status
-        ))
+        Err(format!("raw-object cache PUT returned HTTP {status}"))
     }
 }
 
@@ -1008,25 +1008,36 @@ fn header_refs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
 }
 
 fn put_overflow_blob(
-    ctx: &Context,
+    _ctx: &Context,
     blob_endpoint: &str,
     blob_key: &str,
     serialized: &[u8],
 ) -> Result<(), String> {
-    let body = core::str::from_utf8(serialized)
-        .map_err(|e| format!("field-overflow body was not utf-8: {e}"))?;
     let url = format!("{}/{blob_key}", blob_endpoint.trim_end_matches('/'));
-    let response = ctx
-        .http_call("PUT", &url, &[], body)
-        .map_err(|e| format!("field-overflow PUT {blob_key}: {e}"))?;
-    if (200..300).contains(&response.status) {
+    let status = put_streamed_bytes(&url, &format!("field-overflow PUT {blob_key}"), serialized)?;
+    if (200..300).contains(&status) {
         Ok(())
     } else {
         Err(format!(
-            "field-overflow PUT {blob_key} returned HTTP {}",
-            response.status
+            "field-overflow PUT {blob_key} returned HTTP {status}"
         ))
     }
+}
+
+fn put_streamed_bytes(url: &str, label: &str, body: &[u8]) -> Result<u16, String> {
+    let (mut request_body, response_body, response_head) =
+        streaming_call("PUT", url, &[]).map_err(|e| format!("{label} stream begin: {e}"))?;
+    for chunk in body.chunks(HTTP_STREAM_READ_CHUNK_BYTES) {
+        request_body
+            .write_all_chunk(chunk)
+            .map_err(|e| format!("{label} request body: {e}"))?;
+    }
+    request_body
+        .finish()
+        .map_err(|e| format!("{label} request close: {e}"))?;
+    let head = response_head().map_err(|e| format!("{label} response head: {e}"))?;
+    let _ = response_body.close();
+    Ok(head.status)
 }
 
 fn sha_from_prefix(prefix: &str, body: &[u8]) -> String {
