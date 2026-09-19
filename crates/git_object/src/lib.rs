@@ -56,3 +56,46 @@ pub use tree::{TreeEntry, tree_canonical_bytes, tree_hash};
 ///
 /// Used everywhere a git-object identity is exchanged.
 pub type Oid = String;
+
+/// Durable entity key shared by Git ingestion and repository readers.
+pub fn object_entity_id(repository_id: &str, sha: &str) -> String {
+    let mut repo = String::with_capacity(repository_id.len());
+    let mut last_dash = false;
+    for ch in repository_id.chars() {
+        if ch.is_ascii_alphanumeric() {
+            repo.push(ch.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            repo.push('-');
+            last_dash = true;
+        }
+    }
+    let repo = repo.trim_matches('-');
+    if repo.is_empty() {
+        format!("obj-{sha}")
+    } else {
+        format!("{repo}-{sha}")
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::object_entity_id;
+
+    #[test]
+    fn durable_keys_preserve_ingestion_normalization_and_repository_isolation() {
+        assert_eq!(
+            object_entity_id("rp-katagami-commons", "abc"),
+            "rp-katagami-commons-abc"
+        );
+        assert_eq!(
+            object_entity_id("Katagami/Katagami Curation", "abc"),
+            "katagami-katagami-curation-abc"
+        );
+        assert_eq!(object_entity_id("", "abc"), "obj-abc");
+        assert_ne!(
+            object_entity_id("repo-a", "abc"),
+            object_entity_id("repo-b", "abc")
+        );
+    }
+}
