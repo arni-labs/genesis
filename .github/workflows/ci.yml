@@ -142,7 +142,7 @@ jobs:
             > "${RUNNER_TEMP}/genesis-server.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/genesis-server.pid"
           deadline=$((SECONDS + 300))
-          until curl -fsS -H "X-Tenant-Id: default" "http://127.0.0.1:${GENESIS_PORT}/tdata/Apps?\$top=1" > /dev/null 2>&1; do
+          until curl -fsS "http://127.0.0.1:${GENESIS_PORT}/healthz" > /dev/null 2>&1; do
             if ! kill -0 "$(cat "${RUNNER_TEMP}/genesis-server.pid")" 2> /dev/null; then
               echo "Genesis server exited during boot" >&2
               tail -200 "${RUNNER_TEMP}/genesis-server.log" >&2
