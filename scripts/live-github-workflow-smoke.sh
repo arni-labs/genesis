@@ -351,9 +351,9 @@ git_in "$SRC" config user.email "workflow-smoke@genesis.local"
 git_in "$SRC" config user.name "Genesis Workflow Smoke"
 git_in "$SRC" remote add origin "$(remote_url "$TOKEN_A")"
 printf '# workflow smoke %s\n' "$RUN_ID" > "${SRC}/README.md"
-# A compressible object larger than the streamed HTTP chunk exercises the
-# field-overflow and raw-object cache PUTs without making the CI pack large.
-head -c 2490368 /dev/zero > "${SRC}/large-object.bin"
+# A compressible object whose encoded form exceeds the former 16 MiB ceiling
+# exercises more than one full host-channel window without making the pack large.
+head -c 17825792 /dev/zero > "${SRC}/large-object.bin"
 LARGE_OBJECT_SHA="$(git_in "$SRC" hash-object large-object.bin)"
 git_in "$SRC" add README.md large-object.bin
 git_in "$SRC" commit -q -m "Seed main"
