@@ -38,7 +38,7 @@ temper_module! {
     fn run(ctx: Context) -> Result<Value> {
         let repository_id = ctx.entity_id.clone();
         let api_base = temper_api_base(&ctx);
-        let blob_endpoint = blob_endpoint(&ctx, &api_base);
+        let blob_endpoint = blob_endpoint(&api_base);
         let ref_updates = parse_ref_updates(&repository_id, &ctx.trigger_params)?;
         let pack_bytes = decode_pack_bytes(&blob_endpoint, &ctx.trigger_params)?;
         let pack_byte_count = pack_bytes.as_ref().map(Vec::len).unwrap_or_default();
@@ -571,7 +571,7 @@ fn fetch_existing_object_body(
     let headers = internal_read_headers();
     let header_refs = header_refs(&headers);
     for entity_id in [&scoped_id, sha] {
-        let url = existing_object_lookup_url(api_base, set, entity_id);
+        let url = existing_object_identity_lookup_url(api_base, set, entity_id);
         let Some(body) =
             get_optional_streamed_text(&url, &format!("fetch {set}({sha})"), &header_refs)?
         else {
@@ -583,6 +583,22 @@ fn fetch_existing_object_body(
                 "{set}({sha}) identity does not match repository {repository_id}"
             ));
         }
+        let cache_url = format!(
+            "{}/git-objects/{repository_id}/{sha}.b64",
+            blob_endpoint.trim_end_matches('/')
+        );
+        if let Some(encoded) =
+            get_optional_streamed_text(&cache_url, &format!("fetch raw object cache {sha}"), &[])?
+        {
+            return B64
+                .decode(encoded)
+                .map(Some)
+                .map_err(|e| format!("raw object cache {sha} base64 decode: {e}"));
+        }
+
+        let url = existing_object_lookup_url(api_base, set, entity_id);
+        let body = get_streamed_text(&url, &format!("fetch canonical {set}({sha})"), &header_refs)?;
+        let row: Value = serde_json::from_str(&body).map_err(|e| format!("object json: {e}"))?;
         let fields = row.get("fields").unwrap_or(&row);
         let canonical_value = fields
             .get("CanonicalBytes")
@@ -594,6 +610,14 @@ fn fetch_existing_object_body(
         .map(Some);
     }
     Ok(None)
+}
+
+fn existing_object_identity_lookup_url(api_base: &str, set: &str, entity_id: &str) -> String {
+    format!(
+        "{}/tdata/{set}('{}')?$select=Id,RepositoryId",
+        api_base.trim_end_matches('/'),
+        urlencode(&entity_id.replace('\'', "''"))
+    )
 }
 
 fn base_identity_matches(row: &Value, repository_id: &str, entity_id: &str, sha: &str) -> bool {
@@ -715,12 +739,8 @@ fn internal_read_headers() -> Vec<(String, String)> {
     ]
 }
 
-fn blob_endpoint(ctx: &Context, api_base: &str) -> String {
-    ctx.get_secret("blob_endpoint")
-        .ok()
-        .map(|value| value.trim_end_matches('/').to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| format!("{api_base}/_internal/blobs"))
+fn blob_endpoint(api_base: &str) -> String {
+    format!("{}/_internal/blobs", api_base.trim_end_matches('/'))
 }
 
 fn urlencode(s: &str) -> String {
@@ -1204,6 +1224,24 @@ mod tests {
         assert_eq!(
             url,
             "https://temper.example/tdata/Blobs('repo-one-abc123')?$select=Id,RepositoryId,CanonicalBytes"
+        );
+    }
+
+    #[test]
+    fn delta_base_probe_reads_identity_before_raw_cache() {
+        let url = existing_object_identity_lookup_url(
+            "https://temper.example/",
+            "Blobs",
+            &object_entity_id("repo ' one", "abc123"),
+        );
+
+        assert_eq!(
+            url,
+            "https://temper.example/tdata/Blobs('repo-one-abc123')?$select=Id,RepositoryId"
+        );
+        assert_eq!(
+            blob_endpoint("https://temper.example/"),
+            "https://temper.example/_internal/blobs"
         );
     }
 
