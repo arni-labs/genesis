@@ -76,15 +76,19 @@ permit(
   principal.action_context == "composite:App.Fork"
 };
 
-// --- MarkProvisioned: only the repository_provision integration
-//     (system principal) can transition Provisioning -> Active.
+// --- MarkProvisioned: Provisioning -> Active. The repository_provision
+//     integration is not implemented, so the GitHub create route sends this
+//     as the system principal. The operator may also send it, to finish a
+//     record created through OData; Temper no longer honors a header that
+//     claims the system agent type, so without this such a record stays in
+//     Provisioning and refuses every push.
 
 permit(
   principal,
   action == Action::"MarkProvisioned",
   resource is Repository
 ) when {
-  principal.agent_type == "system"
+  principal has agent_type && ["system", "operator"].contains(principal.agent_type)
 };
 
 // --- File/tree mutations — repo:write (or admin:repos) + same owner.
