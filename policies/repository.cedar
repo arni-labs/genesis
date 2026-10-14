@@ -151,3 +151,12 @@ forbid(
 ) when {
   resource.Status == "Archived"
 };
+
+// The REST create route (github_rest_repos) authorizes the caller's GitToken itself, on its scopes: admin:repos for
+// any owner, repo:write for the caller's own account. The kernel runs the module's calls as the module, so once it
+// has decided, it creates and provisions the repository under its own name (arni-labs/genesis#58).
+permit(
+  principal == Agent::"github_rest_repos",
+  action in [Action::"create", Action::"Create", Action::"MarkProvisioned", Action::"read", Action::"list"],
+  resource is Repository
+);
