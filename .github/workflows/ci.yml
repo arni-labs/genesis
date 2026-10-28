@@ -129,6 +129,15 @@ jobs:
       - name: Build Temper kernel
         run: cargo build --manifest-path temper/Cargo.toml --release --bin temper
 
+      # Temper takes identity from a bearer credential only, and registers
+      # the key it starts with as the tenant's operator. A random key made
+      # here lives only on this runner, for this run.
+      - name: Make this run's operator key
+        run: |
+          key="$(openssl rand -hex 32)"
+          echo "::add-mask::${key}"
+          echo "TEMPER_API_KEY=${key}" >> "$GITHUB_ENV"
+
       # README "Local Run" serve invocation; turso storage on a local
       # file (the same TURSO_URL=file: pattern the managed live smokes
       # use), readiness probe mirrored from their wait_for_server.
