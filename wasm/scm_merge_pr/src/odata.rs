@@ -249,7 +249,12 @@ pub fn fetch_ref(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    for row in &items {
+    find_ref(&items, repository_id, name)
+}
+
+/// The ref `name` of `repository_id` among a Refs page's rows.
+pub(crate) fn find_ref(items: &[Value], repository_id: &str, name: &str) -> Result<RefRow, String> {
+    for row in items {
         let fields = row.get("fields").cloned().unwrap_or(Value::Null);
         let row_repo = fields
             .get("RepositoryId")
