@@ -264,7 +264,15 @@ pub(crate) fn find_ref(items: &[Value], repository_id: &str, name: &str) -> Resu
             .get("Name")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        if row_repo != repository_id || row_name != name {
+        // A push that deletes a branch moves its Ref to Deleted and the
+        // record stays for audit; only an Active ref is the branch, as
+        // git_refs_advertise reads them.
+        let status = row
+            .get("status")
+            .and_then(Value::as_str)
+            .or_else(|| fields.get("Status").and_then(Value::as_str))
+            .unwrap_or_default();
+        if row_repo != repository_id || row_name != name || status != "Active" {
             continue;
         }
         let target = fields
