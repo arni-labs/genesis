@@ -432,3 +432,34 @@ fn default_messages_are_github_shaped() {
     assert_eq!(normalize_message("m"), "m\n");
     assert_eq!(normalize_message("m\n"), "m\n");
 }
+
+// --- Ref lookup -------------------------------------------------------
+
+fn ref_row(status: &str, target: &str) -> serde_json::Value {
+    json!({
+        "entity_id": "rf-rp-acme-demo-refs-heads-feat",
+        "status": status,
+        "fields": {
+            "RepositoryId": "rp-acme-demo",
+            "Name": "refs/heads/feat",
+            "TargetCommitSha": target,
+        },
+    })
+}
+
+/// A push that deletes a branch moves its Ref to Deleted, and the record
+/// stays for audit (the Ref spec). A merge never reads it as the branch.
+#[test]
+fn a_deleted_ref_is_not_the_branch() {
+    let find = |status| {
+        crate::odata::find_ref(&[ref_row(status, "a1")], "rp-acme-demo", "refs/heads/feat")
+    };
+    assert_eq!(
+        find("Active").map(|r| r.target_commit_sha),
+        Ok("a1".to_string())
+    );
+    assert_eq!(
+        find("Deleted"),
+        Err("ref 'refs/heads/feat' not found on repository rp-acme-demo".to_string())
+    );
+}
