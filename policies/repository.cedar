@@ -15,6 +15,11 @@
 // --- Read: any authenticated principal with repo:read on a public
 //     repo, or explicit collaborator on a private repo.
 
+// The git and REST read modules apply this same rule themselves, against the
+// Repository row, because the kernel runs their reads as the module rather than
+// the caller (crates/git_auth/src/read.rs). Keep the two in step. The modules
+// also let a repo:read GitToken read the repositories its Repositories field
+// names; that list lives on the token row, which Cedar does not see here.
 permit(
   principal,
   action in [Action::"read", Action::"list"],
@@ -89,6 +94,28 @@ permit(
   resource is Repository
 ) when {
   principal has agent_type && ["system", "operator"].contains(principal.agent_type)
+};
+
+// --- SetVisibility: the owner with repo:write, admin:repos, or the tenant
+//     operator (who finishes records created through OData, as for
+//     MarkProvisioned above).
+
+permit(
+  principal,
+  action == Action::"SetVisibility",
+  resource is Repository
+) when {
+  principal.scopes.contains("admin:repos") ||
+  (principal.scopes.contains("repo:write") &&
+   resource.OwnerAccountId == principal.accountId)
+};
+
+permit(
+  principal,
+  action == Action::"SetVisibility",
+  resource is Repository
+) when {
+  principal has agent_type && principal.agent_type == "operator"
 };
 
 // --- File/tree mutations — repo:write (or admin:repos) + same owner.

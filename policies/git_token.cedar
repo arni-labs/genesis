@@ -122,6 +122,21 @@ permit(
   principal.scopes.contains("admin:tokens")
 };
 
+// --- Rotation by the tenant operator (the server's own key). No token
+//     carries admin:tokens and no admin agent type exists, so without
+//     this nothing can mint a replacement or revoke a leaked token.
+//     Approved by Rita on 22 Oct 2026 ("Genesis push key, yes"); the
+//     same operator predicate as MarkProvisioned in repository.cedar.
+//     The revoked-is-inert forbid below still holds.
+
+permit(
+  principal,
+  action in [Action::"read", Action::"list", Action::"create", Action::"Create", Action::"Revoke"],
+  resource is GitToken
+) when {
+  principal has agent_type && principal.agent_type == "operator"
+};
+
 // --- MarkUsed: system principal only (auth integration).
 
 // The auth resolver fires MarkUsed under the module's admin-kind
