@@ -329,9 +329,7 @@ fn respond_unauthorized(http: &InboundHttp) -> Result<Value, String> {
     .map_err(|e| format!("submit_response_head: {e}"))?;
     let mut writer = http.response_body();
     writer
-        .write_all_chunk(
-            b"authentication required: supply a GitToken as the Basic username\n",
-        )
+        .write_all_chunk(b"authentication required: supply a GitToken as the Basic username\n")
         .map_err(|e| format!("response_body write: {e}"))?;
     writer
         .finish()

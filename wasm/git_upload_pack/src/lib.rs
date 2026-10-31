@@ -85,7 +85,11 @@ fn authorize_read(
         repository_id,
     )?;
     let decision = genesis_git_auth::decide_read(&resolved, repository_id, repository.as_ref());
-    let principal = if resolved.is_anonymous() { system } else { resolved };
+    let principal = if resolved.is_anonymous() {
+        system
+    } else {
+        resolved
+    };
     Ok((decision, principal))
 }
 

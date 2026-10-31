@@ -175,15 +175,24 @@ mod tests {
         let public = repo(Some("public"), "octo");
         let anon = Principal::anonymous(&ENV);
         assert_eq!(decide_read(&anon, RP, Some(&public)), ReadDecision::Allow);
-        assert_eq!(decide_read(&token("other", &[], &[]), RP, Some(&public)), ReadDecision::Allow);
+        assert_eq!(
+            decide_read(&token("other", &[], &[]), RP, Some(&public)),
+            ReadDecision::Allow
+        );
     }
 
     #[test]
     fn anonymous_is_challenged_on_private_missing_visibility_and_absent_rows() {
         let anon = Principal::anonymous(&ENV);
         let private = repo(Some("private"), "octo");
-        assert_eq!(decide_read(&anon, RP, Some(&private)), ReadDecision::Challenge);
-        assert_eq!(decide_read(&anon, RP, Some(&repo(None, ""))), ReadDecision::Challenge);
+        assert_eq!(
+            decide_read(&anon, RP, Some(&private)),
+            ReadDecision::Challenge
+        );
+        assert_eq!(
+            decide_read(&anon, RP, Some(&repo(None, ""))),
+            ReadDecision::Challenge
+        );
         assert_eq!(decide_read(&anon, RP, None), ReadDecision::Challenge);
     }
 
@@ -201,28 +210,45 @@ mod tests {
         let private = repo(Some("private"), "octo");
         let ci = token("ci", &["repo:read"], &[RP]);
         assert_eq!(decide_read(&ci, RP, Some(&private)), ReadDecision::Allow);
-        assert_eq!(decide_read(&ci, "rp-octo-other", Some(&private)), ReadDecision::NotFound);
+        assert_eq!(
+            decide_read(&ci, "rp-octo-other", Some(&private)),
+            ReadDecision::NotFound
+        );
         let unscoped_list = token("ci", &[], &[RP]);
-        assert_eq!(decide_read(&unscoped_list, RP, Some(&private)), ReadDecision::NotFound);
+        assert_eq!(
+            decide_read(&unscoped_list, RP, Some(&private)),
+            ReadDecision::NotFound
+        );
     }
 
     #[test]
     fn another_token_holder_gets_not_found() {
         let private = repo(Some("private"), "octo");
         let other = token("other", &["repo:read", "repo:write"], &[]);
-        assert_eq!(decide_read(&other, RP, Some(&private)), ReadDecision::NotFound);
+        assert_eq!(
+            decide_read(&other, RP, Some(&private)),
+            ReadDecision::NotFound
+        );
         assert_eq!(decide_read(&other, RP, None), ReadDecision::NotFound);
     }
 
     #[test]
     fn an_empty_owner_matches_nobody() {
-        assert!(!may_read_repository(&token("", &[], &[]), RP, &repo(None, "")));
+        assert!(!may_read_repository(
+            &token("", &[], &[]),
+            RP,
+            &repo(None, "")
+        ));
     }
 
     #[test]
     fn the_module_system_identity_is_not_a_reader() {
         let system = Principal::system(&ENV);
-        assert!(!may_read_repository(&system, RP, &repo(Some("private"), "test-module")));
+        assert!(!may_read_repository(
+            &system,
+            RP,
+            &repo(Some("private"), "test-module")
+        ));
     }
 
     #[test]
@@ -230,12 +256,18 @@ mod tests {
         let parsed = parse_repositories(Some(&serde_json::json!(
             "paw-agent/katagami-control, rp-temperpaw-paw-media\n"
         )));
-        assert_eq!(parsed, ["rp-paw-agent-katagami-control", "rp-temperpaw-paw-media"]);
+        assert_eq!(
+            parsed,
+            ["rp-paw-agent-katagami-control", "rp-temperpaw-paw-media"]
+        );
         assert!(parse_repositories(None).is_empty());
     }
 
     #[test]
     fn repository_key_is_quoted_and_encoded() {
-        assert_eq!(urlencode(&"rp-o'hare x".replace('\'', "''")), "rp-o''hare%20x");
+        assert_eq!(
+            urlencode(&"rp-o'hare x".replace('\'', "''")),
+            "rp-o''hare%20x"
+        );
     }
 }
