@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use genesis_git_auth::Principal;
+use genesis_git_auth::{Principal, ReadDecision};
 use std::time::Instant;
 use temper_wasm_sdk::http_stream::{HttpRequestBodyWriter, InboundHttp, streaming_call};
 use temper_wasm_sdk::prelude::*;
@@ -60,10 +60,16 @@ temper_module! {
     }
 }
 
-/// Resolve the inbound caller and fall back to the system principal
-/// if none is presented. Production deployments lock down via Cedar
-/// to require a real GitToken; dev quickstarts work without one.
-fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
+/// Resolve the inbound caller and decide whether it may read this repository.
+///
+/// The kernel runs this module's reads as the module, so the caller's access is
+/// decided here, once, against the Repository row (see `genesis_git_auth::read`).
+/// Once allowed, object reads use the module's system identity.
+fn authorize_read(
+    ctx: &Context,
+    headers: &[(String, String)],
+    repository_id: &str,
+) -> Result<(ReadDecision, Principal), String> {
     let api_base = temper_api_base(ctx, headers);
     let auth_env = genesis_git_auth::AuthEnv {
         temper_api: &api_base,
@@ -71,11 +77,16 @@ fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal
         system_principal: SYSTEM_PRINCIPAL,
     };
     let resolved = genesis_git_auth::resolve_principal(ctx, &auth_env, headers);
-    if resolved.is_anonymous() {
-        Principal::system(&auth_env)
-    } else {
-        resolved
-    }
+    let system = Principal::system(&auth_env);
+    let repository = genesis_git_auth::fetch_repository_fields(
+        ctx,
+        &api_base,
+        &system.outbound_headers(),
+        repository_id,
+    )?;
+    let decision = genesis_git_auth::decide_read(&resolved, repository_id, repository.as_ref());
+    let principal = if resolved.is_anonymous() { system } else { resolved };
+    Ok((decision, principal))
 }
 
 /// The base URL for this kernel's own OData surface.
@@ -145,6 +156,27 @@ fn respond_text(
     Ok(json!({ "status": status }))
 }
 
+/// Standard git smart-HTTP challenge (ADR-0025), as `git_refs_advertise`
+/// answers it: git asks its credential helper and retries.
+fn respond_unauthorized(http: &InboundHttp) -> Result<Value, String> {
+    http.submit_response_head(
+        401,
+        &[
+            ("content-type", "text/plain"),
+            ("WWW-Authenticate", "Basic realm=\"Genesis\""),
+        ],
+    )
+    .map_err(|e| format!("submit_response_head: {e}"))?;
+    let mut writer = http.response_body();
+    writer
+        .write_all_chunk(b"authentication required: supply a GitToken as the Basic username\n")
+        .map_err(|e| format!("response_body write: {e}"))?;
+    writer
+        .finish()
+        .map_err(|e| format!("response_body close: {e}"))?;
+    Ok(json!({ "status": 401 }))
+}
+
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const READ_CHUNK: usize = 16 * 1024;
 const MAX_CACHED_OBJECT_BYTES: usize = 128 * 1024 * 1024;
@@ -181,7 +213,17 @@ fn respond_upload_pack_error(http: &InboundHttp, error: &str) -> Result<Value, S
 
 fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let total_started = Instant::now();
-    let principal = effective_principal(ctx, &http.headers);
+    let owner = http.params.get("owner").cloned().unwrap_or_default();
+    let repo = http.params.get("repo").cloned().unwrap_or_default();
+    let repository_id = format!("rp-{owner}-{repo}");
+    let (decision, principal) = authorize_read(ctx, &http.headers, &repository_id)?;
+    match decision {
+        ReadDecision::Allow => {}
+        ReadDecision::Challenge => return respond_unauthorized(http),
+        ReadDecision::NotFound => {
+            return respond_text(http, 404, "text/plain", "repository not found\n");
+        }
+    }
     let api_base = temper_api_base(ctx, &http.headers);
     let blob_endpoint = blob_endpoint(ctx, &api_base);
     // 1. Read the request body. Bounded: want/have negotiation
@@ -239,9 +281,6 @@ fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String>
         body.len(),
         &http.params,
     );
-    let owner = http.params.get("owner").cloned().unwrap_or_default();
-    let repo = http.params.get("repo").cloned().unwrap_or_default();
-    let repository_id = format!("rp-{owner}-{repo}");
 
     if upload_request_needs_more_haves(&parsed) {
         return respond_upload_pack_nak_only(http, parsed.haves.len());

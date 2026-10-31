@@ -346,12 +346,7 @@ fn get_repository(
         Err(_) if !anonymous => return http::respond_error(http, 404, "Not Found"),
         Err(e) => return Err(e),
     };
-    let visibility = row
-        .fields
-        .get("Visibility")
-        .and_then(Value::as_str)
-        .unwrap_or("private");
-    if anonymous && visibility != "public" {
+    if !genesis_git_auth::may_read_repository(&resolved, &repository_id, &row.fields) {
         return http::respond_error(http, 404, "Not Found");
     }
     let repo_json = gh::repository_json(owner, repo, &row.fields, &row.status, &api_base);
