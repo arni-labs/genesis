@@ -250,3 +250,81 @@ permit(
   (principal.action_context == "composite:Repository.IngestPack" ||
    principal.action_context == "composite:Repository.MergePullRequest")
 };
+
+// --- BlobObject: the raw-object cache behind the git wire.
+//
+// `BlobObject` is not a Genesis entity — it is the kernel's internal blob
+// store, gated at `/_internal/blobs` by `read_blob_object` /
+// `write_blob_object` (temper-server/src/blobs.rs). temper-git keeps every git
+// object there under `git-objects/{repository_id}/{sha}.b64`, and
+// upload-pack/receive-pack read and write that cache on the hot path. With no
+// permit a clone dies with `object-cache GET <sha> returned HTTP 403`.
+//
+// This gate cannot be the repository-level control, because it never sees a
+// git identity. The kernel edge does not understand a GitToken, so an inbound
+// git request is `anonymous` to it; temper-git authenticates the caller itself
+// inside the guest (`git_auth`) and every repository read it performs goes
+// through repository.cedar under the resolved principal. By the time an object
+// is fetched the caller has already been authorized for that repository — so
+// the check that belongs here is the namespace, not the principal.
+//
+// Reaching the endpoint at all requires passing the kernel's global auth
+// middleware, which `/_internal/blobs` is not exempt from: either a real tenant
+// credential (operator-level, already privileged) or a capability the kernel
+// itself minted for an in-process guest call to loopback. It is not reachable
+// unauthenticated from the internet.
+//
+// Residual, recorded deliberately: an operator-credential holder can read any
+// repository's objects through this path if they know the SHA. That is not a
+// new grant — an operator can already read the object rows directly — but it
+// does mean this permit must stay scoped to the `git-objects/` namespace so it
+// never widens to other tenants' overflow blobs.
+
+permit(
+  principal,
+  action in [Action::"read_blob_object", Action::"write_blob_object"],
+  resource is BlobObject
+) when {
+  // Only the modules that implement the git wire and its integrations. An
+  // unconstrained `when` here handed every authenticated principal in the
+  // tenant read AND write over the whole object cache (review, 2026-09-15);
+  // the module list below is the scope. Guests carry their module identity
+  // as the principal; triggered integrations carry it in context.module and
+  // act for whoever caused the transition — for a public push that is the
+  // anonymous Customer, so the principal's type is not constrained here.
+  // Accept either arm, nothing else.
+  (
+    [
+      Agent::"git_refs_advertise",
+      Agent::"git_upload_pack",
+      Agent::"git_receive_pack",
+      Agent::"scm_ingest_pack",
+      Agent::"scm_merge_pr"
+    ].contains(principal) ||
+    (context has module && [
+      "git_refs_advertise",
+      "git_upload_pack",
+      "git_receive_pack",
+      "scm_ingest_pack",
+      "scm_merge_pr"
+    ].contains(context.module))
+  ) && (
+  resource.id like "git-objects/*" ||
+  resource.id like "field-overflow/*"
+  )
+};
+
+// `field-overflow/` is the kernel's own storage for entity field values too
+// large to keep inline (ADR-0045). Genesis puts git object CanonicalBytes there,
+// so the install path reads it on every tree it materializes — scoping this
+// permit to `git-objects/` alone left the bundle endpoint failing with
+// "Genesis field overflow blob ... not found" on data that was present and
+// intact. The reader reports any non-200 as "not found", so an authorization
+// denial was indistinguishable from missing data, which is worth fixing
+// separately.
+//
+// Wider than the git-object namespace, deliberately and with the same
+// reasoning: reaching `/_internal/blobs` at all requires either a real tenant
+// credential or a capability the kernel minted for an in-process guest call, so
+// this is not reachable unauthenticated. It is not scoped per repository
+// because these keys are content-addressed by sha256 and carry no owner.

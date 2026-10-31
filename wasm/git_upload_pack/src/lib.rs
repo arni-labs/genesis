@@ -64,7 +64,7 @@ temper_module! {
 /// if none is presented. Production deployments lock down via Cedar
 /// to require a real GitToken; dev quickstarts work without one.
 fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal {
-    let api_base = temper_api_from_headers(headers);
+    let api_base = temper_api_base(ctx, headers);
     let auth_env = genesis_git_auth::AuthEnv {
         temper_api: &api_base,
         tenant: SYSTEM_TENANT,
@@ -76,6 +76,35 @@ fn effective_principal(ctx: &Context, headers: &[(String, String)]) -> Principal
     } else {
         resolved
     }
+}
+
+/// The base URL for this kernel's own OData surface.
+///
+/// The inbound `Host` header names the *public* edge. A call there is not the
+/// kernel's configured internal origin, so `is_internal_url` refuses to mint an
+/// internal capability for it (host_trait.rs: only server-owned configuration
+/// may classify a target as internal). The request then leaves the process and
+/// re-enters through the public edge with no bearer, where the global auth
+/// middleware answers 401 — which is exactly how a clone died with
+/// `Commits(<sha>) status 401` while ref advertisement succeeded: refs go
+/// through `http_call`, which `LocalTDataWasmHost` serves in-process, whereas
+/// object rows go through the streaming path, which is delegated straight out.
+///
+/// The kernel hands us its real loopback origin as the `blob_endpoint` secret
+/// (`http://127.0.0.1:{port}/_internal/blobs`, seeded in temper-cli), so derive
+/// the API base from that. It carries the actual listen port, so nothing here
+/// hardcodes one. When an operator points `BLOB_ENDPOINT` at external object
+/// storage the suffix will not match, and the Host header remains the fallback.
+fn temper_api_base(ctx: &Context, headers: &[(String, String)]) -> String {
+    if let Ok(endpoint) = ctx.get_secret("blob_endpoint") {
+        let trimmed = endpoint.trim_end_matches('/');
+        if let Some(base) = trimmed.strip_suffix("/_internal/blobs")
+            && !base.is_empty()
+        {
+            return base.to_string();
+        }
+    }
+    temper_api_from_headers(headers)
 }
 
 fn temper_api_from_headers(headers: &[(String, String)]) -> String {
@@ -153,7 +182,7 @@ fn respond_upload_pack_error(http: &InboundHttp, error: &str) -> Result<Value, S
 fn serve_upload_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let total_started = Instant::now();
     let principal = effective_principal(ctx, &http.headers);
-    let api_base = temper_api_from_headers(&http.headers);
+    let api_base = temper_api_base(ctx, &http.headers);
     let blob_endpoint = blob_endpoint(ctx, &api_base);
     // 1. Read the request body. Bounded: want/have negotiation
     //    payloads are tiny (a few KB even for huge repos), so we
