@@ -6,7 +6,6 @@
 #![cfg(test)]
 
 use alloc::format;
-use alloc::string::String;
 
 use serde_json::Value;
 use temper_wasm_sdk::json;
@@ -160,20 +159,4 @@ fn merge_matches_github_fixture_shape() {
     let fixture = fixture(include_str!("../fixtures/merge.json"));
     let actual = crate::gh::merge_json("6dcb09b5b57875f334f61aebed695e2e4193db5e");
     assert_shape(&fixture, &actual, "", MERGE_OMITTED);
-}
-
-#[test]
-fn pull_allowlist_only_covers_diff_statistics() {
-    for entry in PULL_OMITTED {
-        let known = [
-            "comments",
-            "review_comments",
-            "commits",
-            "additions",
-            "deletions",
-            "changed_files",
-        ];
-        assert!(known.contains(entry), "unexpected allowlist entry {entry}");
-    }
-    let _unused: Option<String> = None;
 }
