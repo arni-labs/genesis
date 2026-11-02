@@ -11,8 +11,8 @@
 //! the real customer/agent rather than a system bridge.
 //!
 //! Anonymous (no `Authorization` header, or token not found / not
-//! `Active`) is returned as a distinct value. The caller decides
-//! whether to reject, challenge, or allow a development fallback.
+//! `Active`) is returned as a distinct value. Read modules then apply
+//! [`decide_read`] against the Repository row before serving anything.
 
 #![forbid(unsafe_code)]
 
@@ -26,6 +26,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use sha2::Digest;
 use temper_wasm_sdk::prelude::*;
+
+mod read;
+pub use read::{ReadDecision, decide_read, fetch_repository_fields, may_read_repository};
 
 /// Deployment-specific identifiers each consuming module supplies.
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +48,9 @@ pub struct Principal {
     /// Scopes from the resolved GitToken row, enforced by Cedar gates
     /// downstream (e.g. `force` on `Ref.ForceUpdate`).
     pub scopes: Vec<String>,
+    /// Repositories a `repo:read` token is limited to, from the GitToken's
+    /// `Repositories` field (see [`read`]). Empty for an unscoped token.
+    pub repositories: Vec<String>,
     /// GitToken row id when this principal came from a token —
     /// callers fire `GitToken.MarkUsed` (best-effort) with it.
     pub token_id: Option<String>,
@@ -57,6 +63,7 @@ impl Principal {
             kind: "anonymous".to_string(),
             id: "anonymous".to_string(),
             scopes: Vec::new(),
+            repositories: Vec::new(),
             token_id: None,
             tenant: env.tenant.to_string(),
         }
@@ -67,6 +74,7 @@ impl Principal {
             kind: "admin".to_string(),
             id: env.system_principal.to_string(),
             scopes: Vec::new(),
+            repositories: Vec::new(),
             token_id: None,
             tenant: env.tenant.to_string(),
         }
@@ -209,10 +217,12 @@ pub fn resolve_principal(
         .filter(|s| !s.is_empty())
         .map(str::to_string);
     let scopes = parse_scopes(fields.get("Scopes"));
+    let repositories = read::parse_repositories(fields.get("Repositories"));
     Principal {
         kind: "customer".to_string(),
         id,
         scopes,
+        repositories,
         token_id,
         tenant: env.tenant.to_string(),
     }
@@ -342,6 +352,7 @@ mod tests {
             kind: "customer".to_string(),
             id: "user-1".to_string(),
             scopes: alloc::vec!["repo:write".to_string(), "force".to_string()],
+            repositories: Vec::new(),
             token_id: Some("tk-1".to_string()),
             tenant: "default".to_string(),
         };
@@ -357,6 +368,7 @@ mod tests {
             kind: "customer".to_string(),
             id: "user-1".to_string(),
             scopes: alloc::vec!["repo:read".to_string()],
+            repositories: Vec::new(),
             token_id: None,
             tenant: "default".to_string(),
         };

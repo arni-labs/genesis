@@ -172,6 +172,11 @@ jobs:
           TEMPER_URL: http://127.0.0.1:${{ env.GENESIS_PORT }}
         run: scripts/live-github-workflow-smoke.sh
 
+      - name: Private-read smoke
+        env:
+          TEMPER_URL: http://127.0.0.1:${{ env.GENESIS_PORT }}
+        run: scripts/live-genesis-private-read-smoke.sh
+
       - name: Server log on failure
         if: failure()
         run: tail -300 "${RUNNER_TEMP}/genesis-server.log" || true

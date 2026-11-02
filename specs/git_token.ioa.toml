@@ -10,6 +10,11 @@
 #   admin:tokens, force
 # New scopes require an ADR describing what they gate.
 #
+# Repositories (optional) limits a repo:read token's reach over non-public
+# repositories to the ones it names (ids or owner/repo, comma separated), like
+# GitHub's "only select repositories". Read modules enforce it
+# (crates/git_auth/src/read.rs).
+#
 # State: Active → Revoked (terminal).
 
 [automaton]
@@ -25,7 +30,7 @@ name = "Create"
 kind = "input"
 from = ["Active"]
 to = "Active"
-params = ["PrincipalId", "HashedSecret", "KeyPrefix", "Scopes", "ExpiresAt"]
+params = ["PrincipalId", "HashedSecret", "KeyPrefix", "Scopes", "ExpiresAt", "Repositories"]
 hint = "Create a new token. Caller is responsible for generating the secret + SHA-256ing it; the secret is returned to the caller once and never stored."
 
 [[action]]

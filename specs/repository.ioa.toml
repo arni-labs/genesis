@@ -13,7 +13,7 @@
 #                                     BatchWriteFiles/
 #                                     CreateBranch/
 #                                     MergePullRequest/
-#                                     SetDefaultBranch
+#                                     SetDefaultBranch/SetVisibility
 #                                     (all self-loop on Active)
 #
 # Archived is terminal. Rationale: once a repo is archived, history
@@ -51,6 +51,14 @@ from = ["Active"]
 to = "Active"
 params = ["DefaultBranch"]
 hint = "Change the repo's default branch. Must reference an existing Ref."
+
+[[action]]
+name = "SetVisibility"
+kind = "input"
+from = ["Active"]
+to = "Active"
+params = ["Visibility"]
+hint = "Make the repository public or private. Anything other than 'public' reads as private: the git and REST read modules serve a non-public repository only to its owner, an admin token, or a read token that names it (crates/git_auth/src/read.rs)."
 
 [[action]]
 name = "WriteFile"

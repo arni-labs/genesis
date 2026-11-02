@@ -46,12 +46,7 @@ fn open_read_access(
     else {
         return Ok(Err(http::respond_error(http, 404, "Not Found")?));
     };
-    let visibility = repo_row
-        .fields
-        .get("Visibility")
-        .and_then(Value::as_str)
-        .unwrap_or("private");
-    if anonymous && visibility != "public" {
+    if !genesis_git_auth::may_read_repository(&resolved, &route.repository_id(), &repo_row.fields) {
         return Ok(Err(http::respond_error(http, 404, "Not Found")?));
     }
     Ok(Ok(ReadAccess { headers }))
