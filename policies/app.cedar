@@ -50,10 +50,12 @@ permit(principal, action == Action::"Create", resource is AppInstallation) when 
 };
 
 // A TemperPaw kernel installs pinned apps from this registry with a
-// credential of the genesis-registry-reader agent type. It reads App rows and
-// bundles, and nothing else.
+// credential of the genesis-registry-reader agent type, under any agent id. It
+// reads App rows and bundles, and nothing else. Both rules key on the agent
+// type, so a reader credential gets them whatever id it was issued under. The
+// forbid does not require a verified type: it confines a claimed one too.
 permit(
-  principal == Agent::"genesis-registry-reader",
+  principal is Agent,
   action in [Action::"read_app_bundle", Action::"read"],
   resource is App
 ) when {
@@ -61,6 +63,8 @@ permit(
   principal has agentTypeVerified && principal.agentTypeVerified == true
 };
 
-forbid(principal == Agent::"genesis-registry-reader", action, resource) unless {
+forbid(principal, action, resource) when {
+  principal has agent_type && principal.agent_type == "genesis-registry-reader"
+} unless {
   resource is App && action in [Action::"read_app_bundle", Action::"read"]
 };
