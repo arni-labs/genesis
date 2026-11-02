@@ -63,14 +63,13 @@ permit(
 };
 
 // The registry composites' module (app_registry: RegisterNewApp, Fork,
-// PublishNewVersion, Install) reads the repository, its default ref, the
-// published commit and a fork's parent App as the caller, under the same
-// kernel-set context.module.
+// PublishNewVersion, Install) reads the repository, its default ref and the
+// published commit as the caller, under the same kernel-set context.module.
 permit(
   principal,
   action in [Action::"read", Action::"list"],
   resource
 ) when {
   context has module && context.module == "app_registry" &&
-  (resource is Repository || resource is Ref || resource is Commit || resource is App)
+  (resource is Repository || resource is Ref || resource is Commit)
 };
