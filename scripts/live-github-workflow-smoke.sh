@@ -32,6 +32,10 @@ set -Eeuo pipefail
 BASE_URL="${TEMPER_URL:-http://127.0.0.1:3188}"
 BASE_URL="${BASE_URL%/}"
 TENANT="${TEMPER_TENANT:-default}"
+# The server's own key (TEMPER_API_KEY at `temper serve`): Temper registers
+# it as the tenant's operator credential, the one identity this smoke acts
+# as for setup. The kernel takes identity from a bearer credential only.
+OPERATOR_KEY="${TEMPER_API_KEY:?set TEMPER_API_KEY to the key the server was started with}"
 RUN_ID="${RUN_ID:-$(date +%H%M%S)}"
 WAIT_SECS="${WAIT_SECS:-60}"
 KEEP_TMP="${KEEP_TMP:-0}"
@@ -104,21 +108,15 @@ sha256_hex() {
   fi
 }
 
-# Admin/operator headers — same operator identity the install smoke
-# uses for entity seeding; admin:tokens + agent_type=admin satisfy
-# git_token.cedar's mint-for-another-principal rule.
+# Operator headers: the server's key resolves to the tenant operator
+# (agent_type "operator"). git_token.cedar lets it mint, read and revoke
+# GitTokens for any principal; Temper's built-in platform policy lets it
+# manage HttpEndpoint routes (ADR-0069).
 admin_headers=(
   -H "Content-Type: application/json"
   -H "Accept: application/json"
   -H "X-Tenant-Id: ${TENANT}"
-  # The kernel resolves a real credential; the X-Temper-Principal-* headers
-  # below are stripped before any handler sees them (ADR-0157) and remain only
-  # for kernels that still honour them.
-  ${TEMPER_API_KEY:+-H "Authorization: Bearer ${TEMPER_API_KEY}"}
-  -H "X-Temper-Principal-Kind: admin"
-  -H "X-Temper-Principal-Id: operator"
-  -H "X-Temper-Principal-Scopes: admin:platform admin:repos admin:owners admin:tokens repo:write pr:write"
-  -H "X-Temper-Agent-Type: admin"
+  -H "Authorization: Bearer ${OPERATOR_KEY}"
 )
 
 admin_post() {

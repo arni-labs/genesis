@@ -85,10 +85,6 @@ jobs:
     needs: rust
     env:
       GENESIS_PORT: "3188"
-      # The kernel strips self-declared principal headers (ADR-0157) and
-      # requires a real credential for protected routes. This key exists only
-      # inside this job: it bootstraps the operator the smoke acts as.
-      TEMPER_API_KEY: genesis-ci-operator-key
     steps:
       - uses: actions/checkout@v6
         with:
@@ -132,6 +128,17 @@ jobs:
 
       - name: Build Temper kernel
         run: cargo build --manifest-path temper/Cargo.toml --release --bin temper
+
+      # Temper takes identity from a bearer credential only (self-declared
+      # principal headers are stripped, ADR-0157), and registers the key it
+      # starts with as the tenant's operator. A random key made here lives
+      # only on this runner, for this run; the smokes act as that operator for
+      # setup (HttpEndpoint routes, GitTokens).
+      - name: Make this run's operator key
+        run: |
+          key="$(openssl rand -hex 32)"
+          echo "::add-mask::${key}"
+          echo "TEMPER_API_KEY=${key}" >> "$GITHUB_ENV"
 
       # README "Local Run" serve invocation; turso storage on a local
       # file (the same TURSO_URL=file: pattern the managed live smokes

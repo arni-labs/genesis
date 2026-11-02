@@ -42,11 +42,13 @@ fail() { printf 'FAIL %s\n' "$1" >&2; exit 1; }
 
 sha256_hex() { printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1; }
 
+# The server's own key: Temper registers it as the tenant operator.
+OPERATOR_KEY="${TEMPER_API_KEY:?set TEMPER_API_KEY to the key the server was started with}"
 admin_headers=(
   -H "Content-Type: application/json"
   -H "Accept: application/json"
   -H "X-Tenant-Id: ${TENANT}"
-  ${TEMPER_API_KEY:+-H "Authorization: Bearer ${TEMPER_API_KEY}"}
+  -H "Authorization: Bearer ${OPERATOR_KEY}"
 )
 
 # admin <method> <path> <body-or-empty> -> prints HTTP status, body in $TMP_DIR/last.json
