@@ -1,16 +1,14 @@
 # Repository — the umbrella entity for a git repo hosted on temper-git.
 #
 # The Repository row carries metadata and provisioning state for the
-# repo's storage. A `repository_provision` WASM integration fires on
-# `Create` to do any backend-specific setup the kernel needs.
+# repo's storage. The REST create module sends MarkProvisioned once the
+# row exists; files change only through pushes and merges.
 #
 # State machine:
 #
 #   Provisioning ─(MarkProvisioned)─▶ Active ─(Archive)─▶ Archived
 #                                       │ ▲
 #                                       │ │
-#                                     WriteFile/DeleteFile/
-#                                     BatchWriteFiles/
 #                                     CreateBranch/
 #                                     MergePullRequest/
 #                                     SetDefaultBranch/SetVisibility
@@ -60,48 +58,6 @@ from = ["Active"]
 to = "Active"
 params = ["Visibility"]
 hint = "Make the repository public or private. Anything other than 'public' reads as private: the git and REST read modules serve a non-public repository only to its owner, an admin token, or a read token that names it (crates/git_auth/src/read.rs)."
-
-[[action]]
-name = "WriteFile"
-kind = "input"
-from = ["Active"]
-to = "Active"
-params = ["Ref", "Path", "Content", "Mode", "Message", "Author", "ClientRequestId"]
-hint = "Create or update one file. Fires a scm_write_file integration which walks the Ref's current Tree, builds a new Tree with the file changed, writes the Commit, and advances the Ref. Atomic transaction on the repo's libSQL DB."
-
-[[action.triggers]]
-name = "scm_write_file"
-kind = "wasm"
-module = "scm_write_file"
-config = { timeout_secs = "60" }
-
-[[action]]
-name = "DeleteFile"
-kind = "input"
-from = ["Active"]
-to = "Active"
-params = ["Ref", "Path", "Message", "Author", "ClientRequestId"]
-hint = "Delete one file from a Ref's current Tree. Same atomicity as WriteFile."
-
-[[action.triggers]]
-name = "scm_write_file"
-kind = "wasm"
-module = "scm_write_file"
-config = { timeout_secs = "60" }
-
-[[action]]
-name = "BatchWriteFiles"
-kind = "input"
-from = ["Active"]
-to = "Active"
-params = ["Ref", "Changes", "Message", "Author", "ClientRequestId"]
-hint = "Atomic multi-file commit. Changes is a JSON array of {Op:'write'|'delete', Path, Content?, Mode?}."
-
-[[action.triggers]]
-name = "scm_write_file"
-kind = "wasm"
-module = "scm_write_file"
-config = { timeout_secs = "60" }
 
 [[action]]
 name = "CreateBranch"
