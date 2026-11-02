@@ -50,6 +50,7 @@ temper_module! {
         let pack_parents = pack_commit_parents(&objects);
         let ref_updates =
             classify_force_updates(&ctx, &api_base, &repository_id, &pack_parents, ref_updates);
+        refuse_unpermitted_force(&ctx.trigger_params, &ref_updates)?;
 
         let mut sub_writes = Vec::new();
         for obj in objects {
@@ -351,6 +352,23 @@ fn classify_force_updates(
         }
     }
     ref_updates
+}
+
+/// A non-fast-forward update lands only when the pusher may force.
+///
+/// git_receive_pack decides that on the pusher's GitToken (repo:write, the
+/// `force` scope, and ownership or admin:repos; crates/git_auth/src/write.rs)
+/// and passes it as `PusherMayForce`. Only this module can tell a force push
+/// from a fast-forward, so the refusal is here. A missing value refuses.
+fn refuse_unpermitted_force(params: &Value, ref_updates: &[RefSubWrite]) -> Result<(), String> {
+    let may_force = params.get("PusherMayForce").and_then(Value::as_bool) == Some(true);
+    match ref_updates.iter().find(|u| u.action == "ForceUpdate") {
+        Some(update) if !may_force => Err(format!(
+            "non-fast-forward update to {} needs a token with the force scope",
+            update.name
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Bounded BFS from `new_sha` through commit parents looking for

@@ -135,7 +135,7 @@ name = "IngestPack"
 kind = "Composite"
 from = ["Active"]
 to = "Active"
-params = ["PackBytes", "RefUpdates", "ClientRequestId"]
+params = ["PackBytes", "RefUpdates", "ClientRequestId", "PusherMayForce"]
 record_parent_event = false
 hint = "Ingest a git receive-pack payload as one governed intent: objects, ref CAS updates, and PR-head updates land atomically."
 effect = [{ type = "trigger", name = "scm_ingest_pack" }]
