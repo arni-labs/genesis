@@ -12,6 +12,7 @@ name = "Review"
 states = ["Submitted", "Dismissed"]
 initial = "Submitted"
 allow_indefinite_states = ["Submitted"]
+terminal = ["Dismissed"]
 
 # --- Actions ---
 
@@ -40,10 +41,3 @@ kind = "output"
 [[action]]
 name = "ReviewDismissedEvent"
 kind = "output"
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "DismissedIsFinal"
-when = ["Dismissed"]
-assert = "no_further_transitions"

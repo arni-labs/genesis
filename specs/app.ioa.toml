@@ -5,6 +5,7 @@ name = "App"
 states = ["Active", "Deprecated", "Deleted"]
 initial = "Active"
 allow_indefinite_states = ["Active", "Deprecated"]
+terminal = ["Deleted"]
 
 [[action]]
 name = "Create"
@@ -24,7 +25,7 @@ hint = "Update app registry metadata that is advanced by composite actions."
 
 [[action]]
 name = "RegisterNewApp"
-kind = "Composite"
+kind = "composite"
 from = ["Active"]
 to = "Active"
 params = ["Name", "RepositoryId", "Description", "Exports", "Visibility"]
@@ -51,7 +52,7 @@ generated_from = "app_metadata"
 
 [[action]]
 name = "Fork"
-kind = "Composite"
+kind = "composite"
 from = ["Active"]
 to = "Active"
 params = ["ParentAppId", "ParentVersionHash", "ChildOwnerId", "ChildName", "Description"]
@@ -92,7 +93,7 @@ generated_from = "fork_metadata"
 
 [[action]]
 name = "PublishNewVersion"
-kind = "Composite"
+kind = "composite"
 from = ["Active"]
 to = "Active"
 params = ["NewHash", "RefName"]
@@ -123,7 +124,7 @@ generated_from = "new_hash"
 
 [[action]]
 name = "Install"
-kind = "Composite"
+kind = "composite"
 from = ["Active"]
 to = "Active"
 params = ["TargetTenant", "AppRef", "Installer", "FollowPolicy"]
@@ -161,8 +162,3 @@ kind = "input"
 from = ["Active", "Deprecated"]
 to = "Deleted"
 hint = "Hide the app from registry browse surfaces. Bytes remain content-addressed."
-
-[[invariant]]
-name = "DeletedIsFinal"
-when = ["Deleted"]
-assert = "no_further_transitions"

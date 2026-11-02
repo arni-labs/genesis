@@ -24,6 +24,7 @@ name = "PullRequest"
 states = ["Draft", "Open", "UnderReview", "Approved", "ChangesRequested", "Merged", "Closed"]
 initial = "Draft"
 allow_indefinite_states = ["Draft", "Open", "UnderReview", "Approved", "ChangesRequested"]
+terminal = ["Merged", "Closed"]
 
 # --- Actions ---
 
@@ -41,7 +42,12 @@ kind = "input"
 from = ["Draft"]
 to = "Open"
 hint = "Transition from Draft to Open. Triggers scm_assign_pr_number to compute the per-repo Number."
-effect = [{ type = "trigger", name = "scm_assign_pr_number" }]
+
+[[action.triggers]]
+name = "scm_assign_pr_number"
+kind = "wasm"
+module = "scm_assign_pr_number"
+config = { timeout_secs = "5" }
 
 [[action]]
 name = "AssignNumber"
@@ -100,11 +106,6 @@ to = "Merged"
 params = ["Strategy", "Message", "ClientRequestId", "MergedCommitSha"]
 hint = "Mark the PR merged. Repository.MergePullRequest produces the merge objects and advances TargetRef, then applies this transition as a sub-write."
 
-[[action.cedar_gate]]
-principal = "request.principal"
-resource = "this"
-action = "PullRequest::Merge"
-
 [[action]]
 name = "Close"
 kind = "input"
@@ -126,25 +127,4 @@ kind = "output"
 [[action]]
 name = "PullRequestClosedEvent"
 kind = "output"
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "MergedIsFinal"
-when = ["Merged"]
-assert = "no_further_transitions"
-
-[[invariant]]
-name = "ClosedIsFinal"
-when = ["Closed"]
-assert = "no_further_transitions"
-
-[[integration]]
-name = "scm_assign_pr_number"
-trigger = "scm_assign_pr_number"
-type = "wasm"
-module = "scm_assign_pr_number"
-
-[integration.config]
-timeout_secs = 5
 

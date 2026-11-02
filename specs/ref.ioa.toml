@@ -19,6 +19,7 @@ name = "Ref"
 states = ["Active", "Deleted"]
 initial = "Active"
 allow_indefinite_states = ["Active"]
+terminal = ["Deleted"]
 
 # --- Actions ---
 
@@ -64,10 +65,3 @@ hint = "Emitted on Update or ForceUpdate."
 name = "RefDeletedEvent"
 kind = "output"
 hint = "Emitted on Delete."
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "DeletedIsFinal"
-when = ["Deleted"]
-assert = "no_further_transitions"

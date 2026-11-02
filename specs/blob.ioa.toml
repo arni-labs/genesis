@@ -30,7 +30,7 @@ query_indexed = false
 [[state]]
 name = "Size"
 type = "int"
-initial = "0"
+initial = 0
 query_indexed = false
 
 [[state]]

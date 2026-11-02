@@ -22,6 +22,7 @@ name = "HttpEndpoint"
 states = ["Active", "Paused", "Deleted"]
 initial = "Active"
 allow_indefinite_states = ["Active", "Paused"]
+terminal = ["Deleted"]
 
 # --- Actions ---
 
@@ -74,10 +75,3 @@ kind = "output"
 [[action]]
 name = "HttpEndpointDeletedEvent"
 kind = "output"
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "DeletedIsFinal"
-when = ["Deleted"]
-assert = "no_further_transitions"

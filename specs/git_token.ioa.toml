@@ -22,6 +22,7 @@ name = "GitToken"
 states = ["Active", "Revoked"]
 initial = "Active"
 allow_indefinite_states = ["Active"]
+terminal = ["Revoked"]
 
 # --- Actions ---
 
@@ -53,10 +54,3 @@ params = ["RevokedBy", "Reason"]
 [[action]]
 name = "GitTokenRevokedEvent"
 kind = "output"
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "RevokedIsFinal"
-when = ["Revoked"]
-assert = "no_further_transitions"

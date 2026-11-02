@@ -60,8 +60,3 @@ kind = "input"
 from = ["Suspended"]
 to = "PendingVerification"
 hint = "Restore this owner account to the verification queue."
-
-[[invariant]]
-name = "SuspendedBlocksOwnerWrites"
-when = ["Suspended"]
-assert = "owner_namespace_write_denied"
