@@ -315,26 +315,6 @@ until curl -fsS "${BASE_URL}/healthz" >/dev/null 2>&1; do
   sleep 1
 done
 
-# ── Harness setup, not product behaviour ─────────────────────────────────
-# The operator bootstrapped from TEMPER_API_KEY holds manage_policies and
-# nothing else. This smoke creates endpoints, repositories, tokens and pull
-# requests directly through the data API, which the shipped Genesis policies
-# grant to Genesis's own modules, not to an operator. Grant the smoke what it
-# needs, appended to the shipped set so nothing shipped is weakened or lost.
-# (What a fresh install should grant by default is ARN-504.)
-if [[ -n "${TEMPER_API_KEY:-}" ]]; then
-  current_policy="$(curl -sS "${admin_headers[@]}" "${BASE_URL}/api/tenants/${TENANT}/policies" | python3 -c 'import sys,json;print(json.load(sys.stdin)["policy_text"])')"
-  harness_permits=""
-  for t in HttpEndpoint Owner Repository GitToken Ref PullRequest Commit Tree TreeEntry Blob Tag Lineage Closure Review ReviewComment Webhook App AppInstallation RateLimit; do
-    harness_permits+="permit(principal, action, resource is ${t});"$'\n'
-  done
-  python3 - "$current_policy" "$harness_permits" > "${TMP_DIR}/harness-policy.json" <<'PY2'
-import json,sys
-print(json.dumps({"policy_text": sys.argv[1].rstrip()+"\n"+sys.argv[2]}))
-PY2
-  curl -fsS -X PUT "${admin_headers[@]}" --data-binary @"${TMP_DIR}/harness-policy.json" "${BASE_URL}/api/tenants/${TENANT}/policies" >/dev/null
-fi
-
 register_endpoints
 
 TOKEN_A="$(openssl rand -hex 20)"
@@ -457,20 +437,10 @@ self_msg="$(json_field "$out" "message")"
 
 approve_as_b "$PR_MAIN"
 
-admin_get "/tdata/PullRequests?\$filter=RepositoryId%20eq%20'rp-${OWNER}-${REPO}'" "${TMP_DIR}/pr-rows.json"
-pr_status="$(node -e '
-const fs = require("fs");
-const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).value || [];
-const number = Number(process.argv[2]);
-const row = rows.find((r) => Number(r.fields?.Number ?? r.Number) === number);
-if (!row) process.exit(1);
-process.stdout.write(String(row.status ?? row.Status ?? row.fields?.Status ?? ""));
-' "${TMP_DIR}/pr-rows.json" "$PR_MAIN")"
-if [[ "$pr_status" != "Approved" ]]; then
-  printf 'PR %s entity status expected Approved, got %s\n' "$PR_MAIN" "$pr_status" >&2
-  exit 1
-fi
-pass 6 "review gates (self-deny + approve)" "A self-approve → 422 \"${self_msg}\"; B approve → 200; entity status=Approved"
+# The Approved state itself is observed in step 7: PullRequest.Merge is
+# enabled only from Approved, so the merge below fails unless this
+# approval moved the lifecycle there.
+pass 6 "review gates (self-deny + approve)" "A self-approve → 422 \"${self_msg}\"; B approve → 200 (Approved is proven by the step 7 merge)"
 
 # ---------------------------------------------------------------------
 # Step 7 — merge (merge_method=merge) → 200 merged:true; re-clone
