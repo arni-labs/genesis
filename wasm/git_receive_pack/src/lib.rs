@@ -89,6 +89,33 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
         return respond_unauthorized();
     }
     genesis_git_auth::mark_token_used(ctx, &auth_env, &principal);
+    // The bridged IngestPack runs with no Cedar precondition, so this module is
+    // where a push is authorized (crates/git_auth/src/write.rs).
+    let system = genesis_git_auth::Principal::system(&auth_env);
+    let repository = genesis_git_auth::fetch_repository_fields(
+        ctx,
+        &api_base,
+        &system.outbound_headers(),
+        &repository_id,
+    )?;
+    let Some(repository) = repository else {
+        return respond_refused(404, "repository not found\n");
+    };
+    let may = |write| {
+        genesis_git_auth::may_write_repository(&principal, &repository_id, &repository, write)
+    };
+    if !genesis_git_auth::may_read_repository(&principal, &repository_id, &repository) {
+        return respond_refused(404, "repository not found\n");
+    }
+    if !may(genesis_git_auth::RepositoryWrite::Push) {
+        return respond_refused(403, "this token may not push to this repository\n");
+    }
+    let may_force = may(genesis_git_auth::RepositoryWrite::ForcePush);
+    let default_branch = repository
+        .get("DefaultBranch")
+        .and_then(|v| v.as_str())
+        .filter(|b| !b.is_empty())
+        .map(|b| format!("refs/heads/{b}"));
 
     // Stream the request body. We read the command list bytes
     // (pkt-line framed; ends at a 0000 flush), then buffer the raw
@@ -116,6 +143,13 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
         return Err("receive-pack command list requires pack bytes".to_string());
     }
 
+    let deletes_default = parsed.commands.iter().any(|cmd| {
+        cmd.kind() == CommandKind::Delete && default_branch.as_deref() == Some(cmd.refname.as_str())
+    });
+    if deletes_default && !may(genesis_git_auth::RepositoryWrite::DeleteDefaultBranch) {
+        return respond_refused(403, "deleting the default branch needs admin:repos\n");
+    }
+
     let ref_updates: Vec<Value> = parsed
         .commands
         .iter()
@@ -137,7 +171,8 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
 
     let mut action_params = json!({
         "RefUpdates": ref_updates,
-        "ClientRequestId": receive_pack_client_request_id(&repository_id, &cmd_bytes, &pack_bytes),
+        "ClientRequestId": receive_pack_client_request_id(&repository_id, may_force, &cmd_bytes, &pack_bytes),
+        "PusherMayForce": may_force,
     });
     if !pack_bytes.is_empty() {
         let blob_endpoint = blob_endpoint(ctx, &api_base);
@@ -163,6 +198,17 @@ fn serve_receive_pack(ctx: &Context, http: &InboundHttp) -> Result<Value, String
 /// `bridge_response` rather than a guest-submitted head. The empty
 /// `action_params` marks the structured result shape the kernel
 /// requires before honoring control keys.
+fn respond_refused(status: u16, body: &str) -> Result<Value, String> {
+    Ok(json!({
+        "action_params": {},
+        "bridge_response": {
+            "status": status,
+            "headers": { "Content-Type": "text/plain" },
+            "body": body,
+        }
+    }))
+}
+
 fn respond_unauthorized() -> Result<Value, String> {
     Ok(json!({
         "action_params": {},
@@ -174,13 +220,19 @@ fn respond_unauthorized() -> Result<Value, String> {
     }))
 }
 
+/// The push's idempotency key. A retry of the same push converges on the first
+/// answer, but the same bytes pushed with and without the force scope are
+/// different requests: one may be refused and the other accepted.
 fn receive_pack_client_request_id(
     repository_id: &str,
+    may_force: bool,
     command_bytes: &[u8],
     pack_bytes: &[u8],
 ) -> String {
     let mut hasher = genesis_git_object::Sha1::new();
     hasher.update(repository_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(if may_force { b"force" } else { b"plain" });
     hasher.update(b"\0");
     hasher.update(command_bytes);
     hasher.update(b"\0");

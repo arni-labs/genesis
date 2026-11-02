@@ -28,7 +28,9 @@ use sha2::Digest;
 use temper_wasm_sdk::prelude::*;
 
 mod read;
+mod write;
 pub use read::{ReadDecision, decide_read, fetch_repository_fields, may_read_repository};
+pub use write::{RepositoryWrite, may_write_repository};
 
 /// Deployment-specific identifiers each consuming module supplies.
 #[derive(Debug, Clone, Copy)]

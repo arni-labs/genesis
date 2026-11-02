@@ -10,7 +10,7 @@ use temper_wasm_sdk::http_stream::InboundHttp;
 use temper_wasm_sdk::prelude::*;
 
 use crate::gh;
-use crate::handlers::{find_pull_by_number, pull_shas, resolve_mutating_principal};
+use crate::handlers::{authorize_write, find_pull_by_number, pull_shas};
 use crate::http;
 use crate::odata;
 use crate::{Route, fresh_row_id, system_headers};
@@ -52,10 +52,11 @@ pub(crate) fn create_review(
     route: &Route,
     number: i64,
 ) -> Result<Value, String> {
-    let principal = match resolve_mutating_principal(ctx, http)? {
-        Ok(p) => p,
-        Err(resp) => return Ok(resp),
-    };
+    let principal =
+        match authorize_write(ctx, http, route, genesis_git_auth::RepositoryWrite::Review)? {
+            Ok(p) => p,
+            Err(resp) => return Ok(resp),
+        };
     let body = match http::read_body_json(http) {
         Ok(v) => v,
         Err(e) => return http::respond_error(http, 400, &format!("Problems parsing JSON: {e}")),
@@ -107,7 +108,7 @@ pub(crate) fn create_review(
     )
 }
 
-/// `Review.Create` as the real caller. Returns `Some(response)` when
+/// `Review.Create`. Returns `Some(response)` when
 /// the dispatch failed and was answered.
 fn submit_review_row(
     ctx: &Context,
