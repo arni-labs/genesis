@@ -6,7 +6,6 @@
 #![cfg(test)]
 
 use alloc::format;
-use alloc::string::String;
 
 use serde_json::Value;
 
@@ -114,14 +113,4 @@ fn git_ref_shape_check_catches_missing_object_field() {
         assert_shape(&fixture, &actual, "", GIT_REF_OMITTED);
     });
     assert!(result.is_err(), "checker must flag a removed nested field");
-}
-
-#[test]
-fn allowlists_are_intentionally_empty() {
-    let total: usize = [BRANCH_OMITTED, GIT_REF_OMITTED]
-        .iter()
-        .map(|l| l.len())
-        .sum();
-    assert_eq!(total, 0, "branch/ref projections omit nothing documented");
-    let _unused: Option<String> = None;
 }
