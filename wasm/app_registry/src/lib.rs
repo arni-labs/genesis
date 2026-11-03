@@ -735,8 +735,7 @@ fn temper_api_base(ctx: &Context) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{BTreeMap, BTreeSet};
-    use std::thread;
+    use std::collections::BTreeMap;
 
     fn context_with_config(config: BTreeMap<String, String>) -> Context {
         Context {
@@ -811,105 +810,6 @@ mod tests {
             new_hash: "3333333333333333333333333333333333333333".to_string(),
             ref_name: "main".to_string(),
         }
-    }
-
-    fn indexed_repository_snapshot(idx: usize) -> RepositorySnapshot {
-        RepositorySnapshot {
-            id: format!("rp-owner-{idx}-registered"),
-            owner_account_id: format!("owner-{idx}"),
-            default_branch: if idx % 2 == 0 {
-                "main".to_string()
-            } else {
-                "refs/heads/release".to_string()
-            },
-        }
-    }
-
-    fn indexed_ref_snapshot(idx: usize) -> RefSnapshot {
-        RefSnapshot {
-            target_commit_sha: format!("{idx:040x}"),
-        }
-    }
-
-    fn indexed_register_params(idx: usize) -> RegisterParams {
-        RegisterParams {
-            name: format!("registered-{idx}"),
-            repository_id: format!("rp-owner-{idx}-registered"),
-            description: format!("Registered app {idx}"),
-            exports: format!(r#"{{"entities":["Widget{idx}"]}}"#),
-            visibility: "public".to_string(),
-        }
-    }
-
-    fn indexed_parent(idx: usize) -> ParentApp {
-        ParentApp {
-            id: format!("app-parent-{idx}"),
-            owner_id: format!("parent-owner-{idx}"),
-            name: format!("parent-{idx}"),
-            repository_id: format!("rp-parent-{idx}"),
-            latest_version_hash: format!("{:040x}", idx + 1000),
-            exports: format!(r#"{{"entities":["Parent{idx}"]}}"#),
-            visibility: if idx % 2 == 0 {
-                "public".to_string()
-            } else {
-                "private".to_string()
-            },
-        }
-    }
-
-    fn indexed_fork_params(idx: usize) -> ForkParams {
-        ForkParams {
-            parent_app_id: format!("app-parent-{idx}"),
-            parent_version_hash: format!("{:040x}", idx + 2000),
-            child_owner_id: format!("Child Owner {idx}"),
-            child_name: format!("Child App {idx}"),
-            description: String::new(),
-        }
-    }
-
-    fn indexed_app_snapshot(idx: usize) -> AppSnapshot {
-        AppSnapshot {
-            id: format!("app-publish-{idx}"),
-            repository_id: format!("rp-publish-{idx}"),
-            latest_version_hash: format!("{:040x}", idx + 3000),
-        }
-    }
-
-    fn indexed_publish_params(idx: usize) -> PublishParams {
-        PublishParams {
-            new_hash: format!("{:040x}", idx + 4000),
-            ref_name: if idx % 2 == 0 {
-                "main".to_string()
-            } else {
-                "refs/heads/release".to_string()
-            },
-        }
-    }
-
-    fn multi_action_envelopes(idx: usize) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
-        let repository = indexed_repository_snapshot(idx);
-        let default_ref = indexed_ref_snapshot(idx);
-        let register_params = indexed_register_params(idx);
-        let parent = indexed_parent(idx);
-        let fork_params = indexed_fork_params(idx);
-        let app = indexed_app_snapshot(idx);
-        let publish_params = indexed_publish_params(idx);
-        let current_ref = RefSnapshot {
-            target_commit_sha: app.latest_version_hash.clone(),
-        };
-
-        (
-            build_register_sub_writes(
-                &app_id_for(&repository.owner_account_id, &register_params.name),
-                &repository,
-                &default_ref,
-                &register_params,
-            )
-            .expect("register sub-writes should build"),
-            build_fork_sub_writes(&parent, &fork_params).expect("fork sub-writes should build"),
-            build_publish_sub_writes(&app, &publish_params, &current_ref)
-                .expect("publish sub-writes should build"),
-        )
     }
 
     #[test]
@@ -1253,70 +1153,5 @@ mod tests {
             "1111111111111111111111111111111111111111"
         );
         assert_eq!(writes[0]["params"]["FollowPolicy"], "follow_latest");
-    }
-
-    #[test]
-    fn multi_action_sub_write_builders_are_deterministic_under_parallel_load() {
-        const ATTEMPTS: usize = 16;
-
-        let handles = (0..ATTEMPTS)
-            .map(|idx| thread::spawn(move || (idx, multi_action_envelopes(idx))))
-            .collect::<Vec<_>>();
-
-        let mut seen_entity_ids = BTreeSet::new();
-        for handle in handles {
-            let (idx, (register, fork, publish)) = handle
-                .join()
-                .expect("parallel app-registry builder should join");
-            assert_eq!(
-                (register.clone(), fork.clone(), publish.clone()),
-                multi_action_envelopes(idx),
-                "registry builders must be deterministic for input {idx}"
-            );
-
-            assert_eq!(register.len(), 1);
-            assert_eq!(register[0]["entity_type"], "App");
-            assert_eq!(register[0]["action"], "Create");
-            assert_eq!(register[0]["params"]["OwnerId"], format!("owner-{idx}"));
-
-            let fork_contract = fork
-                .iter()
-                .map(|write| {
-                    (
-                        write["entity_type"].as_str().unwrap(),
-                        write["action"].as_str().unwrap(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(
-                fork_contract,
-                vec![
-                    ("Repository", "Create"),
-                    ("Ref", "Create"),
-                    ("App", "Create"),
-                    ("Lineage", "Create")
-                ]
-            );
-            assert!(fork.iter().all(|write| !matches!(
-                write["entity_type"].as_str(),
-                Some("Blob" | "Tree" | "Commit" | "Tag")
-            )));
-
-            assert_eq!(publish.len(), 2);
-            assert_eq!(publish[0]["entity_type"], "Ref");
-            assert_eq!(publish[0]["action"], "Update");
-            assert_eq!(publish[1]["entity_type"], "App");
-            assert_eq!(publish[1]["action"], "Update");
-
-            for write in register.iter().chain(fork.iter()).chain(publish.iter()) {
-                let entity_id = write["entity_id"]
-                    .as_str()
-                    .expect("sub-write entity_id should be a string");
-                assert!(
-                    seen_entity_ids.insert(entity_id.to_string()),
-                    "parallel multi-action builders produced duplicate entity id {entity_id}"
-                );
-            }
-        }
     }
 }

@@ -32,8 +32,12 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Cargo fmt
         run: cargo fmt --all -- --check
+
+      - run: echo "::add-matcher::.github/rust-test-failures.json"
 
       - name: Cargo test
         run: cargo test --workspace --locked
@@ -103,15 +107,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev clang libclang-dev libjemalloc-dev libz3-dev
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      # Each cache is saved right after its build, so a smoke that fails later does not cost
+      # the next run the build: a cache saved at the end of the job is lost when the job fails.
+      - name: Restore the cargo cache
+        id: cargo-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target/
-            temper/target/
-          key: ${{ runner.os }}-cargo-workflow-gate-${{ hashFiles('Cargo.lock', 'temper/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-workflow-gate-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-workflow-gate-
 
       # Same module list + packaged-artifact layout as the Dockerfile;
@@ -126,8 +132,38 @@ jobs:
             cp "target/wasm32-wasip1/release/${module}.wasm" "wasm/${module}/${module}.wasm"
           done
 
+      - name: Save the cargo cache
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
+
+      # The kernel is whatever commit the submodule pins, so one pin needs one build.
+      - name: The submodule's Temper commit
+        id: temper
+        run: echo "commit=$(git -C temper rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the kernel built for that commit
+        id: kernel
+        uses: actions/cache/restore@v4
+        with:
+          path: temper/target/release/temper
+          key: temper-kernel-${{ steps.temper.outputs.commit }}
+
       - name: Build Temper kernel
+        if: steps.kernel.outputs.cache-hit != 'true'
         run: cargo build --manifest-path temper/Cargo.toml --release --bin temper
+
+      - name: Save the kernel
+        if: steps.kernel.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: temper/target/release/temper
+          key: ${{ steps.kernel.outputs.cache-primary-key }}
 
       # Temper takes identity from a bearer credential only (self-declared
       # principal headers are stripped, ADR-0157), and registers the key it
