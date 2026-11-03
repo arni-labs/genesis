@@ -83,13 +83,12 @@ permit(
   principal.action_context == "composite:App.PublishNewVersion"
 };
 
-// --- Repository.IngestPack (git push): the parent action is Cedar-gated
-//     on the push path (repo:write); its declared ref sub-writes carry the
-//     composite action_context. CAS Create, fast-forward Update, and Delete
-//     are authorized as one governed intent. Non-FF ForceUpdate is gated
-//     separately on the `force` scope below — the ingest WASM only emits a
-//     ForceUpdate sub-write after an ancestry walk proves the update is
-//     non-fast-forward, so this is where force-push protection is enforced.
+// --- Repository.IngestPack (git push): git_receive_pack authorizes the
+//     push on the pusher's GitToken before it bridges the action (repo:write
+//     and ownership or admin:repos; crates/git_auth/src/write.rs), because a
+//     bridged action has no Cedar precondition. Its declared ref sub-writes
+//     carry the composite action_context: CAS Create, fast-forward Update,
+//     and Delete land as one governed intent.
 permit(
   principal,
   action in [Action::"Create", Action::"Update", Action::"Delete"],
@@ -99,16 +98,18 @@ permit(
   principal.action_context == "composite:Repository.IngestPack"
 };
 
-// Non-fast-forward push (ForceUpdate sub-write) additionally requires the
-// `force` scope — the carried token scopes gate history rewrites.
+// Non-fast-forward push (ForceUpdate sub-write). The pusher's token never
+// reaches Cedar on the push path (the bridged IngestPack runs as the edge
+// caller), so the `force` decision is made on the token by git_receive_pack
+// and enforced by scm_ingest_pack, which refuses a ForceUpdate the pusher may
+// not make before it returns any sub-write (crates/git_auth/src/write.rs).
 permit(
   principal,
   action == Action::"ForceUpdate",
   resource is Ref
 ) when {
   principal has action_context &&
-  principal.action_context == "composite:Repository.IngestPack" &&
-  principal.scopes.contains("force")
+  principal.action_context == "composite:Repository.IngestPack"
 };
 
 // The server-side merge engine (scm_merge_pr, ADR-0024) advances the

@@ -1,19 +1,17 @@
 # Repository — the umbrella entity for a git repo hosted on temper-git.
 #
 # The Repository row carries metadata and provisioning state for the
-# repo's storage. A `repository_provision` WASM integration fires on
-# `Create` to do any backend-specific setup the kernel needs.
+# repo's storage. The REST create module sends MarkProvisioned once the
+# row exists; files change only through pushes and merges.
 #
 # State machine:
 #
 #   Provisioning ─(MarkProvisioned)─▶ Active ─(Archive)─▶ Archived
 #                                       │ ▲
 #                                       │ │
-#                                     WriteFile/DeleteFile/
-#                                     BatchWriteFiles/
 #                                     CreateBranch/
 #                                     MergePullRequest/
-#                                     SetDefaultBranch
+#                                     SetDefaultBranch/SetVisibility
 #                                     (all self-loop on Active)
 #
 # Archived is terminal. Rationale: once a repo is archived, history
@@ -25,6 +23,7 @@ name = "Repository"
 states = ["Provisioning", "Active", "Archived"]
 initial = "Provisioning"
 allow_indefinite_states = ["Provisioning", "Active"]
+terminal = ["Archived"]
 
 # --- Actions ---
 
@@ -53,31 +52,12 @@ params = ["DefaultBranch"]
 hint = "Change the repo's default branch. Must reference an existing Ref."
 
 [[action]]
-name = "WriteFile"
+name = "SetVisibility"
 kind = "input"
 from = ["Active"]
 to = "Active"
-params = ["Ref", "Path", "Content", "Mode", "Message", "Author", "ClientRequestId"]
-hint = "Create or update one file. Fires a scm_write_file integration which walks the Ref's current Tree, builds a new Tree with the file changed, writes the Commit, and advances the Ref. Atomic transaction on the repo's libSQL DB."
-effect = [{ type = "trigger", name = "scm_write_file" }]
-
-[[action]]
-name = "DeleteFile"
-kind = "input"
-from = ["Active"]
-to = "Active"
-params = ["Ref", "Path", "Message", "Author", "ClientRequestId"]
-hint = "Delete one file from a Ref's current Tree. Same atomicity as WriteFile."
-effect = [{ type = "trigger", name = "scm_write_file" }]
-
-[[action]]
-name = "BatchWriteFiles"
-kind = "input"
-from = ["Active"]
-to = "Active"
-params = ["Ref", "Changes", "Message", "Author", "ClientRequestId"]
-hint = "Atomic multi-file commit. Changes is a JSON array of {Op:'write'|'delete', Path, Content?, Mode?}."
-effect = [{ type = "trigger", name = "scm_write_file" }]
+params = ["Visibility"]
+hint = "Make the repository public or private. Anything other than 'public' reads as private: the git and REST read modules serve a non-public repository only to its owner, an admin token, or a read token that names it (crates/git_auth/src/read.rs)."
 
 [[action]]
 name = "CreateBranch"
@@ -89,13 +69,12 @@ hint = "Create a new Ref pointing at the same commit as FromRef."
 
 [[action]]
 name = "MergePullRequest"
-kind = "Composite"
+kind = "composite"
 from = ["Active"]
 to = "Active"
 params = ["PullRequestId", "Strategy", "Message", "ClientRequestId"]
 record_parent_event = false
 hint = "Apply a PullRequest's source_ref onto target_ref. Strategy: merge | squash | ff (ADR-0024). Emits the merge objects, advances target_ref, and transitions the PullRequest atomically."
-effect = [{ type = "trigger", name = "scm_merge_pr" }]
 
 [[action.cedar_gate]]
 principal = "request.principal"
@@ -122,15 +101,20 @@ target_entity = "PullRequest"
 action = "Merge"
 generated_from = "merge_transition"
 
+[[action.triggers]]
+name = "scm_merge_pr"
+kind = "wasm"
+module = "scm_merge_pr"
+config = { timeout_secs = "120" }
+
 [[action]]
 name = "IngestPack"
-kind = "Composite"
+kind = "composite"
 from = ["Active"]
 to = "Active"
-params = ["PackBytes", "RefUpdates", "ClientRequestId"]
+params = ["PackBytes", "RefUpdates", "ClientRequestId", "PusherMayForce"]
 record_parent_event = false
 hint = "Ingest a git receive-pack payload as one governed intent: objects, ref CAS updates, and PR-head updates land atomically."
-effect = [{ type = "trigger", name = "scm_ingest_pack" }]
 
 [[action.cedar_gate]]
 principal = "request.principal"
@@ -182,6 +166,12 @@ target_entity = "PullRequest"
 action = "UpdateHead"
 generated_from = "ref_updates"
 
+[[action.triggers]]
+name = "scm_ingest_pack"
+kind = "wasm"
+module = "scm_ingest_pack"
+config = { max_fuel = "80000000000", max_memory = "536870912", max_response_bytes = "134217728", timeout_secs = "300" }
+
 [[action]]
 name = "Archive"
 kind = "input"
@@ -210,51 +200,3 @@ hint = "Emitted when the per-repo libSQL DB is ready and the entity is Active."
 name = "RepositoryArchivedEvent"
 kind = "output"
 hint = "Emitted on Archive."
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "ArchivedIsFinal"
-when = ["Archived"]
-assert = "no_further_transitions"
-
-[[integration]]
-name = "repository_provision"
-trigger = "repository_provision"
-type = "wasm"
-module = "repository_provision"
-on_success = "MarkProvisioned"
-on_failure = "Archive"
-
-[integration.config]
-timeout_secs = 30
-
-[[integration]]
-name = "scm_write_file"
-trigger = "scm_write_file"
-type = "wasm"
-module = "scm_write_file"
-
-[integration.config]
-timeout_secs = 60
-
-[[integration]]
-name = "scm_merge_pr"
-trigger = "scm_merge_pr"
-type = "wasm"
-module = "scm_merge_pr"
-
-[integration.config]
-timeout_secs = 120
-
-[[integration]]
-name = "scm_ingest_pack"
-trigger = "scm_ingest_pack"
-type = "wasm"
-module = "scm_ingest_pack"
-
-[integration.config]
-timeout_secs = 300
-max_fuel = 80000000000
-max_memory = 536870912
-max_response_bytes = 134217728

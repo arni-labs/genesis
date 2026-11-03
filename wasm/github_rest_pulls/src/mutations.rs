@@ -1,20 +1,19 @@
 //! Mutating handlers for the pull-request REST surface: create, close,
-//! merge. Reviews live in `reviews.rs`. Every entity action is
-//! dispatched with the resolved GitToken principal mirrored in the
-//! headers, so Cedar evaluates the real caller.
+//! merge. Reviews live in `reviews.rs`. Each handler decides the write on
+//! the caller's GitToken first (`handlers::authorize_write`); the entity
+//! actions then run as this module, which Cedar permits by name.
 
 use alloc::format;
 use alloc::string::{String, ToString};
 
-use genesis_git_auth::Principal;
+use genesis_git_auth::{Principal, RepositoryWrite};
 use serde_json::Value;
 use temper_wasm_sdk::http_stream::InboundHttp;
 use temper_wasm_sdk::prelude::*;
 
 use crate::gh;
 use crate::handlers::{
-    find_pull_by_number, full_ref_name, pull_shas, ref_tip, resolve_mutating_principal,
-    respond_with_pull,
+    authorize_write, find_pull_by_number, full_ref_name, pull_shas, ref_tip, respond_with_pull,
 };
 use crate::http;
 use crate::odata;
@@ -56,7 +55,7 @@ pub(crate) fn create_pull(
     http: &InboundHttp,
     route: &Route,
 ) -> Result<Value, String> {
-    let principal = match resolve_mutating_principal(ctx, http)? {
+    let principal = match authorize_write(ctx, http, route, RepositoryWrite::PullRequest)? {
         Ok(p) => p,
         Err(resp) => return Ok(resp),
     };
@@ -97,7 +96,7 @@ pub(crate) fn create_pull(
     respond_with_pull(ctx, http, route, &api_base, &pr_id, 201)
 }
 
-/// `PullRequest.Create` then `Open`, both as the real caller. Open is
+/// `PullRequest.Create` then `Open`. Open is
 /// awaited so scm_assign_pr_number has stamped Number before the
 /// response renders. GitHub's draft flag has no spec state (Genesis
 /// Draft is pre-Open), so draft:true also opens. Returns
@@ -171,7 +170,7 @@ pub(crate) fn patch_pull(
     route: &Route,
     number: i64,
 ) -> Result<Value, String> {
-    let principal = match resolve_mutating_principal(ctx, http)? {
+    let principal = match authorize_write(ctx, http, route, RepositoryWrite::PullRequest)? {
         Ok(p) => p,
         Err(resp) => return Ok(resp),
     };
@@ -262,7 +261,7 @@ pub(crate) fn merge_pull(
     route: &Route,
     number: i64,
 ) -> Result<Value, String> {
-    let principal = match resolve_mutating_principal(ctx, http)? {
+    let principal = match authorize_write(ctx, http, route, RepositoryWrite::Merge)? {
         Ok(p) => p,
         Err(resp) => return Ok(resp),
     };

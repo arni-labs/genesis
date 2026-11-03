@@ -12,6 +12,7 @@ name = "Webhook"
 states = ["Active", "Paused", "Deleted"]
 initial = "Active"
 allow_indefinite_states = ["Active", "Paused"]
+terminal = ["Deleted"]
 
 # --- Actions ---
 
@@ -61,10 +62,3 @@ to = "Deleted"
 [[action]]
 name = "WebhookDeletedEvent"
 kind = "output"
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "DeletedIsFinal"
-when = ["Deleted"]
-assert = "no_further_transitions"

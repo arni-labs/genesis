@@ -49,12 +49,7 @@ pub(crate) fn open_repo_access(
     else {
         return Ok(Err(http::respond_error(http, 404, "Not Found")?));
     };
-    let visibility = row
-        .fields
-        .get("Visibility")
-        .and_then(Value::as_str)
-        .unwrap_or("private");
-    if anonymous && visibility != "public" {
+    if !genesis_git_auth::may_read_repository(&resolved, &route.repository_id(), &row.fields) {
         return Ok(Err(http::respond_error(http, 404, "Not Found")?));
     }
     Ok(Ok(RepoAccess {
@@ -65,10 +60,16 @@ pub(crate) fn open_repo_access(
 }
 
 /// Mutation prologue: resolve the GitToken principal, reject anonymous
-/// with the standard challenge, and record token usage.
-pub(crate) fn resolve_mutating_principal(
+/// with the standard challenge, record token usage, and decide `write`
+/// on the token and the Repository row (crates/git_auth/src/write.rs).
+/// A repository the caller may not read answers 404, one it may read but
+/// not change answers 403. The module then acts under its own name: the
+/// kernel runs its calls as the module, so Cedar cannot decide this.
+pub(crate) fn authorize_write(
     ctx: &Context,
     http: &InboundHttp,
+    route: &Route,
+    write: genesis_git_auth::RepositoryWrite,
 ) -> Result<Result<Principal, Value>, String> {
     let api_base = http::api_base_from_headers(&http.headers);
     let env = auth_env(&api_base);
@@ -77,6 +78,24 @@ pub(crate) fn resolve_mutating_principal(
         return Ok(Err(http::respond_unauthorized(http)?));
     }
     genesis_git_auth::mark_token_used(ctx, &env, &principal);
+    let repository_id = route.repository_id();
+    let system = Principal::system(&env).outbound_headers();
+    let Some(row) = odata::get_entity(ctx, &system, &api_base, "Repositories", &repository_id)?
+    else {
+        return Ok(Err(http::respond_error(http, 404, "Not Found")?));
+    };
+    let mut fields = row.fields;
+    fields["Status"] = Value::String(row.status);
+    if !genesis_git_auth::may_read_repository(&principal, &repository_id, &fields) {
+        return Ok(Err(http::respond_error(http, 404, "Not Found")?));
+    }
+    if !genesis_git_auth::may_write_repository(&principal, &repository_id, &fields, write) {
+        return Ok(Err(http::respond_error(
+            http,
+            403,
+            "Resource not accessible by this token",
+        )?));
+    }
     Ok(Ok(principal))
 }
 

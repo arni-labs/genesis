@@ -11,6 +11,7 @@ name = "ReviewComment"
 states = ["Open", "Resolved"]
 initial = "Open"
 allow_indefinite_states = ["Open"]
+terminal = ["Resolved"]
 
 # --- Actions ---
 
@@ -33,10 +34,3 @@ params = ["ResolvedBy"]
 [[action]]
 name = "ReviewCommentPostedEvent"
 kind = "output"
-
-# --- Safety invariants ---
-
-[[invariant]]
-name = "ResolvedIsFinal"
-when = ["Resolved"]
-assert = "no_further_transitions"

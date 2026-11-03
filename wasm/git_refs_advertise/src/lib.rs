@@ -13,7 +13,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use genesis_git_auth::{AuthEnv, Principal};
+use genesis_git_auth::{AuthEnv, Principal, ReadDecision};
 use temper_wasm_sdk::http_stream::InboundHttp;
 use temper_wasm_sdk::prelude::*;
 use tg_wire::{AdvertisedRef, Service, advertise_info_refs};
@@ -57,7 +57,7 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let (owner, repo) = repo_parts_from_http(http);
     let repository_id = format!("rp-{owner}-{repo}");
 
-    let api_base = temper_api_from_headers(&http.headers);
+    let api_base = temper_api_base(ctx, &http.headers);
     let auth_env = AuthEnv {
         temper_api: &api_base,
         tenant: SYSTEM_TENANT,
@@ -66,13 +66,26 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
     let resolved = genesis_git_auth::resolve_principal(ctx, &auth_env, &http.headers);
     // Push advertisement starts a governed mutation: anonymous callers
     // get the standard smart-HTTP challenge so git prompts for
-    // credentials and retries (ADR-0025). Fetch advertisement keeps
-    // the development fallback to the system principal.
+    // credentials and retries (ADR-0025).
     if matches!(service, Service::ReceivePack) && resolved.is_anonymous() {
         return respond_unauthorized(http);
     }
+    let system = Principal::system(&auth_env);
+    let repository = genesis_git_auth::fetch_repository_fields(
+        ctx,
+        &api_base,
+        &system.outbound_headers(),
+        &repository_id,
+    )?;
+    match genesis_git_auth::decide_read(&resolved, &repository_id, repository.as_ref()) {
+        ReadDecision::Allow => {}
+        ReadDecision::Challenge => return respond_unauthorized(http),
+        ReadDecision::NotFound => {
+            return respond_text(http, 404, "text/plain", "repository not found\n");
+        }
+    }
     let principal = if resolved.is_anonymous() {
-        Principal::system(&auth_env)
+        system
     } else {
         resolved
     };
@@ -83,9 +96,14 @@ fn serve_info_refs(ctx: &Context, http: &InboundHttp) -> Result<Value, String> {
         .filter(|row| row.status == "Active")
         .map(|row| (row.target_sha, row.name))
         .collect();
-    let default_branch =
-        fetch_repository_default_branch(ctx, &principal, &repository_id, &api_base)
-            .unwrap_or_else(|_| "main".to_string());
+    let default_branch = repository
+        .as_ref()
+        .and_then(|fields| fields.get("DefaultBranch"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty())
+        .unwrap_or("main")
+        .to_string();
     add_symbolic_head_advertisement(&mut owned, &default_branch);
     let refs: Vec<AdvertisedRef<'_>> = owned
         .iter()
@@ -222,34 +240,6 @@ fn urlencode(value: &str) -> String {
     out
 }
 
-fn fetch_repository_default_branch(
-    ctx: &Context,
-    principal: &Principal,
-    repository_id: &str,
-    api_base: &str,
-) -> Result<String, String> {
-    let url = format!("{api_base}/tdata/Repositories('{repository_id}')");
-    let resp = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("fetch repository: {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("fetch repository status {}", resp.status));
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("repository parse: {e}"))?;
-    let default_branch = parsed
-        .get("fields")
-        .and_then(|v| v.get("DefaultBranch"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("main")
-        .trim();
-    if default_branch.is_empty() {
-        Ok("main".to_string())
-    } else {
-        Ok(default_branch.to_string())
-    }
-}
-
 fn add_symbolic_head_advertisement(refs: &mut Vec<(String, String)>, default_branch: &str) {
     if refs.iter().any(|(_, name)| name == "HEAD") {
         return;
@@ -262,6 +252,29 @@ fn add_symbolic_head_advertisement(refs: &mut Vec<(String, String)>, default_bra
     if let Some((sha, _)) = refs.iter().find(|(_, name)| name == &default_ref) {
         refs.insert(0, (sha.clone(), "HEAD".to_string()));
     }
+}
+
+/// The base URL for this kernel's own OData surface.
+///
+/// The inbound `Host` header names the *public* edge, which is not the kernel's
+/// configured internal origin, so `is_internal_url` refuses to mint an internal
+/// capability for it. The request then leaves the process and re-enters through
+/// the public edge with no bearer, where the global auth middleware answers 401.
+/// The kernel hands us its real loopback origin as the `blob_endpoint` secret
+/// (`http://127.0.0.1:{port}/_internal/blobs`), which carries the actual listen
+/// port, so derive the API base from that. When an operator points
+/// `BLOB_ENDPOINT` at external object storage the suffix will not match and the
+/// Host header remains the fallback.
+fn temper_api_base(ctx: &Context, headers: &[(String, String)]) -> String {
+    if let Ok(endpoint) = ctx.get_secret("blob_endpoint") {
+        let trimmed = endpoint.trim_end_matches('/');
+        if let Some(base) = trimmed.strip_suffix("/_internal/blobs")
+            && !base.is_empty()
+        {
+            return base.to_string();
+        }
+    }
+    temper_api_from_headers(headers)
 }
 
 fn temper_api_from_headers(headers: &[(String, String)]) -> String {
@@ -316,9 +329,7 @@ fn respond_unauthorized(http: &InboundHttp) -> Result<Value, String> {
     .map_err(|e| format!("submit_response_head: {e}"))?;
     let mut writer = http.response_body();
     writer
-        .write_all_chunk(
-            b"authentication required: supply a GitToken as Basic username or Bearer token\n",
-        )
+        .write_all_chunk(b"authentication required: supply a GitToken as the Basic username\n")
         .map_err(|e| format!("response_body write: {e}"))?;
     writer
         .finish()

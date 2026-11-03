@@ -273,6 +273,7 @@
         <Property Name="Scopes"        Type="Edm.String" Nullable="false"/>
         <Property Name="Status"        Type="Edm.String" Nullable="false"/>
         <Property Name="ExpiresAt"     Type="Edm.DateTimeOffset"/>
+        <Property Name="Repositories"  Type="Edm.String"/>
         <Property Name="LastUsedAt"    Type="Edm.DateTimeOffset"/>
         <Property Name="CreatedAt"     Type="Edm.DateTimeOffset" Nullable="false"/>
         <Property Name="RevokedAt"     Type="Edm.DateTimeOffset"/>

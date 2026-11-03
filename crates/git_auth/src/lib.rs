@@ -11,8 +11,8 @@
 //! the real customer/agent rather than a system bridge.
 //!
 //! Anonymous (no `Authorization` header, or token not found / not
-//! `Active`) is returned as a distinct value. The caller decides
-//! whether to reject, challenge, or allow a development fallback.
+//! `Active`) is returned as a distinct value. Read modules then apply
+//! [`decide_read`] against the Repository row before serving anything.
 
 #![forbid(unsafe_code)]
 
@@ -26,6 +26,11 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use sha2::Digest;
 use temper_wasm_sdk::prelude::*;
+
+mod read;
+mod write;
+pub use read::{ReadDecision, decide_read, fetch_repository_fields, may_read_repository};
+pub use write::{RepositoryWrite, may_write_repository};
 
 /// Deployment-specific identifiers each consuming module supplies.
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +50,9 @@ pub struct Principal {
     /// Scopes from the resolved GitToken row, enforced by Cedar gates
     /// downstream (e.g. `force` on `Ref.ForceUpdate`).
     pub scopes: Vec<String>,
+    /// Repositories a `repo:read` token is limited to, from the GitToken's
+    /// `Repositories` field (see [`read`]). Empty for an unscoped token.
+    pub repositories: Vec<String>,
     /// GitToken row id when this principal came from a token —
     /// callers fire `GitToken.MarkUsed` (best-effort) with it.
     pub token_id: Option<String>,
@@ -57,6 +65,7 @@ impl Principal {
             kind: "anonymous".to_string(),
             id: "anonymous".to_string(),
             scopes: Vec::new(),
+            repositories: Vec::new(),
             token_id: None,
             tenant: env.tenant.to_string(),
         }
@@ -67,6 +76,7 @@ impl Principal {
             kind: "admin".to_string(),
             id: env.system_principal.to_string(),
             scopes: Vec::new(),
+            repositories: Vec::new(),
             token_id: None,
             tenant: env.tenant.to_string(),
         }
@@ -119,6 +129,18 @@ pub fn resolve_principal(
     headers: &[(String, String)],
 ) -> Principal {
     let Some(token) = extract_token(headers) else {
+        // The last silent exit. If the kernel withheld the credential header
+        // this is where every request lands, and the caller only ever sees 401.
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth found no credential in the request headers",
+            &serde_json::json!({
+                "header_names": headers
+                    .iter()
+                    .map(|(k, _)| k.to_ascii_lowercase())
+                    .collect::<alloc::vec::Vec<_>>(),
+            }),
+        );
         return Principal::anonymous(env);
     };
     let hash = sha256_hex(token.as_bytes());
@@ -129,9 +151,28 @@ pub fn resolve_principal(
     let lookup_headers = Principal::system(env).outbound_headers();
     let resp = match ctx.http_call("GET", &url, &lookup_headers, "") {
         Ok(r) => r,
-        Err(_) => return Principal::anonymous(env),
+        Err(error) => {
+            // ARN-52 diagnostic: every path out of this function returns
+            // `anonymous`, so a valid token and a broken lookup are
+            // indistinguishable from the caller's 401.
+            let _ = ctx.log_structured(
+                "warn",
+                "git_auth token lookup transport failed",
+                &serde_json::json!({ "temper_api": env.temper_api, "error": error }),
+            );
+            return Principal::anonymous(env);
+        }
     };
     if !(200..400).contains(&resp.status) {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth token lookup returned non-success",
+            &serde_json::json!({
+                "temper_api": env.temper_api,
+                "status": resp.status,
+                "body_prefix": resp.body.chars().take(160).collect::<String>(),
+            }),
+        );
         return Principal::anonymous(env);
     }
     let parsed: serde_json::Value = match serde_json::from_str(&resp.body) {
@@ -143,10 +184,26 @@ pub fn resolve_principal(
         .and_then(|v| v.as_array())
         .and_then(|a| a.first());
     let Some(row) = row else {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth token lookup matched no row",
+            &serde_json::json!({
+                "temper_api": env.temper_api,
+                "body_prefix": resp.body.chars().take(200).collect::<String>(),
+            }),
+        );
         return Principal::anonymous(env);
     };
     let fields = row.get("fields").unwrap_or(row);
     if fields.get("Status").and_then(|v| v.as_str()) != Some("Active") {
+        let _ = ctx.log_structured(
+            "warn",
+            "git_auth token row is not Active",
+            &serde_json::json!({
+                "status_field": fields.get("Status").and_then(|v| v.as_str()).unwrap_or("<absent>"),
+                "field_keys": fields.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()),
+            }),
+        );
         return Principal::anonymous(env);
     }
     let id = fields
@@ -162,10 +219,12 @@ pub fn resolve_principal(
         .filter(|s| !s.is_empty())
         .map(str::to_string);
     let scopes = parse_scopes(fields.get("Scopes"));
+    let repositories = read::parse_repositories(fields.get("Repositories"));
     Principal {
         kind: "customer".to_string(),
         id,
         scopes,
+        repositories,
         token_id,
         tenant: env.tenant.to_string(),
     }
@@ -295,6 +354,7 @@ mod tests {
             kind: "customer".to_string(),
             id: "user-1".to_string(),
             scopes: alloc::vec!["repo:write".to_string(), "force".to_string()],
+            repositories: Vec::new(),
             token_id: Some("tk-1".to_string()),
             tenant: "default".to_string(),
         };
@@ -310,6 +370,7 @@ mod tests {
             kind: "customer".to_string(),
             id: "user-1".to_string(),
             scopes: alloc::vec!["repo:read".to_string()],
+            repositories: Vec::new(),
             token_id: None,
             tenant: "default".to_string(),
         };

@@ -165,6 +165,17 @@ jobs:
           path: temper/target/release/temper
           key: ${{ steps.kernel.outputs.cache-primary-key }}
 
+      # Temper takes identity from a bearer credential only (self-declared
+      # principal headers are stripped, ADR-0157), and registers the key it
+      # starts with as the tenant's operator. A random key made here lives
+      # only on this runner, for this run; the smokes act as that operator for
+      # setup (HttpEndpoint routes, GitTokens).
+      - name: Make this run's operator key
+        run: |
+          key="$(openssl rand -hex 32)"
+          echo "::add-mask::${key}"
+          echo "TEMPER_API_KEY=${key}" >> "$GITHUB_ENV"
+
       # README "Local Run" serve invocation; turso storage on a local
       # file (the same TURSO_URL=file: pattern the managed live smokes
       # use), readiness probe mirrored from their wait_for_server.
@@ -173,11 +184,18 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/os-apps" && ln -sfn "$PWD" "${RUNNER_TEMP}/os-apps/temper-git"
           TEMPER_OS_APPS_DIR="${RUNNER_TEMP}/os-apps" \
           TURSO_URL="file:${RUNNER_TEMP}/genesis-workflow-gate.db" \
+          TEMPER_API_KEY="$TEMPER_API_KEY" \
           nohup temper/target/release/temper serve \
             --port "$GENESIS_PORT" --storage turso --no-observe --app temper-git \
             > "${RUNNER_TEMP}/genesis-server.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/genesis-server.pid"
           deadline=$((SECONDS + 300))
+          # Readiness is /healthz -- the same probe railway.toml uses in
+          # production. It used to be /tdata/Apps, which current temper treats
+          # as a protected route: an unauthenticated probe 401s forever and the
+          # boot step times out after 300s. /healthz is public by design, is
+          # what the deployed service is judged by, and so is the honest signal
+          # that this server is up.
           until curl -fsS "http://127.0.0.1:${GENESIS_PORT}/healthz" > /dev/null 2>&1; do
             if ! kill -0 "$(cat "${RUNNER_TEMP}/genesis-server.pid")" 2> /dev/null; then
               echo "Genesis server exited during boot" >&2
@@ -196,6 +214,11 @@ jobs:
         env:
           TEMPER_URL: http://127.0.0.1:${{ env.GENESIS_PORT }}
         run: scripts/live-github-workflow-smoke.sh
+
+      - name: Private-read smoke
+        env:
+          TEMPER_URL: http://127.0.0.1:${{ env.GENESIS_PORT }}
+        run: scripts/live-genesis-private-read-smoke.sh
 
       - name: Server log on failure
         if: failure()
