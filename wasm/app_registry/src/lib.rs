@@ -748,6 +748,7 @@ mod tests {
             trigger_action: "RegisterNewApp".to_string(),
             wasm_module: "app_registry".to_string(),
             http_request: None,
+            trigger_principal: None,
         }
     }
 
