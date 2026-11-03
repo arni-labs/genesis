@@ -4,5 +4,8 @@ dockerfilePath = "Dockerfile"
 [deploy]
 startCommand = "sh -c 'temper serve --port ${PORT:-3000} --storage postgres --no-observe --app temper-git'"
 healthcheckPath = "/healthz"
-healthcheckTimeout = 300
+# temper serve answers /healthz only after it restores every tenant in the database:
+# about 10 minutes for 159 tenants on temper 21cb7f112, and deployment 00fc5e90 failed at 5.
+# Railway keeps the old container serving until this passes.
+healthcheckTimeout = 1800
 restartPolicyType = "ON_FAILURE"
