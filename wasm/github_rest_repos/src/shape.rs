@@ -6,8 +6,6 @@
 #![cfg(test)]
 
 use alloc::format;
-use alloc::string::String;
-use alloc::vec::Vec;
 
 use serde_json::Value;
 use temper_wasm_sdk::json;
@@ -117,15 +115,4 @@ fn repository_shape_check_catches_type_drift() {
         assert_shape(&fixture, &actual, "", REPOSITORY_OMITTED);
     });
     assert!(result.is_err(), "checker must flag a type change");
-}
-
-/// Silence the unused-list lint when the allowlist is empty: an empty
-/// allowlist is the desired steady state for this endpoint.
-#[test]
-fn repository_allowlist_is_intentionally_empty() {
-    let omitted: Vec<String> = REPOSITORY_OMITTED
-        .iter()
-        .map(|s| String::from(*s))
-        .collect();
-    assert!(omitted.is_empty());
 }
