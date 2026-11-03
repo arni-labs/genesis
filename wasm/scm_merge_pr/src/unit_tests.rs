@@ -30,6 +30,7 @@ fn ctx(entity_type: &str, entity_id: &str, action: &str, params: serde_json::Val
         trigger_action: action.to_string(),
         wasm_module: "scm_merge_pr".to_string(),
         http_request: None,
+        trigger_principal: None,
     }
 }
 
