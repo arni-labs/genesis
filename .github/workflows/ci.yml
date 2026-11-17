@@ -44,7 +44,9 @@ jobs:
 
   web:
     name: Genesis Web
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04 since November 2026, and `playwright install`
+    # refuses it ("Playwright does not support chromium on ubuntu26.04-x64").
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
