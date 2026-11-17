@@ -147,62 +147,41 @@ struct RefRow {
     status: String,
 }
 
+/// Every ref of the repository, page by page.
+///
+/// A repository gains a ref per release tag, so it can hold more refs than one
+/// OData page; a client that sees only some of them cannot fetch or push the
+/// rest. The kernel ends each truncated page with an `@odata.nextLink`, a keyset
+/// cursor that only moves forward, so following it reads each ref exactly once.
 fn fetch_refs_for_repo(
     ctx: &Context,
     principal: &Principal,
     repository_id: &str,
     api_base: &str,
 ) -> Result<Vec<RefRow>, String> {
-    let url = refs_url_for_repo(api_base, repository_id);
-    let resp = ctx
-        .http_call("GET", &url, &principal.outbound_headers(), "")
-        .map_err(|e| format!("fetch refs: {e}"))?;
-    if !(200..400).contains(&resp.status) {
-        return Err(format!("fetch refs status {}", resp.status));
-    }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&resp.body).map_err(|e| format!("refs parse: {e}"))?;
-    let items = parsed
-        .get("value")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let mut rows = Vec::with_capacity(items.len());
-    for row in items {
-        let fields = row
-            .get("fields")
+    let headers = principal.outbound_headers();
+    let mut rows = Vec::new();
+    let mut next = Some(refs_url_for_repo(api_base, repository_id));
+    while let Some(url) = next.take() {
+        let resp = ctx
+            .http_call("GET", &url, &headers, "")
+            .map_err(|e| format!("fetch refs: {e}"))?;
+        if !(200..400).contains(&resp.status) {
+            return Err(format!("fetch refs status {}", resp.status));
+        }
+        let parsed: serde_json::Value =
+            serde_json::from_str(&resp.body).map_err(|e| format!("refs parse: {e}"))?;
+        let items = parsed
+            .get("value")
+            .and_then(|v| v.as_array())
             .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let repo = fields
-            .get("RepositoryId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if repo != repository_id {
-            continue;
+            .unwrap_or_default();
+        next = next_page_url(api_base, &parsed);
+        // A continuation after an empty page would never end.
+        if next.is_some() && items.is_empty() {
+            return Err("fetch refs: a page with a continuation returned no refs".to_string());
         }
-        let name = fields
-            .get("Name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let target_sha = fields
-            .get("TargetCommitSha")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let status = fields
-            .get("Status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        if name.is_empty() || target_sha.is_empty() {
-            continue;
-        }
-        rows.push(RefRow {
-            name,
-            target_sha,
-            status,
-        });
+        rows.extend(items.iter().filter_map(|row| ref_row(row, repository_id)));
     }
     rows.sort_by(|a, b| {
         let a_is_head = a.name == "HEAD";
@@ -216,6 +195,8 @@ fn fetch_refs_for_repo(
     Ok(rows)
 }
 
+/// The first page of the repository's refs. `$top` is a page size; the rest
+/// arrive through `@odata.nextLink` ([`fetch_refs_for_repo`]).
 fn refs_url_for_repo(api_base: &str, repository_id: &str) -> String {
     let escaped_repository_id = repository_id.replace('\'', "''");
     let filter = format!("RepositoryId eq '{escaped_repository_id}'");
@@ -224,6 +205,39 @@ fn refs_url_for_repo(api_base: &str, repository_id: &str) -> String {
         api_base.trim_end_matches('/'),
         urlencode(&filter)
     )
+}
+
+/// One Refs row of `repository_id` as a ref, or `None` for a row that names
+/// another repository or lacks a name or target.
+fn ref_row(row: &serde_json::Value, repository_id: &str) -> Option<RefRow> {
+    let fields = row.get("fields")?;
+    let field = |key: &str| fields.get(key).and_then(|v| v.as_str()).unwrap_or("");
+    if field("RepositoryId") != repository_id {
+        return None;
+    }
+    let (name, target_sha) = (field("Name"), field("TargetCommitSha"));
+    if name.is_empty() || target_sha.is_empty() {
+        return None;
+    }
+    Some(RefRow {
+        name: name.to_string(),
+        target_sha: target_sha.to_string(),
+        status: field("Status").to_string(),
+    })
+}
+
+/// The next page of a list read: its `@odata.nextLink`, which the kernel writes
+/// relative to the entity-set root (`Refs?...`), resolved against `api_base`.
+fn next_page_url(api_base: &str, page: &serde_json::Value) -> Option<String> {
+    let link = page.get("@odata.nextLink")?.as_str()?;
+    if link.starts_with("http://") || link.starts_with("https://") {
+        return Some(link.to_string());
+    }
+    let base = api_base.trim_end_matches('/');
+    match link.strip_prefix('/') {
+        Some(absolute_path) => Some(format!("{base}/{absolute_path}")),
+        None => Some(format!("{base}/tdata/{link}")),
+    }
 }
 
 fn urlencode(value: &str) -> String {
@@ -389,6 +403,40 @@ mod tests {
             repo_parts_from_http(&http),
             ("octo".to_string(), "hello".to_string())
         );
+    }
+
+    #[test]
+    fn next_page_url_resolves_the_kernels_relative_link_under_tdata() {
+        let page = serde_json::json!({
+            "value": [],
+            "@odata.nextLink": "Refs?%24filter=RepositoryId%20eq%20%27rp-a-b%27&%24top=500&$skiptoken=abc"
+        });
+        assert_eq!(
+            next_page_url("http://127.0.0.1:3000/", &page).as_deref(),
+            Some(
+                "http://127.0.0.1:3000/tdata/Refs?%24filter=RepositoryId%20eq%20%27rp-a-b%27&%24top=500&$skiptoken=abc"
+            )
+        );
+    }
+
+    #[test]
+    fn next_page_url_is_none_on_the_last_page() {
+        assert_eq!(
+            next_page_url("http://127.0.0.1:3000", &serde_json::json!({ "value": [] })),
+            None
+        );
+    }
+
+    #[test]
+    fn ref_row_keeps_only_named_refs_of_the_repository() {
+        let row = |repo: &str, name: &str| {
+            serde_json::json!({ "fields": {
+                "RepositoryId": repo, "Name": name, "TargetCommitSha": "abc", "Status": "Active"
+            }})
+        };
+        assert!(ref_row(&row("rp-a-b", "refs/heads/main"), "rp-a-b").is_some());
+        assert!(ref_row(&row("rp-a-c", "refs/heads/main"), "rp-a-b").is_none());
+        assert!(ref_row(&row("rp-a-b", ""), "rp-a-b").is_none());
     }
 
     #[test]
