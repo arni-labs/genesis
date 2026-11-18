@@ -53,7 +53,7 @@ RUN mkdir -p \
     && cp target/wasm32-wasip1/release/github_rest_refs.wasm wasm/github_rest_refs/github_rest_refs.wasm \
     && cp target/wasm32-wasip1/release/github_rest_pulls.wasm wasm/github_rest_pulls/github_rest_pulls.wasm
 
-RUN cargo build --manifest-path temper/Cargo.toml --profile dist --bin temper
+RUN cargo build --manifest-path temper/Cargo.toml --release --bin temper
 
 RUN mkdir -p /opt/genesis-os-apps/temper-git \
     && cp app.toml APP.md README.md /opt/genesis-os-apps/temper-git/ \
@@ -64,7 +64,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates libssl3 python3 libz3-4 libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=rust-builder /app/temper/target/dist/temper /usr/local/bin/temper
+COPY --from=rust-builder /app/temper/target/release/temper /usr/local/bin/temper
 COPY --from=rust-builder /opt/genesis-os-apps /opt/genesis-os-apps
 COPY --from=web-builder /app/web/build /opt/genesis-web
 
