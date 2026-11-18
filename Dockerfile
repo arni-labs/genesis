@@ -19,6 +19,23 @@ RUN rustup toolchain install 1.92 && rustup default 1.92 && rustup target add wa
 WORKDIR /app
 COPY . .
 
+# Railway's GitHub builds don't fetch submodules, so there temper/ arrives empty. Then fetch temper at the commit this
+# commit's submodule pins: read the pin from genesis itself at RAILWAY_GIT_COMMIT_SHA (git ls-tree of a tree-only
+# fetch, so no GitHub API rate limit), then temper at that commit. Both repositories are public, so no token. A checkout
+# that has temper already (CI, `railway up`) skips this.
+ARG RAILWAY_GIT_COMMIT_SHA
+RUN if [ ! -f temper/Cargo.toml ]; then \
+      test -n "$RAILWAY_GIT_COMMIT_SHA" || { echo "temper/ is empty and Railway named no commit to fetch it for" >&2; exit 1; }; \
+      git init -q /tmp/genesis \
+      && git -C /tmp/genesis fetch -q --depth 1 --filter=blob:none https://github.com/arni-labs/genesis "$RAILWAY_GIT_COMMIT_SHA" \
+      && pin=$(git -C /tmp/genesis ls-tree FETCH_HEAD temper | awk '$2 == "commit" { print $3 }') \
+      && test -n "$pin" \
+      && rm -rf /tmp/genesis \
+      && git init -q temper \
+      && git -C temper fetch -q --depth 1 https://github.com/arni-labs/temper "$pin" \
+      && git -C temper checkout -q FETCH_HEAD; \
+    fi
+
 # Build Genesis WASM integrations and place them where app.toml declares them.
 RUN cargo build --release --target wasm32-wasip1 \
     -p git_refs_advertise \
