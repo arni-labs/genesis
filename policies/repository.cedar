@@ -81,6 +81,19 @@ permit(
   principal.action_context == "composite:App.Fork"
 };
 
+// --- Create by the tenant operator (the deployment's own key): an operator
+//     adds an owner's first repository for a new app, then finishes it with
+//     MarkProvisioned below. Approved by Rita on 17 Nov 2026.
+
+permit(
+  principal is Agent,
+  action in [Action::"create", Action::"Create"],
+  resource is Repository
+) when {
+  principal has agent_type && principal.agent_type == "operator" &&
+  principal has agentTypeVerified && principal.agentTypeVerified == true
+};
+
 // --- MarkProvisioned: Provisioning -> Active. The repository_provision
 //     integration is not implemented, so the GitHub create route sends this
 //     as the system principal. The operator may also send it, to finish a
