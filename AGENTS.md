@@ -36,6 +36,8 @@ discipline section. Then the RFCs.
 
 Shared workflow and review scope come from Stack. Use an isolated worktree from current `main`; link related PRs to the same effort. `REVIEW.md` lists Genesis-specific checks. For protocol changes, exercise real `git`/`gh` against the running service. Verify the deployed revision when deployment is part of the accepted task.
 
+Production ships through the Factory line in Arni Ops (a6s03ju74p52), not `railway up`: a green push to `main` (ci.yml) is deployed by the `genesis-production` target, which asks Railway to build that commit from this repository and is up when Railway serves it and `/healthz` answers 200. A failed deploy rolls back to the deployment before. Follow a push in the shipment named `genesis-<commit>`.
+
 ## Hard rules (non-negotiable)
 
 1. **Temper discipline end to end.** Vendored Temper lives in the
