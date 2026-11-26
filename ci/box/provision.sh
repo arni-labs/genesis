@@ -67,8 +67,10 @@ for d in /opt/ci/rustup:rustup /opt/ci/cargo:cargo "$CI/repo.git:test.git" "$CI/
          "$CI/temper.git:temper.git" "$CI/kernels:kernels" "$CI/kernel-target:kernel-target"; do
     [ -e "${d%%:*}" ] && [ ! -e "$W/${d#*:}" ] && mv "${d%%:*}" "$W/${d#*:}"
 done
-a=$W/tree/temper/.git/objects/info/alternates # git clone --shared names temper.git's old path
-[ ! -f "$a" ] || sed -i "s|^$CI/temper.git/|$W/temper.git/|" "$a"
+# git clone --shared names temper.git's old path, in its alternates and as its origin
+for a in "$W/tree/temper/.git/objects/info/alternates" "$W/tree/temper/.git/config"; do
+    [ ! -f "$a" ] || sed -i "s|$CI/temper.git|$W/temper.git|" "$a"
+done
 if [ -d /home/tl-user/.cache/ms-playwright ] && [ ! -e "/home/$T/.cache/ms-playwright" ]; then
     install -d -o "$T" -g "$T" "/home/$T/.cache" && mv /home/tl-user/.cache/ms-playwright "/home/$T/.cache/"
 fi
