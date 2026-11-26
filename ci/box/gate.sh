@@ -1,41 +1,26 @@
 #!/usr/bin/env bash
-# Runs on ci-genesis, as tl-user: tests one commit as .github/workflows/ci.yml did on GitHub's runners for a push to
+# Runs on ci-genesis, as ci-test: tests one commit as .github/workflows/ci.yml did on GitHub's runners for a push to
 # main (jobs rust, web, workflow-gate, by the same steps and the commit's own scripts), and builds the commit's
 # Railway image from its Dockerfile with a warm BuildKit cache, tagged ghcr.io/arni-labs/genesis:sha-<7>:
 #   gate.sh <commit> <base>
-# ci/box/box.sh uploads this file and the git bundle (/var/lib/ci/in.bundle) before it calls it. Warm by design: one
+# /opt/ci/route.sh (the fixed wrapper) runs it as ci-test, which holds no key and has no sudo, after it put the two
+# commits in /var/lib/ci/work/test.git (refs/ci/commit, refs/ci/base); it publishes and sends the verdict. Warm by design: one
 # worktree at one path, so a checkout keeps unchanged files' times and cargo rebuilds only what the commit changed; each
 # target/ and web/node_modules survive the clean; the kernel the submodule pins is built once per pin. The temper/
 # submodule comes from GitHub (arni-labs/temper is public) into a clone the box keeps. Docker runs for the gate's
-# length only; its build cache stays on disk. Answers go to /var/lib/ci/runs/<commit>/ (<job>.txt ending `exit <code>`;
+# length only, rootless, as ci-test; its build cache stays on disk. Answers go to /var/lib/ci/work/runs/<commit>/ (<job>.txt ending `exit <code>`;
 # summary.txt; image-name.txt naming the built image; verdict.txt last).
-# Left out on purpose: pushing the image (ci/box/publish.sh does that, with a credential the box does not keep).
+# With CI_PUBLISH=1 a passed push's image is saved to publish/image.tar there, for route.sh to put in R2; ci-release
+# pushes it to ghcr, with a credential no gate box holds.
 # Exit 0 when every job passed, 1 when one failed, 2 on a usage error. Prints no key.
 set -uo pipefail
-# The Factory's command holds /var/lib/ci/box.lock on fd 9 for as long as this runs. Closed here, so no daemon this
-# starts (a server, Postgres, Redis, dockerd) inherits it and keeps the box locked after a run that was killed.
-exec 9>&-
 commit=${1:?usage: gate.sh <commit> <base>} base=${2:?usage: gate.sh <commit> <base>}
-CI=/var/lib/ci repo=/var/lib/ci/repo.git tree=/var/lib/ci/tree temper_repo=/var/lib/ci/temper.git
+CI=/var/lib/ci/work repo=/var/lib/ci/work/test.git tree=/var/lib/ci/work/tree temper_repo=/var/lib/ci/work/temper.git
 . /opt/ci/env.sh
-[ "$(id -u)" != 0 ] || { echo "gate: run as a user that is not root, as GitHub's runner is"; exit 2; }
+[ "$(id -u)" != 0 ] || { echo "gate: runs as ci-test, through /opt/ci/route.sh"; exit 2; }
 t0=$SECONDS
-if [ -s "$CI/in.bundle" ]; then
-    git -C "$repo" fetch -q "$CI/in.bundle" '+refs/ci/*:refs/ci/*' || { echo "gate: the bundle did not fetch"; exit 2; }
-    rm -f "$CI/in.bundle"
-fi
-# A commit the box lacks comes from origin (https://github.com/arni-labs/genesis.git), as the Factory's route runs a gate: no bundle, only the
-# two commits. ci/box/box.sh's bundle carries them instead when it drives the box.
-keys=${CI_KEYS:-$CI/keys}
-git -C "$repo" remote get-url origin >/dev/null 2>&1 || git -C "$repo" remote add origin https://github.com/arni-labs/genesis.git
-for c in "$commit" "$base"; do
-    git -C "$repo" cat-file -e "$c^{commit}" 2>/dev/null || git -C "$repo" fetch -q --depth=200 origin "$c" \
-        || { echo "gate: $c is neither on the box nor fetched from origin"; exit 2; }
-done
 commit=$(git -C "$repo" rev-parse --verify "$commit^{commit}") || exit 2
 base=$(git -C "$repo" rev-parse --verify "$base^{commit}") || exit 2
-git -C "$repo" update-ref "refs/ci/tested/$commit" "$commit"
-git -C "$repo" for-each-ref --sort=-committerdate --format='%(refname)' refs/ci/tested | tail -n +51 | xargs -r -n1 git -C "$repo" update-ref -d
 if git -C "$tree" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$tree" reset -q --hard && git -C "$tree" checkout -q --force --detach "$commit" \
       && git -C "$tree" clean -q -ffdx -e target/ -e node_modules/ -e /temper/ || exit 2
@@ -67,10 +52,8 @@ job_web() { # Genesis Web, with CI set as on GitHub (playwright reads it)
     export CI=true; cd web || return
     local sum; sum=$(sha256sum package-lock.json | cut -c1-64)
     [ "$(cat node_modules/.ci-lock 2>/dev/null)" = "$sum" ] || { npm ci --no-audit --no-fund && echo "$sum" >node_modules/.ci-lock; } || return
-    local pw; pw=$(node -p 'require("@playwright/test/package.json").version')
-    if [ "$(cat "$PLAYWRIGHT_BROWSERS_PATH/.ci-deps" 2>/dev/null)" != "$pw" ]; then
-        npx playwright install --with-deps chromium && echo "$pw" >"$PLAYWRIGHT_BROWSERS_PATH/.ci-deps" || return
-    else npx playwright install chromium || return; fi
+    # Chromium's system packages are provision.sh's (root's); the browser itself is ci-test's.
+    npx playwright install chromium || return
     echo "== svelte check"; npm run check || return
     echo "== build"; npm run build || return
     echo "== e2e"; npm run test:e2e
@@ -116,12 +99,12 @@ job_image() {
     local image=ghcr.io/arni-labs/genesis ctx=$CI/image-ctx
     rm -rf "$ctx" && mkdir -p "$ctx/temper" && git -C "$repo" archive "$commit" | tar -x -C "$ctx" \
       && git -C "$temper_repo" archive "$pin" | tar -x -C "$ctx/temper" && cd "$ctx" || return
-    DOCKER_HOST=unix://$CI/docker.sock docker buildx build --load --progress=plain \
+    docker buildx build --load --progress=plain \
       -t "$image:sha-${commit:0:7}" -t "$image:$commit" \
       --label org.opencontainers.image.source=https://github.com/arni-labs/genesis \
       --label org.opencontainers.image.revision="$commit" . || return
     echo "$image:sha-${commit:0:7}" >"$out/image-name.txt"
-    DOCKER_HOST=unix://$CI/docker.sock docker image inspect --format '{{.Id}} {{.Size}}' "$image:sha-${commit:0:7}"
+    docker image inspect --format '{{.Id}} {{.Size}}' "$image:sha-${commit:0:7}"
 }
 
 run_job() {
@@ -147,13 +130,15 @@ lanes_wait() {
     done
     wait "$@" 2>/dev/null
 }
-# Docker for the gate's length (a process the run started dies with it); its data and build cache stay in /var/lib/docker.
+# Docker for the gate's length, rootless: ci-test's own dockerd (rootlesskit), so a build or a container is ci-test and
+# no more. Its data and build cache stay in ~/.local/share/docker; route.sh stops every ci-test process after the gate.
+export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
 docker_up() {
-    sudo -n dockerd --group "$(id -gn)" -H "unix://$CI/docker.sock" --pidfile "$CI/docker.pid" >"$CI/dockerd.log" 2>&1 &
-    for _ in $(seq 60); do DOCKER_HOST=unix://$CI/docker.sock docker info >/dev/null 2>&1 && return; sleep 1; done
+    dockerd-rootless.sh >"$CI/dockerd.log" 2>&1 & docker_pid=$!
+    for _ in $(seq 60); do docker info >/dev/null 2>&1 && return; sleep 1; done
     tail -20 "$CI/dockerd.log"; return 1
 }
-docker_down() { [ -s "$CI/docker.pid" ] && sudo -n kill "$(cat "$CI/docker.pid")" 2>/dev/null; sleep 2; true; }
+docker_down() { [ -z "${docker_pid:-}" ] || kill "$docker_pid" 2>/dev/null; sleep 2; true; }
 trap docker_down EXIT
 docker_up || { echo "gate: dockerd did not start"; exit 1; }
 ( peak=0; while sleep 2; do
@@ -175,46 +160,11 @@ verdict=passed
 grep -q '^rust .*exit 0 ' "$out/summary.txt" || verdict=failed
 for f in $(awk '$3 != 0 {print $1}' "$out/summary.txt"); do verdict=failed; echo "== $f (last 40 lines)"; tail -40 "$out/$f.txt"; done
 echo "gate: $(wc -l <"$out/summary.txt") jobs, verdict $verdict in $((SECONDS - t0)) s"
-said=$(awk '$3 != 0 {printf "%s%s", sep, $1; sep=", "}' "$out/summary.txt")
-# A passed push is published when CI_PUBLISH=1, as temper's binary is: its sha-<7> image, as a `docker save` archive,
-# to R2 bucket genesis-images, with keys/images-write, a key for that bucket alone. No ghcr token is on this box, since a
-# test in a bad commit could read it: the release box ci-release pushes the archive to ghcr when the Factory's target
-# asks (stack ci/release/push-image.sh). images/<commit>/{image.tar,image.tar.sha256}, then COMMIT (the full sha) last,
-# so an image without COMMIT is unfinished. Every put is If-None-Match: *, so nothing published is ever replaced. A
-# publish that fails fails the verdict, since the line needs the image.
+# A passed push to publish (CI_PUBLISH=1, from route.sh): its sha-<7> image as a `docker save` archive, which route.sh
+# hashes and puts in R2 for the release box. A save that fails fails the verdict, since the line needs the image.
 if [ $verdict = passed ] && [ "${CI_PUBLISH:-0}" = 1 ]; then
-    s=$SECONDS
-    ( set -euo pipefail; [ -s "$keys/images-write" ] || { echo "no images-write in $keys"; exit 1; }
-      at=https://075a5c0a617de3bdc08a44f9794b6f2f.r2.cloudflarestorage.com/genesis-images/images/$commit tar=$CI/image.tar
-      r2() { curl -sS --config <(printf 'user = "%s:%s"\n' "$(sed -n 1p "$keys/images-write")" "$(sed -n 2p "$keys/images-write")") \
-                 --aws-sigv4 aws:amz:auto:s3 "$@"; }
-      put() { # put <file> <key>: 200 made, 412 already there (kept)
-          local c; c=$(r2 -o /dev/null -w '%{http_code}' -H 'If-None-Match: *' \
-              -H "x-amz-content-sha256: $(sha256sum "$1" | cut -c1-64)" -T "$1" "$at/$2")
-          case $c in 200) ;; 412) echo "$2 was already there, kept" ;; *) echo "put $2 answered $c"; return 1 ;; esac; }
-      [ "$(r2 -o /dev/null -w '%{http_code}' "$at/COMMIT")" != 200 ] || { echo "$commit is already published"; exit 0; }
-      trap 'rm -f "$tar" "$tar.sha256"' EXIT
-      DOCKER_HOST=unix://$CI/docker.sock docker save -o "$tar" "ghcr.io/arni-labs/genesis:sha-${commit:0:7}"
-      sha256sum "$tar" | cut -c1-64 >"$tar.sha256"
-      put "$tar" image.tar && put "$tar.sha256" image.tar.sha256
-      echo "$commit" >"$out/COMMIT" && put "$out/COMMIT" COMMIT
-      echo "published $at/, $(du -h "$tar" | cut -f1), sha256 $(cat "$tar.sha256")" ) >"$out/publish.txt" 2>&1; c=$?
-    echo "exit $c" >>"$out/publish.txt"
-    printf '%-24s exit %-3s %5s s\n' publish "$c" "$((SECONDS - s))" | tee -a "$out/summary.txt"
-    [ $c = 0 ] || { verdict=failed said="publish"; tail -30 "$out/publish.txt"; }
+    mkdir -p "$out/publish" && docker save -o "$out/publish/image.tar" "ghcr.io/arni-labs/genesis:sha-${commit:0:7}" \
+        || { verdict=failed; echo "gate: the image did not save"; }
 fi
-
 echo "$verdict" >"$out/verdict.txt"
-# The verdict to the Factory's gate hook, as ci-temper-v2 and ci-katagami send it: {type, id, tests_url}, signed with
-# HMAC-SHA256 of the body under keys/hook-secret.
-if [ -n "${GATE_HOOK:-}" ]; then
-    if [ -s "$keys/hook-secret" ]; then
-        body=$(python3 -c 'import json,sys; print(json.dumps({"type": sys.argv[1], "id": sys.argv[2], "tests_url": sys.argv[3]}))' \
-            "$verdict" "$commit" "ci-genesis box gate $verdict${said:+: $said}; $out on 0wtgorbfgesuibjcnvvfn")
-        signature=$(printf '%s' "$body" | python3 -c 'import hmac,sys; print(hmac.new(open(sys.argv[1],"rb").read().strip(), sys.stdin.buffer.read(), "sha256").hexdigest())' "$keys/hook-secret")
-        curl -sS --fail-with-body --max-time 30 -X POST -H 'content-type: application/json' \
-            -H "x-katagami-signature: sha256=$signature" --data "$body" "$GATE_HOOK" && echo "gate: the gate hook took the verdict" ||
-            echo "gate: the Factory's gate hook did not take the verdict"
-    else echo "gate: no hook-secret in $keys, so the verdict went to no hook"; fi
-fi
 [ $verdict = passed ]
