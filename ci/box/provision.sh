@@ -1,3 +1,4 @@
+rm -rf /var/lib/docker # its images and layers (52 GB on ci-genesis, 20 GB on ci-temperpaw): only ci-test's rootless dockerd runs
 #!/usr/bin/env bash
 # Installs on ci-genesis (as root) every tool .github/workflows/ci.yml's jobs set up on GitHub's runners, and Docker
 # with BuildKit for the image Railway used to build from the Dockerfile. Idempotent: run again (ci/box/box.sh provision)
